@@ -1,0 +1,102 @@
+/*
+ * Copyright 2007 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.commons.util.concurrent;
+
+import net.jcip.annotations.ThreadSafe;
+
+import org.springframework.beans.factory.DisposableBean;
+import org.springframework.beans.factory.FactoryBean;
+
+/**
+ * Exposes the functionality of {@link ExecutorBuilder} as a Spring <code>FactoryBean</code>.
+ *
+ * <p>Intended to be used to create an executor in a Spring <code>BeanFactory</code>.  For example:</p>
+ * <pre>&lt;bean id="myExecutor" class="com.ccadllc.commons.util.concurrent.ExecutorFactoryBean"&gt;
+ *     &lt;property name="executorName" value="MyExecutor" /&gt;
+ *&lt;/bean&gt;</pre>
+ */
+@ThreadSafe
+public class ExecutorFactoryBean implements FactoryBean<CallbackSupportingExtendedScheduledExecutorService>, DisposableBean
+{
+    private Integer corePoolSize;
+    private String executorName;
+    private boolean allowDynamicSizing = true;
+    private Integer keepAliveSeconds;
+
+    /**
+     * Executor created by this bean.
+     */
+    private CallbackSupportingExtendedScheduledExecutorService executor;
+
+    /**
+     * Sets the size of the thread pool. This will override the default value of the <code>ExecutorBuilder</code>. This is an
+     * optional field.
+     *
+     * @param corePoolSize size of the thread pool
+     */
+    public synchronized void setCorePoolSize(final Integer corePoolSize)
+    {
+        this.corePoolSize = corePoolSize;
+    }
+
+    /**
+     * Sets the name of the executor to be created.
+     *
+     * @param executorName name of executor to be created
+     */
+    public synchronized void setExecutorName(final String executorName)
+    {
+        this.executorName = executorName;
+    }
+
+    public synchronized void setAllowDynamicSizing(final boolean allow)
+    {
+        allowDynamicSizing = allow;
+    }
+
+    public synchronized void setKeepAliveSeconds(final int seconds)
+    {
+        keepAliveSeconds = seconds;
+    }
+
+    public Class<? extends CallbackSupportingExtendedScheduledExecutorService> getObjectType()
+    {
+        return CallbackSupportingExtendedScheduledExecutorService.class;
+    }
+
+    public boolean isSingleton()
+    {
+        return true;
+    }
+
+    public synchronized CallbackSupportingExtendedScheduledExecutorService getObject() throws Exception
+    {
+        if (executor == null)
+        {
+            final ExecutorBuilder builder = new ExecutorBuilder(executorName);
+            builder.setMaximumPoolSize(1);
+            if (corePoolSize != null)
+            {
+                builder.setCorePoolSize(corePoolSize);
+            }
+
+            if (keepAliveSeconds != null)
+            {
+                builder.keepAliveSeconds(keepAliveSeconds);
+            }
+
+            builder.allowDynamicSizing(allowDynamicSizing);
+
+            executor = builder.build();
+        }
+
+        return executor;
+    }
+
+    @Override
+    public synchronized void destroy() throws Exception
+    {
+        executor.shutdownNow();
+    }
+}

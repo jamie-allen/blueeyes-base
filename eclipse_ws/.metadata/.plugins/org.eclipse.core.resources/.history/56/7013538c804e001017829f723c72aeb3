@@ -1,0 +1,410 @@
+/*
+ * Copyright 2010 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import static com.ccadllc.firebird.dss.server.realtime.common.Events.ESTABLISH_EXTERNAL_ROUTE_EVENT;
+import static com.ccadllc.firebird.dss.server.realtime.common.Events.REMOVE_EXTERNAL_ROUTE_EVENT;
+import static com.ccadllc.firebird.dss.server.realtime.common.Events.UPDATE_EXTERNAL_ROUTE_EVENT;
+import static com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager.SNAPSHOT_MANAGER_REFRESH_EVENT;
+import static com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_ESTABLISH_EVENT;
+import static com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_REMOVE_EVENT;
+import static com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_UPDATE_EVENT;
+
+import java.io.IOException;
+import java.util.Collection;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentMap;
+
+import com.ccadllc.firebird.dss.common.datatypes.RouteType;
+import com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType;
+import com.ccadllc.firebird.dss.server.common.OsgiEventPropertyKeys;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.common.SnapshotUtility;
+import com.ccadllc.firebird.dss.server.common.StreamSnapshot;
+import com.ccadllc.firebird.dss.server.common.TransportStreamSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.RouteEstablisher;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.RouteManagerEventAdminServiceStrategy;
+import com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager;
+
+import net.jcip.annotations.GuardedBy;
+import net.jcip.annotations.ThreadSafe;
+
+import org.osgi.service.event.Event;
+import org.osgi.service.event.EventHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.base.Function;
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
+import com.google.common.collect.MapMaker;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Sets;
+
+/**
+ * Manages route controllers.
+ */
+@ThreadSafe
+public final class RouteManager implements EventHandler, TcpRouteCache
+{
+    public static final String[] EVENT_TOPICS = new String[] {SNAPSHOT_MANAGER_REFRESH_EVENT, UDP_ROUTE_SNAPSHOT_ESTABLISH_EVENT,
+        UDP_ROUTE_SNAPSHOT_UPDATE_EVENT, UDP_ROUTE_SNAPSHOT_REMOVE_EVENT, RealTimeSnapshotManager.STREAM_SNAPSHOT_DELETED_EVENT,
+        RealTimeSnapshotManager.TRANSPORT_STREAM_DELETED_EVENT};
+    private static final Logger logger = LoggerFactory.getLogger(RouteManager.class);
+    private final Object lock = new Object();
+
+    @GuardedBy("lock")
+    private final ConcurrentMap<Long, RouteController> routeControllers = new MapMaker().makeMap();
+
+    private final RouteControllerFactory routeControllerFactory;
+    private final RouteManagerEventAdminServiceStrategy routeManagerEventAdminServiceStrategy;
+    private final RealTimeSnapshotManager realTimeSnapshotManager;
+
+    public RouteManager(final RouteControllerFactory routeControllerFactory,
+        final RouteManagerEventAdminServiceStrategy routeManagerEventAdminServiceStrategy,
+        final RealTimeSnapshotManager realTimeSnapshotManager)
+    {
+        this.routeControllerFactory = routeControllerFactory;
+        this.routeManagerEventAdminServiceStrategy = routeManagerEventAdminServiceStrategy;
+        this.realTimeSnapshotManager = realTimeSnapshotManager;
+    }
+
+    public void init()
+    {
+        logger.debug("Initializing ExternalRouteManager.");
+        synchronized (lock)
+        {
+            for (final RouteSnapshot route : realTimeSnapshotManager.getRoutes().values())
+            {
+                try
+                {
+                    logger.debug("Creating initial UDP Route controller for route {}", route);
+                    handleEstablishRoute(route, null);
+                }
+                catch (final IOException ioe)
+                {
+                    logger.warn("IOException on Initializing ExternalRouteManager.");
+                }
+            }
+        }
+    }
+
+    public void establishRoute(final RouteSnapshot route, final RouteEstablisher routeEstablisher)
+    {
+        try
+        {
+            handleEstablishRoute(route, routeEstablisher);
+        }
+        catch (final IOException ioe)
+        {
+            logger.error(String.format("Failed to establish route %s", route), ioe);
+        }
+    }
+
+    @Override
+    public void handleEvent(final Event event)
+    {
+        try
+        {
+            final String topic = event.getTopic();
+            if (topic.equals(UDP_ROUTE_SNAPSHOT_ESTABLISH_EVENT))
+            {
+                handleEstablishRoute((RouteSnapshot)event.getProperty(OsgiEventPropertyKeys.ROUTE_SNAPSHOT_KEY), null);
+            }
+            else if (topic.equals(UDP_ROUTE_SNAPSHOT_UPDATE_EVENT))
+            {
+                handleUpdateRoute((RouteSnapshot)event.getProperty(OsgiEventPropertyKeys.ROUTE_SNAPSHOT_KEY));
+            }
+            else if (topic.equals(UDP_ROUTE_SNAPSHOT_REMOVE_EVENT))
+            {
+                handleRemoveRoute((RouteSnapshot)event.getProperty(OsgiEventPropertyKeys.ROUTE_SNAPSHOT_KEY));
+            }
+            else if (topic.equals(RealTimeSnapshotManager.STREAM_SNAPSHOT_DELETED_EVENT))
+            {
+                handleStreamDeletedEvent((StreamSnapshot)event.getProperty(OsgiEventPropertyKeys.STREAM_SNAPSHOT_KEY));
+            }
+            else if (topic.equals(RealTimeSnapshotManager.TRANSPORT_STREAM_DELETED_EVENT))
+            {
+                handleTransportStreamDeletedEvent((TransportStreamSnapshot)event.getProperty(OsgiEventPropertyKeys.TRANSPORT_STREAM_SNAPSHOT_KEY));
+            }
+            else if (topic.equals(SNAPSHOT_MANAGER_REFRESH_EVENT))
+            {
+                init();
+            }
+            else
+            {
+                logger.error("Can not handle this unknown event type: {} ", topic);
+            }
+        }
+        catch (final IOException ioe)
+        {
+            logger.error(String.format("Failed to handle route event %s", event), ioe);
+        }
+    }
+
+    private void handleRemoveRoute(final RouteSnapshot route)
+    {
+        synchronized (lock)
+        {
+            final RouteController routeToRemove = routeControllers.remove(route.getId());
+            if (routeToRemove != null)
+            {
+                routeToRemove.dispose();
+                routeManagerEventAdminServiceStrategy.postEvent(REMOVE_EXTERNAL_ROUTE_EVENT, route);
+            }
+        }
+    }
+
+    private void handleUpdateRoute(final RouteSnapshot route)
+    {
+        synchronized (lock)
+        {
+            final RouteController routeToUpdate = routeControllers.get(route.getId());
+            if (routeToUpdate != null)
+            {
+                routeToUpdate.updateRoute(route);
+                routeManagerEventAdminServiceStrategy.postEvent(UPDATE_EXTERNAL_ROUTE_EVENT, route);
+            }
+        }
+    }
+
+    private void handleEstablishRoute(final RouteSnapshot route) throws IOException
+    {
+        synchronized (lock)
+        {
+            logger.debug("Creating new route controller for route {}", route.getId());
+            if (routeControllers.putIfAbsent(route.getId(), routeControllerFactory.create(route, this)) == null)
+            {
+                routeManagerEventAdminServiceStrategy.postEvent(ESTABLISH_EXTERNAL_ROUTE_EVENT, route);
+            }
+            else
+            {
+                logger.debug("Attempted to establish a route for which the specified ID {} already exists in the managed routes collection.", route.getId());
+            }
+        }
+    }
+
+    private void handleStreamDeletedEvent(final StreamSnapshot streamSnapshot)
+    {
+        synchronized (lock)
+        {
+            for (final RouteSnapshot route : getRoutes())
+            {
+                boolean isChanged = false;
+                RouteSnapshot newRoute = null;
+
+                switch(route.getRouteType())
+                {
+                    case PID_MAPPED:
+                        for (final Integer pid : route.getPidMappings().keySet())
+                        {
+                            if (route.getPidMappings().get(pid).contains(streamSnapshot.getId()))
+                            {
+                                newRoute = deleteStreamIdFromRoutePidMapping(route, streamSnapshot.getId());
+                                isChanged = true;
+                            }
+                        }
+                        break;
+                    case ELEMENTARY_STREAM:
+                        if (route.getStreamIds().contains(streamSnapshot.getId()))
+                        {
+                            newRoute = deleteStreamIdFromRoute(route, streamSnapshot.getId());
+                            isChanged = true;
+                        }
+                        break;
+                    case TRANSPORT_STREAM:
+                        break;
+                    default:
+                        logger.warn("Unsupported route data type {} is found in Routes.", route.getRouteDataType());
+                }
+
+                if (isChanged)
+                {
+                    if (newRoute == null && route.getTransportProtocolType() == TransportProtocolType.TCP)
+                    {
+                        removeRoute(route);
+                    }
+                    else
+                    {
+                        propagateUpdateRouteSnapshot(route, newRoute);
+                    }
+                }
+            }
+        }
+    }
+
+    private RouteSnapshot deleteStreamIdFromRoutePidMapping(final RouteSnapshot route, final long streamId)
+    {
+        if (route.getRouteType() == RouteType.PID_MAPPED)
+        {
+            final Multimap<Integer, Long> pidMappings = HashMultimap.create();
+            for (final int pid : route.getPidMappings().keySet())
+            {
+                final Collection<Long> streamIds = Lists.newArrayList(route.getPidMappings().get(pid));
+                streamIds.remove(streamId);
+                if (!streamIds.isEmpty())
+                {
+                    pidMappings.putAll(pid, streamIds);
+                }
+            }
+            if (pidMappings.isEmpty())
+            {
+                return null;
+            }
+
+
+            return SnapshotUtility.createPidMappedRouteSnapshot(route.getTransportProtocolType(), route.getRouteDataType(), route.getId(), route.getPort(), pidMappings, null);
+        }
+
+        return null;
+    }
+
+    private RouteSnapshot deleteStreamIdFromRoute(final RouteSnapshot route, final long streamId)
+    {
+        if (route.getRouteType().equals(RouteType.ELEMENTARY_STREAM))
+        {
+            final Set<Long> streamIds = Sets.newHashSet(route.getStreamIds());
+            streamIds.remove(streamId);
+            if (streamIds.isEmpty())
+            {
+                return null;
+            }
+
+            return SnapshotUtility.createElementaryStreamRouteSnapshot(route.getTransportProtocolType(), route.getRouteDataType(), route.getId(), route.getPort(), streamIds, null);
+        }
+
+        return null;
+    }
+
+    public void removeRoute(final RouteSnapshot route)
+    {
+        final Map.Entry<Long, RouteController> mapEntry = getRouteControllersEntryByRouteId(route.getId());
+        if (mapEntry != null && mapEntry.getKey() != null)
+        {
+            if (mapEntry.getValue() != null)
+            {
+                logger.debug("Shutting down route {}.", route);
+                mapEntry.getValue().dispose();
+            }
+            else
+            {
+                logger.warn("Route controller not found for Route {}.", route);
+            }
+
+            logger.debug("Remove the route from the cache {}", route);
+            routeControllers.remove(mapEntry.getKey());
+            routeManagerEventAdminServiceStrategy.postEvent(REMOVE_EXTERNAL_ROUTE_EVENT, route);
+        }
+        else
+        {
+            logger.warn("Route controller not found for Route {}.", route);
+        }
+    }
+
+    private Map.Entry<Long, RouteController> getRouteControllersEntryByRouteId(final long routeId)
+    {
+        for (final Map.Entry<Long, RouteController> entry : routeControllers.entrySet())
+        {
+            if (entry.getKey() == routeId)
+            {
+                return entry;
+            }
+        }
+        return null;
+    }
+
+    private void propagateUpdateRouteSnapshot(final RouteSnapshot existingRoute, final RouteSnapshot newRoute)
+    {
+        final RouteController routeController = routeControllers.remove(existingRoute.getId());
+        if (routeController != null)
+        {
+            routeController.updateRoute(newRoute);
+            routeControllers.put(newRoute.getId(), routeController);
+            routeManagerEventAdminServiceStrategy.postEvent(UPDATE_EXTERNAL_ROUTE_EVENT, newRoute);
+        }
+        else
+        {
+            logger.warn("Did not find route controller for port {} on update event.", existingRoute.getPort());
+        }
+    }
+
+    private void handleTransportStreamDeletedEvent(final TransportStreamSnapshot transportStreamSnapshot)
+    {
+        synchronized (lock)
+        {
+            for (final RouteSnapshot route : getRoutes())
+            {
+                boolean isChanged = false;
+                RouteSnapshot newRoute = null;
+
+                if (route.getRouteType() == RouteType.TRANSPORT_STREAM)
+                {
+                    if (route.getTransportStreamIds().contains(transportStreamSnapshot.getId()))
+                    {
+                        newRoute = deleteTransportStreamIdFromRoute(route, transportStreamSnapshot.getId());
+                        isChanged = true;
+                    }
+                }
+
+                if (isChanged)
+                {
+                    if (newRoute == null)
+                    {
+                        removeRoute(route);
+                    }
+                    else
+                    {
+                        propagateUpdateRouteSnapshot(route, newRoute);
+                    }
+                }
+            }
+        }
+    }
+
+    private RouteSnapshot deleteTransportStreamIdFromRoute(final RouteSnapshot route, final Integer transportStreamId)
+    {
+        if (route.getRouteType().equals(RouteType.TRANSPORT_STREAM))
+        {
+            final Set<Integer> transportStreamIds = Sets.newHashSet(route.getTransportStreamIds());
+            transportStreamIds.remove(transportStreamId);
+            if (transportStreamIds.isEmpty())
+            {
+                return null;
+            }
+
+            return SnapshotUtility.createTransportStreamRouteSnapshot(route.getTransportProtocolType(), route.getRouteDataType(), route.getId(), route.getPort(), transportStreamIds, null);
+        }
+
+        return null;
+    }
+
+    private Collection<RouteSnapshot> getRoutes()
+    {
+        final Collection<RouteSnapshot> routes = Lists.newArrayList(Iterables.transform(routeControllers.values(), new Function<RouteController, RouteSnapshot>()
+        {
+            @Override
+            public RouteSnapshot apply(final RouteController from)
+            {
+                return from.getRouteSnapshot();
+            }
+        }));
+        return routes;
+    }
+
+    public Iterable<RouteSnapshot> getTcpRoutes()
+    {
+        final Set<RouteSnapshot> tcpRoutes = Sets.newHashSet();
+        for (final RouteController routeController : routeControllers.values())
+        {
+            final RouteSnapshot route = routeController.getRouteSnapshot();
+            if (route.getTransportProtocolType() == TransportProtocolType.TCP)
+            {
+                tcpRoutes.add(route);
+            }
+        }
+        return tcpRoutes;
+    }
+}

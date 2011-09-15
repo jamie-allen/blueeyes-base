@@ -1,0 +1,231 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dssrm.core;
+
+import java.util.Collections;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
+import com.ccadllc.firebird.dss.common.datatypes.RouteDataType;
+import com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStream;
+
+import net.jcip.annotations.Immutable;
+
+import org.apache.commons.lang.builder.EqualsBuilder;
+import org.apache.commons.lang.builder.HashCodeBuilder;
+import org.apache.commons.lang.builder.ToStringBuilder;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Sets;
+
+@Immutable
+public final class RouteDescription
+{
+    private final UUID streamId;
+    private final UUID id;
+    private final int port;
+    private final Multimap<Integer, Long> pidMappings;
+    private final Set<Long> streamIds;
+    private final TransportProtocolType transportProtocolType;
+    private final RouteDataType routeDataType;
+    private final ImmutableMap<String, String> properties;
+
+    private RouteDescription(final Builder builder)
+    {
+        Preconditions.checkNotNull(builder.streamId, "streamId");
+        streamId = builder.streamId;
+
+        if (builder.id == null)
+        {
+            id = UUID.randomUUID();
+        }
+        else
+        {
+            id = builder.id;
+        }
+
+        port = builder.port;
+        Preconditions.checkNotNull(builder.transportProtocolType, "transportProtocolType");
+        transportProtocolType = builder.transportProtocolType;
+        Preconditions.checkNotNull(builder.routeDataType, "routeDataType");
+        routeDataType = builder.routeDataType;
+        if (routeDataType == RouteDataType.MPEG_PACKETS)
+        {
+            Preconditions.checkNotNull(builder.pidMappings, "pidMappings");
+            pidMappings = builder.pidMappings;
+            streamIds = null;
+        }
+        else
+        {
+            Preconditions.checkNotNull(builder.streamIds, "streamIds");
+            pidMappings = null;
+            streamIds = builder.streamIds;
+        }
+
+        properties = ImmutableMap.copyOf(builder.properties);
+    }
+
+    public UUID getStreamId()
+    {
+        return streamId;
+    }
+
+    public UUID getId()
+    {
+        return id;
+    }
+
+    public int getPort()
+    {
+        return port;
+    }
+
+    public Multimap<Integer, Long> getPidMappings()
+    {
+        return pidMappings;
+    }
+
+    public Set<Long> getStreamIds()
+    {
+        return streamIds;
+    }
+
+    public TransportProtocolType getTransportProtocolType()
+    {
+        return transportProtocolType;
+    }
+
+    public RouteDataType getRouteDataType()
+    {
+        return routeDataType;
+    }
+
+    public ImmutableMap<String, String> getProperties()
+    {
+        return properties;
+    }
+
+    @Override
+    public int hashCode()
+    {
+        return HashCodeBuilder.reflectionHashCode(this);
+    }
+
+    @Override
+    public boolean equals(final Object obj)
+    {
+        return EqualsBuilder.reflectionEquals(this, obj);
+    }
+
+    @Override
+    public String toString()
+    {
+        return ToStringBuilder.reflectionToString(this);
+    }
+
+    public Builder toBuilder()
+    {
+        return new Builder()
+            .streamId(streamId)
+            .id(id)
+            .port(port)
+            .pidMappings(pidMappings)
+            .streamIds(streamIds)
+            .transportProtocolType(transportProtocolType)
+            .routeDataType(routeDataType)
+            .properties(Maps.newHashMap(properties));
+    }
+
+    public static class Builder
+    {
+        private UUID streamId;
+        private UUID id;
+        private int port;
+        private Multimap<Integer, Long> pidMappings;
+        private Set<Long> streamIds;
+        private TransportProtocolType transportProtocolType;
+        private RouteDataType routeDataType;
+        private Map<String, String> properties = Maps.newHashMap();
+
+        public Builder streamId(final UUID streamId)
+        {
+            this.streamId = streamId;
+            return this;
+        }
+
+        public Builder stream(final ElementaryStream stream)
+        {
+            streamId = stream.getId();
+            return this;
+        }
+
+        public Builder id(final UUID id)
+        {
+            this.id = id;
+            return this;
+        }
+
+        public Builder port(final int port)
+        {
+            this.port = port;
+            return this;
+        }
+
+        public Builder pidMappings(final Multimap<Integer, Long> pidMappings)
+        {
+            this.pidMappings = pidMappings == null ?HashMultimap.<Integer, Long>create() : HashMultimap.<Integer, Long>create(pidMappings);
+            return this;
+        }
+
+        public Builder streamIds(final Set<Long> streamIds)
+        {
+            this.streamIds = streamIds == null ?
+                Collections.<Long>emptySet() : Sets.newHashSet(streamIds);
+            return this;
+        }
+
+        public Builder transportProtocolType(final TransportProtocolType transportProtocolType)
+        {
+            this.transportProtocolType = transportProtocolType;
+            return this;
+        }
+
+        public Builder routeDataType(final RouteDataType routeDataType)
+        {
+            this.routeDataType = routeDataType;
+            return this;
+        }
+
+        public Builder addProperty(final String key, final String value)
+        {
+            properties.put(key, value);
+            return this;
+        }
+
+        public Builder addProperties(final Map<String, String> properties)
+        {
+            if (properties != null)
+            {
+                this.properties.putAll(properties);
+            }
+
+            return this;
+        }
+
+        public Builder properties(final Map<String, String> properties)
+        {
+            this.properties = properties;
+            return this;
+        }
+
+        public RouteDescription build()
+        {
+            return new RouteDescription(this);
+        }
+    }
+}

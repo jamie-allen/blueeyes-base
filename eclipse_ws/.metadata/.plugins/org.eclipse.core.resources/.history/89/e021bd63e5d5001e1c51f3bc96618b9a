@@ -1,0 +1,163 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.stream.manager.impl;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+
+import java.util.Arrays;
+import java.util.List;
+
+import com.ccadllc.firebird.vms.common.packetfiltering.AbstractPacketFilter;
+
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+import com.google.common.collect.Lists;
+
+/** Tests <code>DsgBtPacketizer</code>. */
+@Test
+public class DsgBtPacketizerTest
+{
+    private static final int DEFAULT_MTU_SIZE = 1500;
+    private static final int IP_HEADER_SIZE = 20;
+    private static final int UDP_HEADER_SIZE = 8;
+    private static final int BT_HEADER_SIZE = 4;
+    private static final int MAX_DSG_BT_SEGMENT_SIZE = DEFAULT_MTU_SIZE - IP_HEADER_SIZE - UDP_HEADER_SIZE - BT_HEADER_SIZE;
+
+    private static class PacketRecordingPacketFilter extends AbstractPacketFilter
+    {
+        private final List<byte[]> packets = Lists.newArrayList();
+
+        @Override
+        public boolean insert(final byte[] packet)
+        {
+            packets.add(packet);
+            return true;
+        }
+
+        public List<byte[]> getPacktets()
+        {
+            return packets;
+        }
+    }
+
+    private PacketRecordingPacketFilter packetRecorder;
+    private DsgBtPacketizer dsgBtPacketizer;
+
+    @BeforeMethod
+    public void setUp()
+    {
+        packetRecorder = new PacketRecordingPacketFilter();
+        dsgBtPacketizer = new DsgBtPacketizer(packetRecorder, DEFAULT_MTU_SIZE);
+    }
+
+    public void testSingleSegment()
+    {
+        final byte[] dsgSection = new byte[MAX_DSG_BT_SEGMENT_SIZE];
+        Arrays.fill(dsgSection, (byte)0xC0);
+        dsgBtPacketizer.insert(dsgSection);
+        final List<byte[]> segments = packetRecorder.getPacktets();
+        assertThat(segments.size(), is(1));
+        assertThat(segments.get(0)[1], is((byte)0x10));
+    }
+
+    public void testTwoSegments()
+    {
+        final byte[] dsgSection = new byte[MAX_DSG_BT_SEGMENT_SIZE + 1];
+        Arrays.fill(dsgSection, (byte)0xC0);
+        dsgBtPacketizer.insert(dsgSection);
+        final List<byte[]> segments = packetRecorder.getPacktets();
+        assertThat(segments.size(), is(2));
+        assertThat(segments.get(1)[1], is((byte)0x11));
+        assertThat(segments.get(1).length, is(5));
+    }
+
+    public void testSixteenSegments()
+    {
+        final byte[] dsgSection = new byte[(MAX_DSG_BT_SEGMENT_SIZE * 15) + 5];
+        Arrays.fill(dsgSection, (byte)0xC0);
+        dsgBtPacketizer.insert(dsgSection);
+        final List<byte[]> segments = packetRecorder.getPacktets();
+        assertThat(segments.size(), is(16));
+        assertThat(segments.get(15)[1], is((byte)0x1F));
+    }
+
+    public void testSeventeenSegments()
+    {
+        final byte[] dsgSection = new byte[(MAX_DSG_BT_SEGMENT_SIZE * 16) + 5];
+        Arrays.fill(dsgSection, (byte)0xC0);
+        dsgBtPacketizer.insert(dsgSection);
+        final List<byte[]> segments = packetRecorder.getPacktets();
+        assertThat(segments.size(), is(17));
+        assertThat(segments.get(16)[1], is((byte)0x10));
+        assertThat(segments.get(16).length, is(9));
+    }
+
+    public void testTwoSections()
+    {
+        final byte[] dsgSection = new byte[MAX_DSG_BT_SEGMENT_SIZE];
+        Arrays.fill(dsgSection, (byte)0xC0);
+        dsgBtPacketizer.insert(dsgSection);
+        Arrays.fill(dsgSection, (byte)0xC1);
+        dsgBtPacketizer.insert(dsgSection);
+        final List<byte[]> segments = packetRecorder.getPacktets();
+        assertThat(segments.size(), is(2));
+        assertThat(segments.get(0)[1], is((byte)0x10));
+        assertThat(segments.get(0)[3], is((byte)0x00));
+        assertThat(segments.get(0)[4], is((byte)0xC0));
+        assertThat(segments.get(1)[1], is((byte)0x10));
+        assertThat(segments.get(1)[3], is((byte)0x01));
+        assertThat(segments.get(1)[4], is((byte)0xC1));
+    }
+
+    public void testTwoSectionsWithTwoSegmentsEach()
+    {
+        final byte[] dsgSection = new byte[MAX_DSG_BT_SEGMENT_SIZE * 2];
+        Arrays.fill(dsgSection, (byte)0xC0);
+        dsgBtPacketizer.insert(dsgSection);
+        Arrays.fill(dsgSection, (byte)0xC1);
+        dsgBtPacketizer.insert(dsgSection);
+        final List<byte[]> segments = packetRecorder.getPacktets();
+        assertThat(segments.size(), is(4));
+        assertThat(segments.get(1)[1], is((byte)0x11));
+        assertThat(segments.get(1)[3], is((byte)0x00));
+        assertThat(segments.get(1)[4], is((byte)0xC0));
+        assertThat(segments.get(2)[1], is((byte)0x00));
+        assertThat(segments.get(2)[3], is((byte)0x01));
+        assertThat(segments.get(2)[4], is((byte)0xC1));
+    }
+
+    public void testMaxSectionIdNumber()
+    {
+        final byte[] dsgSection = new byte[MAX_DSG_BT_SEGMENT_SIZE];
+        Arrays.fill(dsgSection, (byte)0xC0);
+        for (int i = 0; i < 32768; i++)
+        {
+            dsgBtPacketizer.insert(dsgSection);
+        }
+
+        final List<byte[]> segments = packetRecorder.getPacktets();
+        assertThat(segments.size(), is(32768));
+        assertThat(segments.get(0)[1], is((byte)0x10));
+        assertThat(segments.get(0)[3], is((byte)0x00));
+        assertThat(segments.get(32767)[1], is((byte)0x10));
+        assertThat(segments.get(32767)[3], is((byte)0xFF));
+    }
+
+    public void testBigSectionIdNumber()
+    {
+        final byte[] dsgSection = new byte[MAX_DSG_BT_SEGMENT_SIZE];
+        Arrays.fill(dsgSection, (byte)0xC0);
+        for (int i = 0; i < 32769; i++)
+        {
+            dsgBtPacketizer.insert(dsgSection);
+        }
+
+        final List<byte[]> segments = packetRecorder.getPacktets();
+        assertThat(segments.size(), is(32769));
+        assertThat(segments.get(0)[1], is((byte)0x10));
+        assertThat(segments.get(0)[3], is((byte)0x00));
+        assertThat(segments.get(32768)[1], is((byte)0x10));
+        assertThat(segments.get(32768)[3], is((byte)0x00));
+    }
+}

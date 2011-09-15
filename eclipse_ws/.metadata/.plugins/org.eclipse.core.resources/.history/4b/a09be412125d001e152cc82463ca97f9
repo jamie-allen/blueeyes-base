@@ -1,0 +1,7 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.management;
+
+
+public interface JmxRouteNotificationManagerMXBean
+{
+}

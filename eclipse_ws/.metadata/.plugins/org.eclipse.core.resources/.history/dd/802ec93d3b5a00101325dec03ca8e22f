@@ -1,0 +1,183 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.topology.stream.changeset;
+
+import static com.ccadllc.commons.util.MoreFunctions.extractName;
+
+import java.util.Map;
+import java.util.UUID;
+
+import com.ccadllc.commons.util.Option;
+import com.ccadllc.firebird.vms.common.units.TrafficShapingProfile;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.ServingLocationQName;
+import com.ccadllc.firebird.vms.topology.core.TopologyModel;
+import com.ccadllc.firebird.vms.topology.core.change.Change;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutablePacketizedElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableTopologyModel;
+import com.ccadllc.firebird.vms.topology.spi.ChangeAgent;
+
+import net.jcip.annotations.Immutable;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+
+/**
+ * Executes the ModifyStream change command.
+ * <p>
+ * Required properties are:
+ * <ul>
+ * <li>id: the integer id of the stream to modify</li>
+ * </ul>
+ * </p>
+ * <p>
+ * Optional properties are:
+ * <ul>
+ * <li>name: a unique String describing this stream</li>
+ * <li>pid: an integer</li>
+ * <li>servingLocation: location this stream is <em>intended</em> to transmit to</li>
+ * <li>properties: a map of String properties</li>
+ * </ul>
+ * </p>
+ * <p>
+ * Any property that is not part of the <b>Required</b> properties or <b>Optional</b> properties will be added to the
+ *
+ * <pre>
+ * properties
+ * </pre>
+ *
+ * map that is part of the {@link com.ccadllc.firebird.vms.topology.core.ElementaryStream} interface. Each of these properties will
+ * either be added to the map of existing properties or overwrite an existing property. If no additional properties (other than the
+ * required/optional ones) are found then the original map of properties will still be associated with the elementary stream.
+ *
+ * @see {@link com.ccadllc.firebird.vms.topology.core.ElementaryStream#getProperties()}
+ */
+@Immutable
+public class ModifyElementaryStreamChangeAgent implements ChangeAgent
+{
+    private static final String ID_PROPERTY = "id";
+    private static final String STREAM_NAME_PROPERTY = "name";
+    private static final String PID_PROPERTY = "pid";
+    private static final String LOCATION_PROPERTY = "servingLocation";
+    private static final String AVERAGE_BYTES_PER_SECOND = "trafficShapingAverageBytesPerSecond";
+    private static final String BURST_LIMIT_IN_BYTES = "trafficShapingBurstLimitInBytes";
+    private static final String MAX_LATENCY_IN_SECONDS = "trafficShapingMaxLatencyInSeconds";
+
+    private final Logger logger = LoggerFactory.getLogger(getClass());
+
+    @Override
+    public void humanize(final TopologyModel model, final Change change)
+    {
+        final Map<String, String> humanizedParameters = change.getHumanizedParameters();
+
+        if (!humanizedParameters.containsKey(Change.HUMANIZED_CHANGE_DESCRIPTION_PARAMETER))
+        {
+            final UUID id = UUID.fromString(change.getParameters().get(ID_PROPERTY));
+            final Option<ElementaryStream> stream = model.getElementById(id).narrow(ElementaryStream.class);
+
+            final String changeDescription = String.format("Edit elementary stream %s modifying properties: %s",
+                stream.map(extractName()).getOrElse(""), buildModifiedPropertiesDescription(humanizedParameters));
+
+            humanizedParameters.put(Change.HUMANIZED_CHANGE_DESCRIPTION_PARAMETER, changeDescription);
+        }
+    }
+
+    private String buildModifiedPropertiesDescription(final Map<String, String> parameters)
+    {
+        final StringBuilder propertiesDescription = new StringBuilder();
+
+        for (final String key : parameters.keySet())
+        {
+            if (!key.startsWith(ID_PROPERTY))
+            {
+                if (propertiesDescription.length() > 0)
+                {
+                    propertiesDescription.append(", ");
+                }
+                propertiesDescription.append(String.format("%s=%s", key, parameters.get(key)));
+            }
+        }
+        return propertiesDescription.toString();
+    }
+
+    @Override
+    public void execute(final MutableTopologyModel model, final Map<String, String> properties)
+    {
+        final UUID id = UUID.fromString(properties.remove(ID_PROPERTY));
+
+        final Option<ElementaryStream> stream = model.getElementById(id).narrow(ElementaryStream.class);
+        if (stream.isEmpty())
+        {
+            throw new IllegalArgumentException("Cannot modify stream because it no longer exists.");
+        }
+
+        final MutableElementaryStream mutableStream = model.checkout(stream.get());
+
+        modifyStream(mutableStream, model, properties);
+        applyProperties(mutableStream, properties);
+    }
+
+    private void modifyStream(final MutableElementaryStream stream, final MutableTopologyModel model,
+        final Map<String, String> properties)
+    {
+        logger.warn("######## MODIFYING A STREAM!");
+        if (properties.containsKey(STREAM_NAME_PROPERTY))
+        {
+            final String name = properties.remove(STREAM_NAME_PROPERTY);
+            stream.setName(name);
+        }
+
+        if (properties.containsKey(PID_PROPERTY))
+        {
+            logger.warn("######## Got a PID property...");
+            if (stream instanceof MutablePacketizedElementaryStream)
+            {
+                logger.warn("######## Got a MutablePacketizedElementaryStream...");
+                final String sPidValue = properties.remove(PID_PROPERTY);
+                logger.info("######## String PID value: {}", sPidValue);
+                final Integer nPidValue = Integer.parseInt(sPidValue);
+                logger.info("######## Numeric PID value: {}", nPidValue);
+                ((MutablePacketizedElementaryStream)stream).setPid(nPidValue);
+            }
+            else
+            {
+                logger.warn("######## Wrong stream  type");
+                throw new IllegalArgumentException("Cannot specify a PID for non-packetized stream.");
+            }
+        }
+
+        updateLocation(stream, properties);
+        updateTrafficShapingProfile(stream, properties);
+    }
+
+    private void updateLocation(final MutableElementaryStream stream, final Map<String, String> properties)
+    {
+        if (properties.containsKey(LOCATION_PROPERTY))
+        {
+            stream.setLocation(ServingLocationQName.of(properties.remove(LOCATION_PROPERTY)));
+        }
+    }
+
+    private void updateTrafficShapingProfile(final MutableElementaryStream stream, final Map<String, String> properties)
+    {
+        if (properties.containsKey(AVERAGE_BYTES_PER_SECOND)
+            && properties.containsKey(BURST_LIMIT_IN_BYTES)
+            && properties.containsKey(MAX_LATENCY_IN_SECONDS))
+        {
+            final int averageBytesPerSecond = Integer.parseInt(properties.remove(AVERAGE_BYTES_PER_SECOND));
+            final int burstLimitInBytes = Integer.parseInt(properties.remove(BURST_LIMIT_IN_BYTES));
+            final int maxLatencyInSeconds = Integer.parseInt(properties.remove(MAX_LATENCY_IN_SECONDS));
+            stream.setTrafficShapingProfile(new TrafficShapingProfile(averageBytesPerSecond, burstLimitInBytes, maxLatencyInSeconds));
+        }
+    }
+
+    private void applyProperties(final MutableElementaryStream stream, final Map<String, String> properties)
+    {
+        for (final Map.Entry<String, String> prop : properties.entrySet())
+        {
+            stream.addProperty(prop.getKey(), prop.getValue());
+        }
+    }
+
+}

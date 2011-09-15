@@ -1,0 +1,230 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.topology.simpledevices.test;
+
+import java.util.Map;
+import java.util.UUID;
+
+import javax.persistence.CascadeType;
+import javax.persistence.Entity;
+import javax.persistence.FetchType;
+import javax.persistence.Id;
+import javax.persistence.OneToOne;
+import javax.persistence.Table;
+
+import com.ccadllc.firebird.core.base.common.UnresolvedInetAddress;
+import com.ccadllc.firebird.vms.topology.core.Device;
+import com.ccadllc.firebird.vms.topology.core.DeviceInput;
+import com.ccadllc.firebird.vms.topology.core.DeviceOutput;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStreamTransmissionDescriptor;
+import com.ccadllc.firebird.vms.topology.core.EthernetPort;
+import com.ccadllc.firebird.vms.topology.core.EthernetPortDescription;
+import com.ccadllc.firebird.vms.topology.core.Modulator;
+import com.ccadllc.firebird.vms.topology.core.ModulatorDescription;
+import com.ccadllc.firebird.vms.topology.core.PidRoute;
+import com.ccadllc.firebird.vms.topology.core.PidRouteBasedElementaryStreamInserter;
+import com.ccadllc.firebird.vms.topology.core.PidRouteDescription;
+import com.ccadllc.firebird.vms.topology.core.ServingLocationQName;
+import com.ccadllc.firebird.vms.topology.core.UpconverterDescription;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableDevice;
+import com.ccadllc.firebird.vms.topology.simpledevices.SedEthernetPort;
+import com.ccadllc.firebird.vms.topology.simpledevices.SedModulator;
+import com.ccadllc.firebird.vms.topology.simpledevices.SimpleEdgeDevice;
+
+import org.hibernate.annotations.Cascade;
+import org.hibernate.annotations.Type;
+import org.springframework.beans.factory.annotation.Configurable;
+
+/**
+ * SED parent device for testing purposes; similar to a SEM or APEX.
+ */
+@Configurable
+@Entity
+@Table(name = "parent_device")
+public class ParentDevice implements PidRouteBasedElementaryStreamInserter, MutableDevice
+{
+    @Id
+    @Type(type = "com.ccadllc.firebird.core.database.persistence.UUIDUserType")
+    private final UUID id;
+
+    @OneToOne(cascade = CascadeType.ALL, fetch=FetchType.EAGER)
+    @Cascade(value = org.hibernate.annotations.CascadeType.DELETE_ORPHAN)
+    private SimpleEdgeDevice sed;
+
+    @SuppressWarnings("unused")
+    private ParentDevice()
+    {
+        id = null;
+    }
+
+    private ParentDevice(final UUID id, final SimpleEdgeDevice sed)
+    {
+        this.id = id;
+        this.sed = sed;
+    }
+
+    public ParentDevice(final String name)
+    {
+        id = UUID.randomUUID();
+        sed = SimpleEdgeDevice.builder(name, getType()).build();
+    }
+
+    @Override
+    public void setLocation(final ServingLocationQName location)
+    {
+        sed.setLocation(location);
+    }
+
+    @Override
+    public Iterable<ElementaryStreamTransmissionDescriptor> describeInput(final ElementaryStream stream)
+    {
+        return sed.describeInput(stream);
+    }
+
+    @Override
+    public Iterable<ElementaryStreamTransmissionDescriptor> describeOutput(final ElementaryStreamTransmissionDescriptor inputDescriptor)
+    {
+        return sed.describeOutput(inputDescriptor);
+    }
+
+    @Override
+    public Device copyOf()
+    {
+        return new ParentDevice(id, sed.copyOf());
+    }
+
+    @Override
+    public UUID getId()
+    {
+        return id;
+    }
+
+    @Override
+    public ServingLocationQName getLocation()
+    {
+        return sed.getLocation();
+    }
+
+    @Override
+    public String getName()
+    {
+        return sed.getName();
+    }
+
+    @Override
+    public Map<String, String> getProperties()
+    {
+        return sed.getProperties();
+    }
+
+    @Override
+    public String getType()
+    {
+        return getClass().getName();
+    }
+
+    @Override
+    public Iterable<? extends EthernetPort> getEthernetPorts()
+    {
+        return sed.getEthernetPorts();
+    }
+
+    @Override
+    public Iterable<? extends Modulator> getModulators()
+    {
+        return sed.getModulators();
+    }
+
+    @Override
+    public Iterable<? extends PidRoute> getPidRoutes()
+    {
+        return sed.getPidRoutes();
+    }
+
+    @Override
+    public Iterable<DeviceInput> getInputs()
+    {
+        return sed.getInputs();
+    }
+
+    @Override
+    public Iterable<DeviceOutput> getOutputs()
+    {
+        return sed.getOutputs();
+    }
+
+    public UUID addPidRoute(final PidRouteDescription pidRoute)
+    {
+        return sed.addPidRoute(pidRoute);
+    }
+
+    public void removePidRoute(final UUID pidRouteId)
+    {
+        sed.removePidRoute(pidRouteId);
+    }
+
+    public void addProperty(final String key, final String value)
+    {
+        sed.addProperty(key, value);
+    }
+
+    public void removeProperty(final String key)
+    {
+        sed.removeProperty(key);
+    }
+
+    public UUID addEthernetPort(final EthernetPortDescription ethernetPortDescription)
+    {
+        return sed.addEthernetPort(ethernetPortDescription);
+    }
+
+    public void addEthernetPort(final SedEthernetPort ethernetPort)
+    {
+        sed.addEthernetPort(ethernetPort);
+    }
+
+    public UUID addListenerToMulticastAddressOnEthernetPort(final int udpPort, final UUID ethernetPortId, final UnresolvedInetAddress multicastAddress)
+    {
+        return sed.addListenerToMulticastAddressOnEthernetPort(udpPort, ethernetPortId, multicastAddress);
+    }
+
+    public UUID addListenerToUnicastAddressOnEthernetPort(final int udpPort, final UUID ethernetPortId)
+    {
+        return sed.addListenerToUnicastAddressOnEthernetPort(udpPort, ethernetPortId);
+    }
+
+    public void addMulticastAddressToEthernetPort(final UnresolvedInetAddress multicastAddress, final UUID ethernetPortId)
+    {
+        sed.addMulticastAddressToEthernetPort(multicastAddress, ethernetPortId);
+    }
+
+    public void removeEthernetPort(final UUID ethernetPortId)
+    {
+        sed.removeEthernetPort(ethernetPortId);
+    }
+
+    public UUID addModulator(final ModulatorDescription modulatorDescription)
+    {
+        return sed.addModulator(modulatorDescription);
+    }
+
+    public void addModulator(final SedModulator modulator)
+    {
+        sed.addModulator(modulator);
+    }
+
+    public UUID addUpconverterToModulator(final UpconverterDescription upconverterDescription, final UUID modulatorId)
+    {
+        return sed.addUpconverterToModulator(upconverterDescription, modulatorId);
+    }
+
+    public void removeModulator(final UUID modulatorId)
+    {
+        sed.removeModulator(modulatorId);
+    }
+
+    public void removeUpconverter(final UUID upconverterId)
+    {
+        sed.removeUpconverter(upconverterId);
+    }
+}

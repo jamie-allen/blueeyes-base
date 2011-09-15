@@ -1,0 +1,112 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.commons.util;
+
+import java.util.Collection;
+import java.util.Collections;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Iterables;
+
+/**
+ * Generates integer values from a valid range of values, while ignoring reserved ranges of values.
+ *
+ * <p>Once an integer has been generated, it will marked as unavailable.  It can later be
+ * marked available for use.</p>
+ */
+public class IntegerGeneratorStrategy
+{
+    private final int validBegin;
+    private final int validEnd;
+
+    public IntegerGeneratorStrategy(final int validBegin, final int validEnd)
+    {
+        Preconditions.checkArgument(validEnd > validBegin, "The valid end range value of integers to generate from be larger than the begin value.");
+        this.validBegin = validBegin;
+        this.validEnd = validEnd;
+    }
+
+    /**
+     * Provides the next available integer within the valid range, excluding values from the reserved ranges.
+     *
+     *  <p>Once a value returned by this method, it will become unavailable for reuse until
+     *  {@code IntegerGeneratorStrategy#makeAvailable(int)} is called on it.</p>
+     *
+     * @param inUseIntegers integers already in use
+     * @return next available integer
+     * @throws IllegalStateException when no integers are available to be returned
+     */
+    public int nextAvailable(final Collection<Integer> inUseIntegers, final Collection<IntegerRange> reservedRanges)
+    {
+        for (int i = validBegin; i < validEnd; i++)
+        {
+            if (!inAnyRanges(i, reservedRanges) && !Iterables.contains(inUseIntegers, i))
+            {
+                Collections.addAll(inUseIntegers, i);
+                return i;
+            }
+        }
+        throw new IllegalStateException("There is no available integer at this time.");
+    }
+
+    private boolean inAnyRanges(final int numberToCheck, final Collection<IntegerRange> reservedRanges)
+    {
+        for (final DefaultIntegerRange integerRange : reservedRanges)
+        {
+            if (integerRange.inRange(numberToCheck))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Makes a specified integer value available for use.
+     *
+     * <p>Values within reserved ranges are ignored.</p>
+     *
+     * @param integerToMakeAvailable value to make available
+     * @param inUseIntegers integers already in use
+     */
+    public void makeAvailable(final int integerToMakeAvailable, final Collection<Integer> inUseIntegers)
+    {
+        inUseIntegers.remove(integerToMakeAvailable);
+    }
+
+    public void makeUnavailable(final int integerToMakeUnavailable, final Collection<Integer> inUseIntegers)
+    {
+        inUseIntegers.add(integerToMakeUnavailable);
+    }
+
+    /**
+     * Checks the integer to see if it can be used based.
+     *
+     * <p>
+     * The criteria to check availability is:
+     *
+     * <ol>
+     *  <li>If the integer is in the valid range.</li>
+     *  <li>If the integer is in not use.</li>
+     * </ol>
+     * </p>
+     *
+     * @param integerToCheck integer to check
+     * @param inUseIntegers integers already in use
+     * @return if meets the above criteria
+     */
+    public boolean checkAvailable(final int integerToCheck, final Collection<Integer> inUseIntegers)
+    {
+        return (integerToCheck >= validBegin && integerToCheck <= validEnd) && !inUseIntegers.contains(integerToCheck);
+    }
+
+    /**
+     * @param integerToCheck integer to check
+     * @param inUseIntegers integers already in use
+     * @return true if the value is in use
+     */
+    public boolean checkInUse(final int integerToCheck, final Collection<Integer> inUseIntegers)
+    {
+        return inUseIntegers.contains(integerToCheck);
+    }
+
+}

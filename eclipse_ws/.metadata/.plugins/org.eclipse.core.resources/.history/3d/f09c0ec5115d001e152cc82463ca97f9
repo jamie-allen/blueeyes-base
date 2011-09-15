@@ -1,0 +1,274 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter;
+
+import java.util.Arrays;
+
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteNotificationHelper;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.management.JmxRouteNotificationManager;
+import com.ccadllc.firebird.vms.common.packetfiltering.ForwardingPacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilter;
+
+import net.jcip.annotations.ThreadSafe;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Transforms Mpeg2 packet data into a simple data block by removing the Mpeg2 header and
+ * combining related Mpeg2 packet payloads into a single block. It caches Mpeg2 payload data
+ * if the block spans multiple Mpeg2 packets.
+ */
+@ThreadSafe
+public class Mpeg2BlockTransformer extends ForwardingPacketFilter
+{
+    private static final int MASK_LOW_8_BITS = 0xFF;
+    private static final int MASK_LOW_4_BITS = 0xF;
+    private static final int NUMBER_BITS_IN_BYTE = 8;
+    private static final byte MPEG_PACKET_START_BIT_MASK = (byte)0x40;
+    private static final byte PADDING_BYTE = (byte)0xFF;
+    private static final int HEADER_SIZE = 4;
+    private static final int POINTER_FIELD_BYTE_INDEX = 4;
+    private static final int POINTER_FIELD_SIZE = 1;
+    private static final int MPEG2_PACKET_SIZE = 188;
+    private static final int BLOCK_DESCRIPTOR_SIZE = 3;
+
+    private final Logger logger = LoggerFactory.getLogger(Mpeg2BlockTransformer.class);
+    private int sizeOfRemainingDataToCompleteTheCurrentBlock;
+    private boolean currentlyBufferingDataForABlock;
+    private boolean firstThreeBytesOfBlockIsIncomplete;
+    private int numberOfBytesCurrentlyInBlockDescriptor;
+    private int numberOfBytesCurrentlyInBlockData;
+    private int currentIndexIntoPacket;
+    private final byte[] blockDescriptor = new byte[BLOCK_DESCRIPTOR_SIZE];
+    private byte[] blockData;
+
+    private final RouteNotificationHelper routeNotificationHelper;
+    private volatile boolean rejecting;
+
+    /** Lock used when inserting data blocks. */
+    private final Object lock = new Object();
+
+    public Mpeg2BlockTransformer(final PacketFilter sink, final JmxRouteNotificationManager jmxRouteNotificationManager,
+        final String notificationsPrefixString)
+    {
+        super(sink);
+
+        routeNotificationHelper = new RouteNotificationHelper(jmxRouteNotificationManager,
+            notificationsPrefixString);
+    }
+
+    @Override
+    public boolean insert(final byte[] packet)
+    {
+        synchronized (lock)
+        {
+            try
+            {
+                logger.debug("Received packet.");
+                processDataBlockSpannedFromPreviousMpeg2Packet(packet);
+                processNewBlocksInTheMpeg2Packet(packet);
+            }
+            catch (final IllegalArgumentException e)
+            {
+                logger.debug("Invalid packet data received. " + e.getMessage() + " Packet: {}", packet);
+                sendNotification(true);
+                return false;
+            }
+            return true;
+        }
+    }
+
+    private boolean sendNotification(final boolean nowRejecting)
+    {
+        if (routeNotificationHelper.isRejectingStatusChanged(rejecting, nowRejecting))
+        {
+            routeNotificationHelper.sendRejectPacketNotification(createRejectingString(nowRejecting),
+                "Mpeg2BlockTransformerRejectingPackets", nowRejecting);
+        }
+        rejecting = nowRejecting;
+        return rejecting;
+    }
+
+    private String createRejectingString(final boolean rejecting)
+    {
+        return String.format("Mpeg2BlockTransformer %s rejecting packets", (rejecting ? "is" : "is not"));
+    }
+
+    /**
+     * @throws IllegalArgumentException if invalid packet detected
+     */
+    private void processDataBlockSpannedFromPreviousMpeg2Packet(final byte[] packet)
+    {
+        calculateStartingIndexIntoPacket(packet);
+        if (currentlyBufferingDataForABlock)
+        {
+            if (firstThreeBytesOfBlockIsIncomplete)
+            {
+                // Get the remaining descriptor bytes
+                copyPacketDataToBlockDescriptor(packet, currentIndexIntoPacket, BLOCK_DESCRIPTOR_SIZE - numberOfBytesCurrentlyInBlockDescriptor);
+                firstThreeBytesOfBlockIsIncomplete = false;
+                allocateBlockData();
+            }
+
+            if (sizeOfRemainingDataToCompleteTheCurrentBlock <= (MPEG2_PACKET_SIZE - currentIndexIntoPacket))
+            {
+                copyPacketDataToBlockData(packet, currentIndexIntoPacket, sizeOfRemainingDataToCompleteTheCurrentBlock);
+                sendBlockData();
+            }
+            else
+            {
+                if (isAnyDataBlockStartedInThisPacket(packet))
+                {
+                    cleanUpCachingVariables();
+                    throw new IllegalArgumentException("Data block in this spanned packet fills the entire packet, but the start bit is set.");
+                }
+
+                // Copy remainder of packet payload to data block, and return.
+                copyPacketDataToBlockData(packet, currentIndexIntoPacket, MPEG2_PACKET_SIZE - currentIndexIntoPacket);
+            }
+        }
+    }
+
+    /**
+     * @throws IllegalArgumentException if invalid packet detected
+     */
+    private void processNewBlocksInTheMpeg2Packet(final byte[] packet)
+    {
+        if (!isAnyDataBlockStartedInThisPacket(packet))
+        {
+            return;
+        }
+
+        calculateStartingIndexFromOffset(packet);
+        if (packet[currentIndexIntoPacket] == PADDING_BYTE)
+        {
+            cleanUpCachingVariables();
+            throw new IllegalArgumentException(String.format("Packet start bit says block starts in this packet, but none was found."));
+        }
+
+        while (currentIndexIntoPacket < MPEG2_PACKET_SIZE)
+        {
+            if (packet[currentIndexIntoPacket] == PADDING_BYTE)
+            {
+                // No more blocks in this packet.
+                cleanUpCachingVariables();
+                return;
+            }
+
+            if (!isBlockDescriptorCompleteInPacket())
+            {
+                copyPacketDataToBlockDescriptor(packet, currentIndexIntoPacket, MPEG2_PACKET_SIZE - currentIndexIntoPacket);
+                firstThreeBytesOfBlockIsIncomplete = true;
+                currentlyBufferingDataForABlock = true;
+                return;
+            }
+
+            copyPacketDataToBlockDescriptor(packet, currentIndexIntoPacket, BLOCK_DESCRIPTOR_SIZE);
+            firstThreeBytesOfBlockIsIncomplete = false;
+            allocateBlockData();
+            currentlyBufferingDataForABlock = true;
+
+            if (sizeOfRemainingDataToCompleteTheCurrentBlock > MPEG2_PACKET_SIZE - currentIndexIntoPacket)
+            {
+                copyPacketDataToBlockData(packet, currentIndexIntoPacket, MPEG2_PACKET_SIZE - currentIndexIntoPacket);
+                return;
+            }
+            else if (sizeOfRemainingDataToCompleteTheCurrentBlock == MPEG2_PACKET_SIZE - currentIndexIntoPacket)
+            {
+                copyPacketDataToBlockData(packet, currentIndexIntoPacket, MPEG2_PACKET_SIZE - currentIndexIntoPacket);
+                sendBlockData();
+                return;
+            }
+            else
+            {
+                copyPacketDataToBlockData(packet, currentIndexIntoPacket, sizeOfRemainingDataToCompleteTheCurrentBlock);
+                sendBlockData();
+            }
+        }
+
+        // If we reach this code, we did not return in an expected fashion.
+        cleanUpCachingVariables();
+    }
+
+    private void calculateStartingIndexIntoPacket(final byte[] packet)
+    {
+        currentIndexIntoPacket = HEADER_SIZE;
+        if (isAnyDataBlockStartedInThisPacket(packet))
+        {
+            currentIndexIntoPacket += POINTER_FIELD_SIZE;
+        }
+    }
+
+    private void calculateStartingIndexFromOffset(final byte[] packet)
+    {
+        currentIndexIntoPacket = (packet[POINTER_FIELD_BYTE_INDEX] & MASK_LOW_8_BITS) + HEADER_SIZE + POINTER_FIELD_SIZE;
+        if ((currentIndexIntoPacket < (HEADER_SIZE + POINTER_FIELD_SIZE))
+            || (currentIndexIntoPacket >= MPEG2_PACKET_SIZE))
+        {
+            cleanUpCachingVariables();
+            throw new IllegalArgumentException(String.format("Pointer field offset value %d is invalid.", (packet[POINTER_FIELD_BYTE_INDEX] & MASK_LOW_8_BITS)));
+        }
+    }
+
+    private void allocateBlockData()
+    {
+        sizeOfRemainingDataToCompleteTheCurrentBlock = getSectionLength();
+        if (sizeOfRemainingDataToCompleteTheCurrentBlock <= 0)
+        {
+            // Error condition; section length corrupted.
+            cleanUpCachingVariables();
+            throw new IllegalArgumentException(String.format("Section length %d in data block is less than or equal to 0.", sizeOfRemainingDataToCompleteTheCurrentBlock));
+        }
+
+        blockData = new byte[sizeOfRemainingDataToCompleteTheCurrentBlock + BLOCK_DESCRIPTOR_SIZE];
+        System.arraycopy(blockDescriptor, 0, blockData, 0, BLOCK_DESCRIPTOR_SIZE);
+        numberOfBytesCurrentlyInBlockData = BLOCK_DESCRIPTOR_SIZE;
+    }
+
+    private void copyPacketDataToBlockData(final byte[] packet, final int packetOffset, final int numberOfBytesToCopy)
+    {
+        System.arraycopy(packet, packetOffset, blockData, numberOfBytesCurrentlyInBlockData, numberOfBytesToCopy);
+        sizeOfRemainingDataToCompleteTheCurrentBlock -= numberOfBytesToCopy;
+        numberOfBytesCurrentlyInBlockData += numberOfBytesToCopy;
+        currentIndexIntoPacket += numberOfBytesToCopy;
+    }
+
+    private void copyPacketDataToBlockDescriptor(final byte[] packet, final int packetsOffset, final int numberOfBytesToCopy)
+    {
+        System.arraycopy(packet, packetsOffset, blockDescriptor, numberOfBytesCurrentlyInBlockDescriptor, numberOfBytesToCopy);
+        numberOfBytesCurrentlyInBlockDescriptor += numberOfBytesToCopy;
+        currentIndexIntoPacket += numberOfBytesToCopy;
+    }
+
+    private void sendBlockData()
+    {
+        logger.debug("Sending block.");
+        sink().insert(Arrays.copyOf(blockData, blockData.length));
+        sendNotification(false);
+        cleanUpCachingVariables();
+    }
+
+    private void cleanUpCachingVariables()
+    {
+        numberOfBytesCurrentlyInBlockData = 0;
+        numberOfBytesCurrentlyInBlockDescriptor = 0;
+        sizeOfRemainingDataToCompleteTheCurrentBlock = 0;
+        currentlyBufferingDataForABlock = false;
+        firstThreeBytesOfBlockIsIncomplete = false;
+    }
+
+    private boolean isAnyDataBlockStartedInThisPacket(final byte[] packet)
+    {
+        return (packet[1] & MPEG_PACKET_START_BIT_MASK) == 0 ? false : true;
+    }
+
+    private boolean isBlockDescriptorCompleteInPacket()
+    {
+        return (currentIndexIntoPacket + BLOCK_DESCRIPTOR_SIZE > MPEG2_PACKET_SIZE) ? false : true;
+    }
+
+    private int getSectionLength()
+    {
+        return ((blockDescriptor[1] & MASK_LOW_4_BITS) << NUMBER_BITS_IN_BYTE) | (blockDescriptor[2] & MASK_LOW_8_BITS);
+    }
+}

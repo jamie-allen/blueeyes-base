@@ -1,0 +1,186 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.commons.util.concurrent;
+
+import java.util.Collections;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+
+import com.ccadllc.commons.FormattableStringBuilder;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Scheduled thread pool executor that dynamically adjusts the core pool size if there are processors available and all worker threads are blocked or waiting, up to the maximum pool size.
+ *
+ * <p>Once the core pool size has grown, it will shrink if necessary.  Shrinking only occurs after a period at least equal to the keep alive time since the last core pool size change.</p>
+ */
+public class DynamicScheduledThreadPoolExecutor extends ScheduledThreadPoolExecutor
+{
+    private static final long DELAY = 100L;
+    private static final int NUM_PROCESSORS = Runtime.getRuntime().availableProcessors();
+
+    // CHECKSTYLE:OFF
+    protected final Logger logger;
+    // CHECKSTYLE:ON
+
+    private final Set<Thread> activeThreads = Collections.newSetFromMap(new ConcurrentHashMap<Thread, Boolean>());
+    private final Thread monitorThread;
+    private final int originalCorePoolSize;
+
+    private volatile boolean allowDynamicSizing = true;
+    private volatile boolean allowShrinking = true;
+    private volatile long lastChangedCorePoolSize;
+
+    public DynamicScheduledThreadPoolExecutor(final String name, final int corePoolSize, final ThreadFactory threadFactory)
+    {
+        super(corePoolSize, threadFactory);
+
+        logger = LoggerFactory.getLogger(DynamicScheduledThreadPoolExecutor.class.getName() + "/" + name);
+
+        if (corePoolSize < NUM_PROCESSORS)
+        {
+            setCorePoolSize(NUM_PROCESSORS);
+        }
+        originalCorePoolSize = getCorePoolSize();
+
+        monitorThread = new Thread(new Runnable() {
+            @Override
+            public void run()
+            {
+                monitor();
+            }
+        });
+        monitorThread.setName(name + "-monitor");
+        monitorThread.setDaemon(true);
+        monitorThread.start();
+    }
+
+    public void allowDynamicSizing(final boolean allow)
+    {
+        allowDynamicSizing = allow;
+    }
+
+    public void allowShrinking(final boolean allow)
+    {
+        allowShrinking = allow;
+    }
+
+    @Override
+    protected void beforeExecute(final Thread t, final Runnable r)
+    {
+        activeThreads.add(Thread.currentThread());
+    }
+
+    @Override
+    protected void afterExecute(final Runnable r, final Throwable t)
+    {
+        activeThreads.remove(Thread.currentThread());
+    }
+
+    private int getBlockedThreadCount()
+    {
+        int i = 0;
+        for (final Thread th : activeThreads)
+        {
+            final Thread.State state = th.getState();
+            // CHECKSTYLE:OFF
+            switch (state)
+            {
+                case BLOCKED:
+                case TIMED_WAITING:
+                case WAITING:
+                    ++i;
+                default:
+            }
+            // CHECKSTYLE:ON
+        }
+        return i;
+    }
+
+    private void monitor()
+    {
+        while (!(isTerminating() || isTerminated()))
+        {
+            if (allowDynamicSizing)
+            {
+                possiblyAdjustCorePoolSize();
+            }
+
+            try
+            {
+                Thread.sleep(DELAY);
+            }
+            catch (final InterruptedException e)
+            {
+                // Ignore
+            }
+        }
+    }
+
+    private void possiblyAdjustCorePoolSize()
+    {
+        final int corePoolSize = getCorePoolSize();
+        final int maxPoolSize = getMaximumPoolSize();
+        final int numBlockedWorkers = getBlockedThreadCount();
+        final long taskCount = getTaskCount() - getCompletedTaskCount();
+
+
+        if (taskCount > corePoolSize && corePoolSize - numBlockedWorkers < NUM_PROCESSORS && (NUM_PROCESSORS + numBlockedWorkers) <= maxPoolSize)
+        {
+            final int newCorePoolSize = NUM_PROCESSORS + numBlockedWorkers;
+            if (logger.isInfoEnabled())
+            {
+                logger.info("Increasing core pool size from {} to {} due to {} blocked workers.", new Object[]{corePoolSize, newCorePoolSize, numBlockedWorkers});
+            }
+            if (logger.isTraceEnabled())
+            {
+                logBlockedThreads();
+            }
+            lastChangedCorePoolSize = System.nanoTime();
+            setCorePoolSize(newCorePoolSize);
+        }
+        else if (allowShrinking && taskCount < corePoolSize && corePoolSize > originalCorePoolSize && System.nanoTime() - lastChangedCorePoolSize > getKeepAliveTime(TimeUnit.NANOSECONDS))
+        {
+            final int newCorePoolSize = Math.max(originalCorePoolSize, (int)taskCount);
+            logger.info("Decreasing core pool size from {} to {}.", corePoolSize, newCorePoolSize);
+            lastChangedCorePoolSize = System.nanoTime();
+            setCorePoolSize(newCorePoolSize);
+        }
+    }
+
+    private void logBlockedThreads()
+    {
+        final FormattableStringBuilder builder = new FormattableStringBuilder();
+        builder.appendLine("Blocked threads:");
+        for (final Thread th : activeThreads)
+        {
+            final Thread.State state = th.getState();
+            // CHECKSTYLE:OFF
+            switch (state)
+            {
+                case BLOCKED:
+                case TIMED_WAITING:
+                case WAITING:
+                    builder.appendLine("  %s %s", th.getName(), th.getState());
+                    for (final StackTraceElement ste : th.getStackTrace())
+                    {
+                        builder.append("    ").appendLine(ste.toString());
+                    }
+                default:
+            }
+            // CHECKSTYLE:ON
+            logger.trace(builder.toString());
+        }
+    }
+
+    @Override
+    protected void terminated()
+    {
+        super.terminated();
+        monitorThread.interrupt();
+    }
+}

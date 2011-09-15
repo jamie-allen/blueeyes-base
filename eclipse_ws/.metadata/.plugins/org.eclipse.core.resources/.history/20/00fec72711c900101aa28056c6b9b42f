@@ -1,0 +1,55 @@
+/*
+ * Copyright 2011 Jamie Allen, in support of Scala port of LMAX Disruptor.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.jamieallen.sdisruptor.support
+
+import com.jamieallen.sdisruptor.AbstractEntry
+import com.jamieallen.sdisruptor.EntryFactory
+
+object StubEntry {
+  def ENTRY_FACTORY: EntryFactory[StubEntry] = new EntryFactory[StubEntry] {
+    def create = new StubEntry(-1)
+  }
+}
+
+class StubEntry(var value: Int) extends AbstractEntry {
+  var _sequence = -1L
+  var testString: String = null
+
+  def copy(entry: StubEntry) { value = entry.value }
+
+  def getValue() = value
+
+  def setValue(newValue: Int) { value = newValue }
+
+  def getTestString() = testString
+
+  def setTestString(newTestString: String) { testString = newTestString }
+
+  override def hashCode() =  {
+    val prime = 31
+    var result = 1
+    result = prime * result + value
+    result
+  }
+
+  override def equals(obj: Any): Boolean = {
+    if (this == obj) return true
+    if (obj == null) return false
+    if (this.asInstanceOf[Any].getClass() != obj.getClass()) return false
+    val other = obj.asInstanceOf[StubEntry]
+    value == other.value
+ }
+}

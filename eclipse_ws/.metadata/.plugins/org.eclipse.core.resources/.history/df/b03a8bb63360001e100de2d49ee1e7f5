@@ -1,0 +1,168 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.snapshot.manager.impl;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
+
+import java.util.Map;
+
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager;
+
+import org.easymock.EasyMock;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+import com.google.common.collect.Maps;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Multimaps;
+import com.google.common.collect.Sets;
+
+@Test
+public final class RealTimeSnapshotUdpRouteLookupTest
+{
+    private RealTimeSnapshotManager realtimeSnapshotManager;
+    private RealTimeSnapshotUdpRouteLookup udpRouteLookup;
+    private RouteSnapshot mockRoute1;
+    private RouteSnapshot mockRoute2;
+    private Map<Long, RouteSnapshot> mockRoutes;
+
+    @BeforeMethod
+    public void setUp()
+    {
+        realtimeSnapshotManager = EasyMock.createMock(RealTimeSnapshotManager.class);
+
+        mockRoute1 = EasyMock.createNiceMock(RouteSnapshot.class);
+        mockRoute2 = EasyMock.createNiceMock(RouteSnapshot.class);
+        mockRoutes = Maps.newHashMap();
+
+        udpRouteLookup = new RealTimeSnapshotUdpRouteLookup(realtimeSnapshotManager);
+    }
+
+    public void testRouteIdsLookupWhere_PortFound()
+    {
+        final Integer expectedPort = 1;
+        expectRouteIdsByPort(expectedPort);
+        replay();
+
+        assertThat(udpRouteLookup.getUdpRouteIdsForPort(expectedPort), notNullValue());
+
+        verify();
+    }
+
+    public void testRouteIdsLookupWhere_PortNotFound()
+    {
+        final Integer expectedPort = 1;
+        expectRouteIdsByPort(expectedPort);
+        replay();
+
+        assertThat(udpRouteLookup.getUdpRouteIdsForPort(expectedPort + 1), nullValue());
+
+        verify();
+    }
+
+    public void testRouteIdsLookupWhere_MappedPidFound()
+    {
+        final Integer expectedPid = 1;
+        expectRouteIdsByMappedPid(expectedPid);
+        replay();
+        assertThat(udpRouteLookup.getUdpRouteIdsForMappedPid(expectedPid).length, is(1));
+        verify();
+    }
+
+    public void testRouteIdsLookupWhere_MappedPidNotFound()
+    {
+        final Integer expectedPid = 1;
+        expectRouteIdsByMappedPid(expectedPid);
+        replay();
+        assertThat(udpRouteLookup.getUdpRouteIdsForMappedPid(expectedPid + 1).length, is(0));
+        verify();
+    }
+
+    public void testRouteIdsLookupWhere_StreamIdFound()
+    {
+        final String expectedStreamId = "1";
+        expectRouteIdsByStreamId(expectedStreamId);
+        replay();
+        assertThat(udpRouteLookup.getUdpRouteIdsForStreamId(expectedStreamId).length, is(2));
+        verify();
+    }
+
+    public void testRouteIdsLookupWhere_StreamIdNotFound()
+    {
+        final String expectedStreamId = "1";
+        expectRouteIdsByStreamId(expectedStreamId);
+        replay();
+        assertThat(udpRouteLookup.getUdpRouteIdsForStreamId("2").length, is(0));
+        verify();
+    }
+
+    @Test(expectedExceptions = NumberFormatException.class)
+    public void testRouteIdsLookupWhere_StreamIdNotLongValue()
+    {
+        final String expectedStreamId = "1";
+        expectRouteIdsByStreamId(expectedStreamId);
+        replay();
+        udpRouteLookup.getUdpRouteIdsForStreamId("asdf");
+        verify();
+    }
+
+    private void expectRouteIdsByStreamId(final String streamId)
+    {
+        mockRoutes.put(1L, mockRoute1);
+        mockRoutes.put(2L, mockRoute2);
+        final Multimap<Integer, Long> pidMappings = Multimaps.newHashMultimap();
+        pidMappings.put(123, Long.parseLong(streamId));
+        EasyMock.expect(mockRoute1.getPidMappings()).andStubReturn(pidMappings);
+        EasyMock.expect(mockRoute1.getStreamIds()).andStubReturn(null);
+        EasyMock.expect(mockRoute2.getStreamIds()).andStubReturn(Sets.<Long>newHashSet(Long.parseLong(streamId)));
+        EasyMock.expect(mockRoute2.getPidMappings()).andStubReturn(null);
+
+        EasyMock.expect(realtimeSnapshotManager.getRoutes()).andReturn(mockRoutes);
+
+        EasyMock.expect(mockRoute1.getId()).andStubReturn(1L);
+        EasyMock.expect(mockRoute2.getId()).andStubReturn(2L);
+    }
+
+    private void expectRouteIdsByMappedPid(final Integer pid)
+    {
+        mockRoutes.put(1L, mockRoute1);
+        mockRoutes.put(2L, mockRoute2);
+        final Multimap<Integer, Long> pidMappings = Multimaps.newHashMultimap();
+        pidMappings.put(pid, 123L);
+        EasyMock.expect(mockRoute1.getPidMappings()).andStubReturn(pidMappings);
+        EasyMock.expect(mockRoute1.getStreamIds()).andStubReturn(null);
+        EasyMock.expect(mockRoute2.getStreamIds()).andStubReturn(Sets.<Long>newHashSet());
+        EasyMock.expect(mockRoute2.getPidMappings()).andStubReturn(null);
+
+        EasyMock.expect(realtimeSnapshotManager.getRoutes()).andReturn(mockRoutes);
+
+        EasyMock.expect(mockRoute1.getId()).andStubReturn(1L);
+        EasyMock.expect(mockRoute2.getId()).andStubReturn(2L);
+    }
+
+    private void expectRouteIdsByPort(final Integer port)
+    {
+        mockRoutes.put(1L, mockRoute1);
+        mockRoutes.put(2L, mockRoute2);
+        EasyMock.expect(mockRoute1.getPort()).andStubReturn(port);
+        EasyMock.expect(mockRoute2.getPort()).andStubReturn(port);
+
+        EasyMock.expect(realtimeSnapshotManager.getRoutes()).andReturn(mockRoutes);
+
+        EasyMock.expect(mockRoute1.getId()).andStubReturn(1L);
+        EasyMock.expect(mockRoute2.getId()).andStubReturn(2L);
+    }
+
+    private void verify()
+    {
+        EasyMock.verify(realtimeSnapshotManager, mockRoute1, mockRoute2);
+    }
+
+    private void replay()
+    {
+        EasyMock.replay(realtimeSnapshotManager, mockRoute1, mockRoute2);
+    }
+}

@@ -1,0 +1,10 @@
+package akka.util
+
+class RingBuffer[E <: AnyRef](val maxCapacity: Int) {
+  require(maxCapacity > 0)
+
+  val p1, p2, p3, p4, p5, p6, p7: Long = -1L // cache line padding
+  @volatile private var _cursor = -1L
+  val p8, p9, p10, p11, p12, p13, p14: Long = -1L // cache line padding
+
+}

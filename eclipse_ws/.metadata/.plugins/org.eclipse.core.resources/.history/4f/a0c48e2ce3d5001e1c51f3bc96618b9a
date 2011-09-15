@@ -1,0 +1,17 @@
+/*
+ * Copyright 2008 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.stream.manager.impl;
+
+
+/** Encodes packets in MPEG-2 transport stream format. */
+public interface Mpeg2Encoder
+{
+    /**
+     * Encodes the given packet in MPEG-2 format.
+     *
+     * @param packet non-null packet to encode
+     * @return non-null encoded packet
+     */
+    byte[] encode(Mpeg2Packet packet);
+}

@@ -1,0 +1,36 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.management;
+
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Interface describing the JMX instrumented data for a route.
+ */
+public interface RouteInstrumentationMXBean
+{
+    /**
+     * @return port on which to listen for route data
+     */
+    Integer getPort();
+
+    /**
+     * @return a copy of pid mappings for the route
+     */
+    public Map<Integer, Long[]> getPidMappings()
+
+    /**
+     * @return a copy of the streamIds for the route
+     */
+    Set<Long> getStreamIds();
+
+    /**
+     * @return a copy of the properties associated with this periodic
+     */
+    Map<String, String> getProperties();
+
+    /**
+     * @return the unique identifier of the route
+     */
+    Long getRouteId();
+}

@@ -1,0 +1,37 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dac.domain;
+
+import com.google.common.base.Preconditions;
+
+/**
+ * Provides utility to calculate the RADD bandwidth communicated to the DAC.
+ */
+public final class RaddBandwidthUtility
+{
+    private static final int BYTES_PER_KILOBIT = 128;
+    private static final int MAXIMUM_BANDWIDTH_PERCENTAGE = 100;
+    private static final int MINIMUM_RATE_IN_BITS = 0;
+
+    private RaddBandwidthUtility()
+    {
+    }
+
+    /**
+     * Calculates the bandwidth for a RADD based on transport stream bandwidth information.
+     *
+     * @param transportStreamAverageBytesPerSecond maximum rate for the transport stream in bytes per second; greater than 0
+     * @param dacBandwidthPercentage the percent of the bandwidth that is available to the DAC; between 0 and 100
+     * @param networkStreamAverageBytesPerSecond maximum rate for the network stream in bytes per second; greater than 0
+     * @return bandwidth to be used by the RADD in kbps
+     * @throws IllegalArgumentException if parameters preconditions are not met
+     */
+    public static long calculate(final int transportStreamAverageBytesPerSecond, final int dacBandwidthPercentage,
+        final int networkStreamAverageBytesPerSecond)
+    {
+        Preconditions.checkArgument(transportStreamAverageBytesPerSecond > MINIMUM_RATE_IN_BITS, "Transport stream maximum average rate must be greater than 0.");
+        Preconditions.checkArgument(dacBandwidthPercentage >= 0 && dacBandwidthPercentage <= MAXIMUM_BANDWIDTH_PERCENTAGE, "Percent value must be between 0 and 100.");
+        Preconditions.checkArgument(networkStreamAverageBytesPerSecond > MINIMUM_RATE_IN_BITS, "Network stream maximum average rate must be greater than 0.");
+        return (long)(Math.floor((transportStreamAverageBytesPerSecond / BYTES_PER_KILOBIT)
+            * (dacBandwidthPercentage / new Integer(MAXIMUM_BANDWIDTH_PERCENTAGE).doubleValue())) + (networkStreamAverageBytesPerSecond / BYTES_PER_KILOBIT));
+    }
+}

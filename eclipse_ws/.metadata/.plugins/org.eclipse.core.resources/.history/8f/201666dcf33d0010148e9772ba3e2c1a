@@ -1,0 +1,153 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.transport.stream.manager.impl.transportstream;
+
+import com.ccadllc.firebird.dss.server.common.PacketFilterChainController;
+import com.ccadllc.firebird.dss.server.common.StreamSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.common.DefaultMpeg2Encoder;
+import com.ccadllc.firebird.dss.server.realtime.common.Mpeg2Packetizer;
+import com.ccadllc.firebird.dss.server.realtime.common.Multiplexer;
+import com.ccadllc.firebird.dss.server.realtime.transport.stream.manager.jmx.TransportStreamJmxInfo;
+import com.ccadllc.firebird.dss.server.realtime.transport.stream.manager.jmx.TransportStreamJmxUtility;
+import com.ccadllc.firebird.vms.common.packetfiltering.AbstractPacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.CompositePacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.ManagedPacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.Packet;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilterFactory;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.collect.ImmutableList;
+
+/**
+ * Controls insertion of all MPEG2 data for a constituent stream of a transport stream.
+ */
+public class Mpeg2TransportStreamChainController extends AbstractPacketFilter implements PacketFilterChainController<StreamSnapshot>
+{
+    private static final Logger logger = LoggerFactory.getLogger(Mpeg2TransportStreamChainController.class);
+    private static PacketFilterFactory factory;
+    private final CompositePacketFilter chain;
+    private final ManagedPacketFilter shaperChain;
+    private volatile boolean disposed;
+    private final TransportStreamJmxInfo transportStreamJmxInfo;
+
+    public Mpeg2TransportStreamChainController(
+            final StreamSnapshot stream,
+            final ManagedPacketFilter sharedShaperChain,
+            final PacketFilterFactory factory,
+            final TransportStreamSinkChain transportStreamSinkChain,
+            final TransportStreamJmxInfo transportStreamJmxInfo)
+    {
+        this.transportStreamJmxInfo = transportStreamJmxInfo;
+        ManagedPacketFilter shaperChain = null;
+
+        if (stream.getShaping() != null)
+        {
+            shaperChain = createShaperChain(transportStreamSinkChain, stream, factory);
+            chain = chainWithShapingProfile(stream, shaperChain);
+        }
+        else if (sharedShaperChain != null)
+        {
+            chain = chainWithSharedShaping(stream, sharedShaperChain);
+        }
+        else
+        {
+            chain = chainWithoutShaping(stream, transportStreamSinkChain);
+        }
+        Mpeg2TransportStreamChainController.factory = factory;
+        this.shaperChain = shaperChain;
+        logger.debug("Mpeg2TransportStreamChainController constructed");
+    }
+
+    private CompositePacketFilter chainWithShapingProfile(final StreamSnapshot stream, final ManagedPacketFilter shaperChain)
+    {
+        final PacketFilter mux = new Multiplexer(stream.getPid(), shaperChain);
+        return new CompositePacketFilter(ImmutableList.of(new Mpeg2Packetizer(new DefaultMpeg2Encoder(), mux), mux, shaperChain));
+    }
+
+    private CompositePacketFilter chainWithSharedShaping(final StreamSnapshot stream, final ManagedPacketFilter sharedShaperChain)
+    {
+        final PacketFilter mux = new Multiplexer(stream.getPid(), sharedShaperChain);
+        return new CompositePacketFilter(ImmutableList.of(new Mpeg2Packetizer(new DefaultMpeg2Encoder(), mux), mux));
+    }
+
+    private CompositePacketFilter chainWithoutShaping(final StreamSnapshot stream, final TransportStreamSinkChain transportStreamSinkChain)
+    {
+        final PacketFilter mux = new Multiplexer(stream.getPid(), transportStreamSinkChain);
+        return new CompositePacketFilter(ImmutableList.of(new Mpeg2Packetizer(new DefaultMpeg2Encoder(), mux), mux));
+    }
+
+    /**
+     * Create a chain of packet filters to perform the statistics gathering, traffic shaping and sending.
+     *
+     * @param sink through which to pass the insert
+     * @param stream for which the filter chain is being created
+     * @param factory which will be used to create the filter chain
+     * @return a ManagedPacketFilter instance that will start the process of sending the data
+     */
+    private ManagedPacketFilter createShaperChain(final PacketFilter sink, final StreamSnapshot stream, final PacketFilterFactory factory)
+    {
+        // Creation of shaper chain inside a stream handler...
+        return factory.newPolicingShaper(
+            TransportStreamJmxUtility.getStreamShaperManagementProperties(stream, transportStreamJmxInfo),
+            stream.getShaping().getAverageBytesPerSecond(), stream.getShaping().getBurstLimitInBytes(),
+            stream.getShaping().getMaxLatencyInSeconds(), sink);
+    }
+
+    @Override
+    public boolean insert(final Packet block)
+    {
+//        logger.debug("Mpeg TS chain controller inserting block {}", block);
+//        ensureNotDisposed();
+//        return chain.insert(block);
+        logger.debug("################# Mpeg TS chain controller inserting block");
+        ensureNotDisposed();
+        final boolean retVal = chain.insert(block);
+        logger.debug("################# Mpeg TS chain controller inserted block, returned {}", retVal);
+        return retVal;    }
+
+    @Override
+    public void dispose()
+    {
+        chain.dispose();
+        disposed = true;
+    }
+
+    @Override
+    public void describeTo(final StringBuilder builder, final boolean detailed)
+    {
+        super.describeTo(builder, detailed);
+        chain.describeTo(builder, detailed);
+    }
+
+    /**
+     * Update the relevant filter chain components when a stream is updated.
+     *
+     * @param stream from which the updated values are retrieved
+     */
+    public void update(final StreamSnapshot stream)
+    {
+        ensureNotDisposed();
+
+        // Update the packet shaping chain through the factory.
+        if (shaperChain != null && stream.getShaping() != null)
+        {
+            factory.updatePolicingShaper(shaperChain, stream.getShaping().getAverageBytesPerSecond(), stream.getShaping().getBurstLimitInBytes(), stream.getShaping().getMaxLatencyInSeconds());
+        }
+    }
+
+    @Override
+    public String toString(final boolean detailed)
+    {
+        return chain.toString(true);
+    }
+
+    private void ensureNotDisposed()
+    {
+        if (disposed)
+        {
+            throw new IllegalStateException("Object has been disposed.");
+        }
+    }
+}

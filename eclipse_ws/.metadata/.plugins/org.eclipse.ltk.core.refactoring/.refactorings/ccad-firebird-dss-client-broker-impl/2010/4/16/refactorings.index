@@ -1,0 +1,5 @@
+1271250230336	Extract method 'buildRouteQueryResult'
+1271250307441	Extract method 'handleStreamQueryResultByTransmissionType'
+1271250346784	Extract method 'handleStreamQueryResultByStreamType'
+1271250428681	Extract method 'handleStreamQueryResultProperties'
+1271250448051	Extract method 'handleStreamQueryResultDestinations'

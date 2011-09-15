@@ -1,0 +1,85 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.commons.util;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+
+import java.util.Set;
+
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+import com.google.common.collect.Sets;
+
+@Test
+public class IntegerGeneratorStrategyTest
+{
+    private int validStart;
+    private int validEnd;
+    private Set<IntegerRange> reservedRanges;
+    private Set<Integer> inUseIntegers;
+
+    @BeforeMethod
+    public void setUp() throws Exception
+    {
+        validStart = 2;
+        validEnd = 15;
+        reservedRanges = Sets.newHashSet();
+        inUseIntegers = Sets.newHashSet();
+        reservedRanges.add(new DefaultIntegerRange(3, 6));
+        reservedRanges.add(new DefaultIntegerRange(11, 13));
+    }
+
+    public void testNextAvailableInt()
+    {
+        final IntegerGeneratorStrategy generator = new IntegerGeneratorStrategy(validStart, validEnd);
+        assertNextInts(generator);
+    }
+
+    @Test(expectedExceptions = IllegalStateException.class)
+    public void testNextAvailableIntThrowsExpectedExceptionWhenNoIntsAvailable()
+    {
+        final IntegerGeneratorStrategy generator = new IntegerGeneratorStrategy(validStart, validEnd);
+        assertNextInts(generator);
+        generator.nextAvailable(inUseIntegers, reservedRanges);
+    }
+
+    public void testMakeAvailable()
+    {
+        final IntegerGeneratorStrategy generator = new IntegerGeneratorStrategy(validStart, validEnd);
+        assertNextInts(generator);
+        generator.makeAvailable(2, inUseIntegers);
+        generator.makeAvailable(10, inUseIntegers);
+        assertThat(generator.nextAvailable(inUseIntegers, reservedRanges), is(2));
+        assertThat(generator.nextAvailable(inUseIntegers, reservedRanges), is(10));
+    }
+
+    public void testMakeUnavailable()
+    {
+        final IntegerGeneratorStrategy generator = new IntegerGeneratorStrategy(validStart, validEnd);
+        assertNextInts(generator);
+        generator.makeAvailable(2, inUseIntegers);
+        generator.makeAvailable(10, inUseIntegers);
+        generator.makeUnavailable(2, inUseIntegers);
+        assertThat(generator.nextAvailable(inUseIntegers, reservedRanges), is(10));
+    }
+
+    public void testCheckAvailable()
+    {
+        final IntegerGeneratorStrategy generator = new IntegerGeneratorStrategy(validStart, validEnd);
+        assertNextInts(generator);
+        assertThat(generator.checkAvailable(2, inUseIntegers), is(false));
+        generator.makeAvailable(2, inUseIntegers);
+        assertThat(generator.checkAvailable(2, inUseIntegers), is(true));
+    }
+
+    private void assertNextInts(final IntegerGeneratorStrategy generator)
+    {
+        assertThat(generator.nextAvailable(inUseIntegers, reservedRanges), is(2));
+        assertThat(generator.nextAvailable(inUseIntegers, reservedRanges), is(7));
+        assertThat(generator.nextAvailable(inUseIntegers, reservedRanges), is(8));
+        assertThat(generator.nextAvailable(inUseIntegers, reservedRanges), is(9));
+        assertThat(generator.nextAvailable(inUseIntegers, reservedRanges), is(10));
+        assertThat(generator.nextAvailable(inUseIntegers, reservedRanges), is(14));
+    }
+}

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<navigationConfiguration
+    xmlns="http://ccadllc.com/firebird/schema/navigationConfiguration"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+    <!--<item id="TestTools™ \u2122 &#8482;" rank="1000" href="testtools/ccad-firebird-vms-test-tools-ui.swf" roles="ROLE_USER"/>-->
+    <item id="™" rank="1000" href="testtools/ccad-firebird-vms-test-tools-ui.swf" roles="ROLE_USER"/>
+        <item id="\u2122" href="testtools/ccad-firebird-vms-test-tools-ui.swf" roles="ROLE_USER" rank="1001" />
+        <item id="&#8482;" href="testtools/ccad-firebird-vms-test-tools-ui.swf" roles="ROLE_USER" rank="1001" />
+    </item>
+
+</navigationConfiguration>
+

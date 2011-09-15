@@ -1,0 +1,377 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.standalone.stream.manager.impl;
+
+import static com.ccadllc.firebird.dss.server.configuration.manager.ConfigManager.MTU_SIZE;
+import static com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager.SNAPSHOT_MANAGER_REFRESH_EVENT;
+import static com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager.STREAM_SNAPSHOT_DELETED_EVENT;
+import static com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager.STREAM_SNAPSHOT_UPDATED_EVENT;
+
+import java.io.IOException;
+import java.util.Date;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentMap;
+
+import javax.annotation.PreDestroy;
+import javax.management.Attribute;
+
+import com.ccadllc.commons.util.concurrent.CallbackSupportingScheduledExecutorService;
+import com.ccadllc.firebird.dss.common.datatypes.TransmissionType;
+import com.ccadllc.firebird.dss.server.common.MBeanServerUtility;
+import com.ccadllc.firebird.dss.server.common.OsgiEventPropertyKeys;
+import com.ccadllc.firebird.dss.server.common.PacketFilterChainController;
+import com.ccadllc.firebird.dss.server.common.StreamSnapshot;
+import com.ccadllc.firebird.dss.server.configuration.manager.ConfigManager;
+import com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+import com.ccadllc.firebird.dss.server.realtime.transport.manager.TransportManager;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilterFactory;
+
+import net.jcip.annotations.GuardedBy;
+import net.jcip.annotations.Immutable;
+
+import org.osgi.service.event.Event;
+import org.osgi.service.event.EventHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.MapMaker;
+
+/** Default implementation of a <code>StreamManager</code>. */
+@Immutable
+public final class DefaultStreamManager implements StreamManager, EventHandler
+{
+    public static final String[] EVENT_TOPICS = new String[] {STREAM_SNAPSHOT_UPDATED_EVENT, STREAM_SNAPSHOT_DELETED_EVENT, SNAPSHOT_MANAGER_REFRESH_EVENT};
+
+    // Constants used to eliminate literals.
+    public static final String MXBEAN_OBJECT_NAME = "DSS:type=Streams,id=%d,datatype=StreamInformation";
+    public static final String MXBEAN_LAST_INSERTION_TIME_ATTRIBUTE_NAME = "LastInsertionTime";
+    public static final String MXBEAN_DOMAIN = "DSS";
+    private static final String EXECUTOR_PARAMETER = "executor";
+    private static final String TRANSPORT_MANAGER_PARAMETER = "transportManager";
+    private static final String REALTIME_SNAPSHOT_MANAGER_PARAMETER = "realtimeSnapshotManager";
+    private static final String CONFIGURATION_MANAGER_PARAMETER = "configurationManager";
+
+    private static final int DEFAULT_MTU_SIZE = 1500;
+
+    private final Logger logger = LoggerFactory.getLogger(DefaultStreamManager.class);
+    private final CallbackSupportingScheduledExecutorService executor;
+    private final TransportManager transportManager;
+    private final RealTimeSnapshotManager realtimeSnapshotManager;
+    private final ConfigManager configurationManager;
+    private final PacketFilterFactory factory;
+    private int mtuSize;
+
+//    /** is blockSetrepository running. */
+    /** is streamManager init() completed. */
+    private boolean isStreamManagerActive;
+
+    @GuardedBy("lock")
+    private final ConcurrentMap<Long, PacketFilterChainController> streams = new MapMaker().makeMap();
+
+    /** Lock used when manipulating any filter chain controller instances in the map. */
+    private final Object lock = new Object();
+
+    public DefaultStreamManager(
+            final CallbackSupportingScheduledExecutorService executor,
+            final TransportManager transportManager,
+            final RealTimeSnapshotManager realtimeSnapshotManager,
+            final ConfigManager configurationManager)
+    {
+        Preconditions.checkNotNull(executor, EXECUTOR_PARAMETER);
+        Preconditions.checkNotNull(transportManager, TRANSPORT_MANAGER_PARAMETER);
+        Preconditions.checkNotNull(realtimeSnapshotManager, REALTIME_SNAPSHOT_MANAGER_PARAMETER);
+        Preconditions.checkNotNull(configurationManager, CONFIGURATION_MANAGER_PARAMETER);
+
+        this.executor = executor;
+        this.transportManager = transportManager;
+        this.realtimeSnapshotManager = realtimeSnapshotManager;
+        this.configurationManager = configurationManager;
+
+        factory = new PacketFilterFactory(executor, MXBEAN_DOMAIN);
+        mtuSize = getMtuSize();
+
+    }
+
+    public void init()
+    {
+        logger.debug("Initializing DefaultStreamManager.");
+        synchronized (lock)
+        {
+            setUpFilterChainControllers();
+            isStreamManagerActive = true;
+        }
+    }
+
+    void updateConfiguration()
+    {
+        logger.debug("Updating Configuration.");
+
+        final int updatedMtu = getMtuSize();
+        synchronized (lock)
+        {
+            if (updatedMtu == mtuSize)
+            {
+                logger.info("Config Admin new network MTU {} is the same as current value {}", updatedMtu, mtuSize);
+            }
+            else
+            {
+                mtuSize = updatedMtu;
+                logger.info("Config Admin network MTU is set to {}", updatedMtu);
+                isStreamManagerActive = false;
+                final Set<Long> streamIds = streams.keySet();
+                for (final Long id : streamIds)
+                {
+                    final StreamSnapshot stream = realtimeSnapshotManager.getStream(id);
+                    if (stream.getTransmissionType() == TransmissionType.DSG_BROADCAST_TUNNEL && (streams.get(stream.getId()) != null))
+                    {
+                        streams.get(stream.getId()).dispose();
+                        streams.remove(stream.getId());
+                        removeStreamMXBean(stream.getId());
+                        createFilterChainControllerForStream(stream);
+                    }
+                }
+                isStreamManagerActive = true;
+            }
+        }
+    }
+
+    private void setUpFilterChainControllers()
+    {
+        // Get streams from snapshot manager and create a filter chain controller for each one.
+        final Map<Long, StreamSnapshot> streamSnapshots = realtimeSnapshotManager.getStreams();
+        logger.debug("Get {} streams from the snapshot manager.", streamSnapshots.size());
+
+        for (final StreamSnapshot stream : streamSnapshots.values())
+        {
+            createFilterChainControllerForStream(stream);
+        }
+    }
+
+    /**
+     * Create PacketFilterChainController instance for a stream.  Because of the manipulation of shared
+     * stream collection data, any call to this method must be wrapped by a synchronized block on the lock object.
+     *
+     * @param stream for which filter chain controller must be created
+     * @return <code>PacketFilterChainController</code> instance for this stream
+     */
+    private PacketFilterChainController createFilterChainControllerForStream(final StreamSnapshot stream)
+    {
+        final PacketFilterChainController filterChainController =
+            PacketFilterChainControllerFactory.create(executor, transportManager, stream, factory, mtuSize);
+        logger.debug("Adding filter chain controller for streamId: " + stream.getId());
+
+        streams.put(stream.getId(), filterChainController);
+        addStreamMXBean(stream);
+
+        return filterChainController;
+    }
+
+    /**
+     * Using the executor thread detaches this process from the periodic or route thread that initiated the block send.
+     */
+    @Override
+    public void insert(final byte[] block, final Long streamId, final TransmissionType transmissionType)
+    {
+        executor.submit(new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                // Passes the data down to the appropriate filter chain controller for the stream,
+                // which controls the packet  filter chain.  If a controller does not exist for a
+                // stream, then a new one is created and added to the collection.
+                PacketFilterChainController filterChainController;
+                synchronized (lock)
+                {
+                    if (!isStreamManagerActive)
+                    {
+                        return;
+                    }
+
+                    filterChainController = streams.get(streamId);
+                    if (filterChainController == null)
+                    {
+                        logger.debug("Creating handler for stream {} during insert.", streamId);
+                        filterChainController = createFilterChainControllerForStream(realtimeSnapshotManager.getStream(streamId));
+                    }
+                    MBeanServerUtility.setAttribute(String.format(MXBEAN_OBJECT_NAME, streamId), new Attribute(MXBEAN_LAST_INSERTION_TIME_ATTRIBUTE_NAME, new Date()));
+                }
+
+                logger.debug("Inserting {}", block);
+                try
+                {
+                    filterChainController.insert(block);
+                }
+                catch (final IllegalStateException ise)
+                {
+                    logger.warn(String.format("Insert failed for stream Id %d.", streamId), ise);
+                }
+            }
+        });
+    }
+
+    /**
+     * Handle OSGI event for any stream entity change.
+     *
+     * @param event OSGI event
+     */
+    public void handleEvent(final Event event)
+    {
+        synchronized (lock)
+        {
+            final String topic = event.getTopic();
+            logger.debug("Received event {}", topic);
+
+            if (topic.equals(RealTimeSnapshotManager.STREAM_SNAPSHOT_UPDATED_EVENT))
+            {
+                handleUpdateStreamEvent((StreamSnapshot)event.getProperty(OsgiEventPropertyKeys.STREAM_SNAPSHOT_KEY));
+            }
+            else if (topic.equals(RealTimeSnapshotManager.STREAM_SNAPSHOT_DELETED_EVENT))
+            {
+                handleDeleteStreamEvent((StreamSnapshot)event.getProperty(OsgiEventPropertyKeys.STREAM_SNAPSHOT_KEY));
+            }
+            else if (topic.equals(RealTimeSnapshotManager.SNAPSHOT_MANAGER_REFRESH_EVENT))
+            {
+                handleStreamManagerRefreshEvent();
+            }
+            else
+            {
+                logger.error("Can not handle this unknown event type: {} ", topic);
+            }
+        }
+    }
+
+    /**
+     * Pass the updated stream information into the filter chain to update appropriate components.
+     *
+     * @param stream to update
+     */
+    private void handleUpdateStreamEvent(final StreamSnapshot stream)
+    {
+        if (streams.get(stream.getId()) != null)
+        {
+            try
+            {
+                streams.get(stream.getId()).update(stream);
+                addStreamMXBean(stream);
+            }
+            catch (final IllegalStateException ise)
+            {
+                logger.error("Update failed for stream Id {}.", stream.getId());
+            }
+        }
+    }
+
+    /**
+     * Properly shut down existing filter chain controller for the stream, and then remove it from the list.
+     *
+     * @param stream to delete
+     */
+    private void handleDeleteStreamEvent(final StreamSnapshot stream)
+    {
+        removeStreamMXBean(stream.getId());
+
+        shutdownFilterChainControllerForStream(stream.getId());
+        streams.remove(stream.getId());
+    }
+
+    private void shutdownFilterChainControllerForStream(final Long streamId)
+    {
+        if (streams.containsKey(streamId))
+        {
+            streams.get(streamId).dispose();
+        }
+    }
+
+    /**
+     * Handles a refresh event from the RealtimeSnapshotManager by first
+     * disposing all filter chain controllers and then reloading them.
+     */
+    private void handleStreamManagerRefreshEvent()
+    {
+        logger.debug("handleStreamManagerRefreshEvent is called, disposing of all filter chain controllers and setting them back up.");
+        isStreamManagerActive = false;
+        disposeOfFilterChainControllers();
+        setUpFilterChainControllers();
+        isStreamManagerActive = true;
+    }
+
+    /**
+     * Performs all shutdown and clean up for the bundle. Stops the executing thread and disposes of all packet filter chains. Uses
+     * the PreDestroy annotation to allow the container to perform this task automatically when the OSGi bundle is stopped.
+     */
+    @PreDestroy
+    public void shutdown()
+    {
+        synchronized (lock)
+        {
+            executor.shutdownNow();
+            disposeOfFilterChainControllers();
+            factory.dispose();
+        }
+    }
+
+    /**
+     * Calls the dispose on all filter chain controllers in the cache then clears them from the cache.
+     */
+    private void disposeOfFilterChainControllers()
+    {
+        // Remove MXBeans
+        for (final Long streamId : streams.keySet())
+        {
+            removeStreamMXBean(streamId);
+        }
+
+        for (final PacketFilterChainController filterChainController : streams.values())
+        {
+            filterChainController.dispose();
+        }
+
+        streams.clear();
+    }
+
+    /**
+     * gets new network MTU from the configuration manager.
+     * @return new MTU if success, otherwise the default mtuSize is returned.
+     */
+    private int getMtuSize()
+    {
+        int mtuSize = DEFAULT_MTU_SIZE;
+
+        try
+        {
+            final String mtuValue = (String)(configurationManager.getConfigProperty(MTU_SIZE));
+            if (mtuValue == null || mtuValue.trim().length() == 0)
+            {
+                logger.info("MTU not Specified, using default of {}", DEFAULT_MTU_SIZE);
+            }
+            else
+            {
+                mtuSize = Integer.valueOf(mtuValue);
+                logger.info("MTU size set to {}", mtuSize);
+            }
+        }
+        catch (final IOException e)
+        {
+            logger.error("Unable to determine default MTU size, using default of {}", DEFAULT_MTU_SIZE);
+        }
+        catch (final NumberFormatException e)
+        {
+            logger.error("Invalid MTU size specified, using default of {}", DEFAULT_MTU_SIZE);
+        }
+
+        return mtuSize;
+    }
+
+    private void addStreamMXBean(final StreamSnapshot stream)
+    {
+        MBeanServerUtility.register(new StreamInstrumentation(stream), String.format(MXBEAN_OBJECT_NAME, stream.getId()));
+    }
+
+    private void removeStreamMXBean(final Long streamId)
+    {
+        MBeanServerUtility.unregister(String.format(MXBEAN_OBJECT_NAME, streamId));
+    }
+}

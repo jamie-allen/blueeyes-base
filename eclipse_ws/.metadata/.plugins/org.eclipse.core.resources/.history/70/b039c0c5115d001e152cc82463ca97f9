@@ -1,0 +1,18 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.management;
+
+/**
+ * Interface describing the JMX instrumented data for blocks inserted in a route.
+ */
+public interface BlockStatisticsMXBean
+{
+    /**
+     * @return the number of blocks inserted to the next packet filter.
+     */
+    Long getBlocksInserted();
+
+    /**
+     * Reset all counters to zero.
+     */
+    void resetCounters();
+}

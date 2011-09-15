@@ -1,0 +1,62 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC.  */
+package com.ccadllc.firebird.core.serviceability.reporter.impl.report;
+
+import net.sf.json.JsonConfig;
+import net.sf.json.processors.JsonValueProcessor;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Translates special number values into string values for JSON.
+ */
+public class SpecialNumberValueProcessor implements JsonValueProcessor
+{
+    private static final String NOT_A_NUMBER = "NaN";
+    private static final String NEGATIVE_INFINITY = "-Infinity";
+    private static final String POSITIVE_INFINITY = "Infinity";
+
+    private final Logger logger = LoggerFactory.getLogger(SpecialNumberValueProcessor.class);
+
+    @Override
+    public Object processArrayValue(final Object value, final JsonConfig config)
+    {
+        return processValue(value);
+    }
+
+    @Override
+    public Object processObjectValue(final String key, final Object value, final JsonConfig jsonConfig)
+    {
+        return processValue(value);
+    }
+
+    private Object processValue(final Object value)
+    {
+        if (Double.class.isAssignableFrom(value.getClass()))
+        {
+            final Double doubleValue = (Double)value;
+            if (Double.isNaN( doubleValue ))
+            {
+                return NOT_A_NUMBER;
+            }
+            if (Double.isInfinite(doubleValue))
+            {
+                return (doubleValue == Double.POSITIVE_INFINITY) ? POSITIVE_INFINITY : NEGATIVE_INFINITY;
+            }
+        }
+        if (Float.class.isAssignableFrom(value.getClass()))
+        {
+            final Float floatValue = (Float)value;
+            logger.debug("############# HANDLING A FLOAT! Value: {}" +  floatValue.toString());
+            if (Float.isNaN( floatValue ))
+            {
+                return NOT_A_NUMBER;
+            }
+            if (Float.isInfinite(floatValue))
+            {
+                return (floatValue == Float.POSITIVE_INFINITY) ? POSITIVE_INFINITY : NEGATIVE_INFINITY;
+            }
+        }
+        return value;
+    }
+}

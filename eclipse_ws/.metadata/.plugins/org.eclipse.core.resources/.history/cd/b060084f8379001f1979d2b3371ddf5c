@@ -1,0 +1,151 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.test.controllers;
+
+import java.net.InetSocketAddress;
+import java.util.Set;
+import java.util.UUID;
+
+import com.ccadllc.commons.util.IntegerRange;
+import com.ccadllc.firebird.core.base.common.UnresolvedInetAddress;
+
+import org.apache.commons.lang.StringUtils;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Sets;
+
+
+/**
+ * Utility class with convenience methods for the DssController.
+ */
+public final class ControllerUtility
+{
+    /**
+     * Private constructor to ensure Singleton usage.
+     */
+    private ControllerUtility()
+    {
+    }
+
+    public static Multimap<Integer, Long> convertStringToPidMap(final String inputString)
+    {
+        final Multimap<Integer, Long> pidMap = ArrayListMultimap.create();
+        final String[] inputStringValues = StringUtils.split(inputString);
+        if (inputStringValues != null)
+        {
+            Preconditions.checkArgument((inputStringValues.length % 2) == 0, "Pid Mappings must have an even number of space-delimited values to interpret key/value pairs.");
+            for (int i = 0; i < inputStringValues.length; i += 2)
+            {
+                pidMap.put(Integer.valueOf(inputStringValues[i]), Long.valueOf(inputStringValues[i + 1]));
+            }
+        }
+        return pidMap;
+    }
+
+    public static Multimap<Integer, UUID> convertStringToUuidPidMap(final String inputString)
+    {
+        final Multimap<Integer, UUID> pidMap = ArrayListMultimap.create();
+        final String[] inputStringValues = StringUtils.split(inputString);
+        if (inputStringValues != null)
+        {
+            Preconditions.checkArgument((inputStringValues.length % 2) == 0, "Pid Mappings must have an even number of space-delimited values to interpret key/value pairs.");
+            for (int i = 0; i < inputStringValues.length; i += 2)
+            {
+                pidMap.put(Integer.valueOf(inputStringValues[i]), UUID.fromString(inputStringValues[i + 1]));
+            }
+        }
+        return pidMap;
+    }
+
+    public static Set<Integer> convertStringToIntegerIds(final String inputString)
+    {
+        final Set<Integer> integerIds = Sets.<Integer>newHashSet();
+        final String[] inputStringValues = StringUtils.split(inputString);
+        if (inputStringValues != null)
+        {
+            for (final String inputStringValue : inputStringValues)
+            {
+                integerIds.add(Integer.valueOf(inputStringValue));
+            }
+        }
+        return integerIds;
+    }
+
+    public static Set<UUID> convertStringToUUIDs(final String inputString)
+    {
+        final Set<UUID> UUIds = Sets.<UUID>newHashSet();
+        final String[] inputStringValues = StringUtils.split(inputString);
+        if (inputStringValues != null)
+        {
+            for (final String inputStringValue : inputStringValues)
+            {
+                UUIds.add(UUID.fromString(inputStringValue));
+            }
+        }
+        return UUIds;
+    }
+
+    public static Set<Long> convertStringToLongIds(final String inputString)
+    {
+        final String[] inputStringValues = StringUtils.split(inputString);
+        final Set<Long> longIds = Sets.<Long>newHashSet();
+        if (inputStringValues != null)
+        {
+            for (final String inputStringValue : inputStringValues)
+            {
+                longIds.add(Long.valueOf(inputStringValue));
+            }
+        }
+        return longIds;
+    }
+
+    public static Set<InetSocketAddress> convertStringToInetSocketAddressDestinations(final String inputString)
+    {
+        final String[] inputStringValues = StringUtils.split(inputString);
+        final Set<InetSocketAddress> destinations = Sets.<InetSocketAddress>newHashSet();
+        if (inputStringValues != null)
+        {
+            Preconditions.checkArgument((inputStringValues.length % 2) == 0, "Destinations must have an even number of space-delimited values to interpret (IP address, port) pairs.");
+            for (int i = 0; i < inputStringValues.length; i += 2)
+            {
+                destinations.add(new InetSocketAddress(inputStringValues[i], Integer.valueOf(inputStringValues[i + 1])));
+            }
+        }
+        return destinations;
+    }
+
+    public static Set<UnresolvedInetAddress> convertStringToUnresolvedInetAddressDestinations(final String inputString)
+    {
+        final String[] inputStringValues = StringUtils.split(inputString);
+        final Set<UnresolvedInetAddress> destinations = Sets.<UnresolvedInetAddress>newHashSet();
+        if (inputStringValues != null)
+        {
+            for (final String inputStringValue : inputStringValues)
+            {
+                destinations.add(UnresolvedInetAddress.create(inputStringValue));
+            }
+        }
+        return destinations;
+    }
+
+    public static Set<IntegerRange> convertStringToSetOfIntegerRanges(final String inputString)
+    {
+        final String[] inputStringValues = StringUtils.split(inputString);
+        final Set<IntegerRange> numberRanges = Sets.<IntegerRange>newTreeSet();
+        if (inputStringValues != null)
+        {
+            Preconditions.checkArgument((inputStringValues.length % 2) == 0, "Number ranges must have an even number of space-delimited values.");
+            for (int i = 0; i < inputStringValues.length; i += 2)
+            {
+                numberRanges.add(new IntegerRange(Integer.valueOf(inputStringValues[i]), Integer.valueOf(inputStringValues[i + 1])));
+            }
+        }
+        return numberRanges;
+    }
+
+    public static Integer convertStringToOptionalInteger(final String inputString)
+    {
+        return StringUtils.isBlank(inputString) ? null : Integer.valueOf(inputString.trim());
+    }
+}

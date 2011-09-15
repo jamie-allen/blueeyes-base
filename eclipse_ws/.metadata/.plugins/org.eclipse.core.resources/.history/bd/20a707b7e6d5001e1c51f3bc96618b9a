@@ -1,0 +1,52 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import java.io.IOException;
+import java.util.concurrent.ScheduledExecutorService;
+
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.JmxRouteNotificationManager;
+import com.ccadllc.firebird.dss.server.realtime.standalone.stream.manager.StreamManager;
+
+import org.apache.mina.transport.socket.nio.NioProcessor;
+
+/**
+ * Factory to create valid {@link RouteController}s.
+ */
+public interface RouteControllerFactory
+{
+    /**
+     * Creates a valid {@code TcpRouteController} instance.
+     *
+     * <p>Registers the route's information for management.</p>
+     *
+     * @param route to create {@code TcpRouteController} for.
+     * @param streamManager stream manager
+     * @param jmxRouteNotificationManager route notification manager
+     * @param executor executor service
+     * @param processor non-blocking io processor
+     * @return a valid {@code TcpRouteController}
+     * @throws IOException upon issue createing the {@code TcpRouteController}
+     */
+    TcpRouteController createTcpRouteControllerAndExposeManagementInfo(
+        RouteSnapshot route, 
+        StreamManager streamManager, 
+        JmxRouteNotificationManager jmxRouteNotificationManager,
+        ScheduledExecutorService executor,
+        NioProcessor processor) throws IOException;
+
+    /**
+     * Creates a valid {@code UdpRouteController} instance.
+     *
+     * <p>Registers the route's information for management.</p>
+     *
+     * @param route to create {@code UdpRouteController} for.
+     * @param streamManager stream manager
+     * @param jmxRouteNotificationManager route notification manager
+     * @return a valid {@code UdpRouteController}
+     * @throws IOException upon issue createing the {@code UdpRouteController}
+     */
+    UdpRouteController createUdpRouteControllerAndExposeManagementInfo(RouteSnapshot route, StreamManager streamManager, JmxRouteNotificationManager jmxRouteNotificationManager) throws IOException;
+}

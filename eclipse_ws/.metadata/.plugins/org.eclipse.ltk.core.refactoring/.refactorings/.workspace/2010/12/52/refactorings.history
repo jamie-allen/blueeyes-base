@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Delete 6 resources" deleteContents="false" description="Delete 6 resources" element1="/ccad-firebird-vms-dks-ddip" element2="/ccad-firebird-vms-dks-domain" element3="/ccad-firebird-vms-dks-integration-tests" element4="/ccad-firebird-vms-dks-plugin" element5="/ccad-firebird-vms-dks-simulator-server" element6="/ccad-firebird-vms-dks-simulator-ui" flags="7" id="org.eclipse.ltk.core.refactoring.delete.resources" resources="6" stamp="1292873619954"/>
+</session>

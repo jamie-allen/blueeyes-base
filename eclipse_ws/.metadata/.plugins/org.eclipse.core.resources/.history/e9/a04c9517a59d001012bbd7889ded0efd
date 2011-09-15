@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<navigationConfiguration
+    xmlns="http://ccadllc.com/firebird/schema/navigationConfiguration"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+    <item id="Events™" rank="10" href="ccad-firebird-core-event-eventweb-ui-screen.swf" roles="ROLE_USER"/>
+
+</navigationConfiguration>
+        

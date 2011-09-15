@@ -1,0 +1,117 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.timer.manager.management;
+
+import java.util.Date;
+import java.util.Map;
+
+import javax.management.NotificationBroadcasterSupport;
+
+import com.ccadllc.firebird.dss.common.datatypes.MeteringType;
+import com.ccadllc.firebird.dss.server.common.PeriodicDataType;
+import com.ccadllc.firebird.dss.server.realtime.timer.manager.PeriodicState;
+import com.ccadllc.firebird.dss.server.realtime.timer.manager.TimerManager;
+import com.ccadllc.firebird.dss.server.realtime.timer.manager.TimerManager.PeriodicInfo;
+
+import net.jcip.annotations.ThreadSafe;
+
+import com.google.common.collect.Maps;
+
+/**
+ * JMX Bean instrumenting information about periodics as realized by the Timer Manager.
+ */
+@ThreadSafe
+public final class PeriodicInstrumentation extends NotificationBroadcasterSupport implements PeriodicInstrumentationMXBean
+{
+    private final PeriodicState state;
+    private final PeriodicDataType periodicDataType;
+    private final int numberOfBlocks;
+    private final Date startTime;
+    private final Date stopTime;
+    private final int insertionRate;
+    private final MeteringType meteringType;
+    private final Long streamId;
+    private final Map<String, String> properties;
+    private volatile Date lastIntervalStartTime;
+    private volatile int lastBlockInserted;
+
+    public PeriodicInstrumentation(final PeriodicInfo periodicInfo)
+    {
+        state = periodicInfo.getState();
+        periodicDataType = periodicInfo.getPeriodic().getPeriodicDataType();
+        numberOfBlocks = periodicInfo.getPeriodic().getNumberOfBlocks();
+        startTime = periodicInfo.getPeriodic().getStartTime();
+        stopTime = periodicInfo.getPeriodic().getStopTime();
+        insertionRate = periodicInfo.getPeriodic().getInsertionRate();
+        meteringType = periodicInfo.getPeriodic().getMeteringType();
+        streamId = periodicInfo.getPeriodic().getStream().getId();
+
+        properties = Maps.newHashMap(periodicInfo.getPeriodic().getProperties());
+    }
+
+    public PeriodicState getState()
+    {
+        return state;
+    }
+
+    public PeriodicDataType getPeriodicDataType()
+    {
+        return periodicDataType;
+    }
+
+    public int getNumberOfBlocks()
+    {
+        return numberOfBlocks;
+    }
+
+    public Date getStartTime()
+    {
+        return startTime;
+    }
+
+    public Date getStopTime()
+    {
+        return stopTime;
+    }
+
+    public int getInsertionRate()
+    {
+        return insertionRate;
+    }
+
+    public Map<String, String> getProperties()
+    {
+        return properties;
+    }
+
+    public MeteringType getMeteringType()
+    {
+        return meteringType;
+    }
+
+    public Long getStreamId()
+    {
+        return streamId;
+    }
+
+    public Date getLastIntervalStartTime()
+    {
+        return lastIntervalStartTime;
+    }
+
+    public void setLastIntervalStartTime(final Date lastIntervalStartTime)
+    {
+        this.lastIntervalStartTime = lastIntervalStartTime;
+    }
+
+    public int getLastBlockInserted()
+    {
+        return lastBlockInserted;
+    }
+
+    public void setLastBlockInserted(final int lastBlockInserted)
+    {
+        this.lastBlockInserted = lastBlockInserted;
+    }
+}

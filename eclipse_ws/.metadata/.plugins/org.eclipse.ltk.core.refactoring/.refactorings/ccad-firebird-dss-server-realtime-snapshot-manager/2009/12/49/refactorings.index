@@ -1,0 +1,4 @@
+1259854521414	Rename local variable 'streams'
+1259854531930	Rename local variable 'stream'
+1259879385605	Rename field 'TRANPORT_STREAM_ADDED_EVENT'
+1259879394625	Rename field 'TRANPORT_STREAM_UPDATED_EVENT'

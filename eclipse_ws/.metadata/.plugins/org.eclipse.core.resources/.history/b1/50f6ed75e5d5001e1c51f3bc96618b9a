@@ -1,0 +1,87 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.stream.manager.impl;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+
+import java.lang.reflect.Field;
+import java.net.InetSocketAddress;
+import java.util.Set;
+
+import com.ccadllc.firebird.dss.server.common.StreamSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.transport.manager.TransportManager;
+
+import org.easymock.EasyMock;
+import org.springframework.util.ReflectionUtils;
+import org.testng.annotations.Test;
+
+import com.google.common.collect.Sets;
+
+@Test
+public class TransportSenderTest
+{
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testNullTransportManager()
+    {
+        new TransportSender(null, EasyMock.createMock(StreamSnapshot.class));
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testNullStream()
+    {
+        new TransportSender(EasyMock.createMock(TransportManager.class), null);
+    }
+
+    public void testChangeDestinations()
+    {
+        final TransportManager transportManager = EasyMock.createMock(TransportManager.class);
+        final StreamSnapshot stream = EasyMock.createMock(StreamSnapshot.class);
+        final Set<InetSocketAddress> initialDestinations = createDestinations(5000, 5001, 5002);
+        EasyMock.expect(stream.getDestinations()).andReturn(initialDestinations);
+
+        EasyMock.replay(transportManager, stream);
+
+        // Check that the correct number of destinations is set initially.
+        final TransportSender transportSender = new TransportSender(transportManager, stream);
+        assertThat(getDestinationsCacheFromTransportSender(transportSender).size(), is(initialDestinations.size()));
+
+        // Check that the mutated destinations set is correct.
+        final Set<InetSocketAddress> updatedDestinations = createDestinations(5000, 5001, 5002, 5003, 5004, 5005);
+        transportSender.setDestinations(updatedDestinations);
+        assertThat(getDestinationsCacheFromTransportSender(transportSender).size(), is(updatedDestinations.size()));
+
+        EasyMock.verify(transportManager, stream);
+    }
+
+    /**
+     * Uses reflection to get a reference to the destinations cache in TransportSender instance.
+     *
+     * @param transportSender from which to get a reference to the destinations collection
+     * @return Set<InetSocketAddress> of destinations
+     */
+    @SuppressWarnings("unchecked")
+    private Set<InetSocketAddress> getDestinationsCacheFromTransportSender(final TransportSender transportSender)
+    {
+        final Field destinationsField = ReflectionUtils.findField(TransportSender.class, "destinations");
+        ReflectionUtils.makeAccessible(destinationsField);
+        return (Set<InetSocketAddress>)ReflectionUtils.getField(destinationsField, transportSender);
+    }
+
+    /**
+     * Creates a destination for each given port.
+     *
+     * @param ports for which to create destinations
+     * @return set of <code>InetSocketAddress</code>'s of destinations
+     */
+    @SuppressWarnings("unchecked")
+    private Set<InetSocketAddress> createDestinations(final Integer... ports)
+    {
+        final Set destinations = Sets.newHashSet();
+        for (final int port : ports)
+        {
+            destinations.add(InetSocketAddress.createUnresolved("127.0.0.1", port));
+        }
+
+        return destinations;
+    }
+}

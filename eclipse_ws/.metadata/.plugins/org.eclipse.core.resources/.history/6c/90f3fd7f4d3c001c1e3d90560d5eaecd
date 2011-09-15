@@ -1,0 +1,109 @@
+.idColumn {
+    width: 10%;
+}
+
+.sizeThresholdColumn {
+    width: 10%;
+}
+
+.logSizeThresholdColumn {
+    width: 80%;
+}
+
+.nameColumn {
+    width: 25%;
+}
+
+.stateColumn {
+    width: 10%;
+}
+
+.sizeColumn {
+    width: 5%;
+}
+
+.freeSizeColumn {
+    width: 15%;
+}
+
+.logSizeColumn {
+    width: 15%;
+}
+
+.center {
+  text-align: center;
+}
+
+.leftJustify {
+  text-align: left;
+  padding-left: 25px;
+}
+
+.rightJustify {
+  text-align: right;
+  padding-right: 25px;
+}
+
+.logFreeSizeColumn {
+    width: 15%;
+}
+
+FieldSet {
+    width: 400px;
+    height:120px;
+}
+
+div.tableBox {
+    margin-top: 1em;
+}
+
+.tableTitle{
+    margin-top: 50px;
+    font-weight: bold;
+}
+
+.formFieldLabel{
+  height: 1em;
+  padding-top: 0em;
+  margin-top: 0em;
+}
+
+
+.Ok, .Undetermined, .Warning, .Minor, .Major, .Critical{
+    width: 10px;
+    height:5px;
+}
+
+.Ok, .Undetermined{
+    background-color: green;
+}
+.Warning{
+    background-color: blue;
+}
+.Minor{
+    background-color: yellow;
+}
+.Major, .Critical{
+    background-color: red;
+}
+
+.horizontalScrollableChart{
+    overflow:auto;
+    width:1020px;
+    height:320px;
+}
+
+#controlStreamStatus div.tableBox{
+    float: left;
+    width: 65%;
+    margin-right: 10px;
+}
+
+.subSystemStatusTable{
+	clear: both;
+	padding-top: 3em;
+}
+
+.fieldSet {
+    width:100%;
+    }

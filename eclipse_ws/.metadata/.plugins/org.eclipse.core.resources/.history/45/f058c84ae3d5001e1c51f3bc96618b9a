@@ -1,0 +1,32 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.stream.manager.impl;
+
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+
+import org.springframework.context.ApplicationEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.context.event.ContextRefreshedEvent;
+
+/**
+ * Listens for the completion of the application context for the Realtime Stream Manager.
+ *
+ * <p>This provides a callback to when the application context is refreshed.</p>
+ */
+public class StreamManagerApplicationContextListener implements ApplicationListener
+{
+    private final StreamManager streamManager;
+
+    public StreamManagerApplicationContextListener(final StreamManager streamManager)
+    {
+        this.streamManager = streamManager;
+    }
+
+    @Override
+    public void onApplicationEvent(final ApplicationEvent applicationEvent)
+    {
+        if (applicationEvent instanceof ContextRefreshedEvent)
+        {
+            streamManager.init();
+        }
+    }
+}

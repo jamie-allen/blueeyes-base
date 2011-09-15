@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Extract method &apos;private void dssMatches(final Object argument)&apos; from &apos;com.ccadllc.firebird.dss.client.topology.impl.DssMatcher.matches()&apos; to &apos;com.ccadllc.firebird.dss.client.topology.impl.DssMatcher&apos;&#x0A;- Original project: &apos;ccad-firebird-dss-client-topology&apos;&#x0A;- Method name: &apos;dssMatches&apos;&#x0A;- Destination type: &apos;com.ccadllc.firebird.dss.client.topology.impl.DssMatcher&apos;&#x0A;- Declared visibility: &apos;private&apos;" comments="false" description="Extract method &apos;dssMatches&apos;" destination="0" exceptions="false" flags="786434" id="org.eclipse.jdt.ui.extract.method" input="/src\/test\/java&lt;com.ccadllc.firebird.dss.client.topology.impl{DssMatcher.java" name="dssMatches" replace="false" selection="861 903" stamp="1274817114988" version="1.0" visibility="2"/>
+</session>

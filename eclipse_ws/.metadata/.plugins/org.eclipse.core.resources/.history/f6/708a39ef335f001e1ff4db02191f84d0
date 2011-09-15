@@ -1,0 +1,53 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import javax.management.AttributeChangeNotification;
+import javax.management.Notification;
+
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.JmxRouteNotificationManager;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.base.Preconditions;
+
+public class RouteNotificationHelper
+{
+    public static final String JMX_ROUTE_NOTIFICATION_MANAGER = "jmxRouteNotificationManager";
+    public static final String JMX_NOTIFICATION_PREFIX = "notificationsPrefixString";
+    private static final long NOTIFICATION_SEQUENCE_NUMBER_PLACEHOLDER = 1L;
+
+    private final Logger logger = LoggerFactory.getLogger(RouteNotificationHelper.class);
+
+    private final JmxRouteNotificationManager jmxRouteNotificationManager;
+    private final String notificationsPrefixString;
+
+    public RouteNotificationHelper(final JmxRouteNotificationManager jmxRouteNotificationManager,
+        final String notificationsPrefixString)
+    {
+        Preconditions.checkNotNull(jmxRouteNotificationManager, JMX_ROUTE_NOTIFICATION_MANAGER);
+        Preconditions.checkNotNull(notificationsPrefixString, JMX_NOTIFICATION_PREFIX);
+
+        this.jmxRouteNotificationManager = jmxRouteNotificationManager;
+        this.notificationsPrefixString = notificationsPrefixString;
+    }
+
+    public boolean isRejectingStatusChanged(final boolean wasRejecting, final boolean nowRejecting)
+    {
+        logger.debug(String.format("wasRejecting: %s, nowRejecting: %s", wasRejecting, nowRejecting));
+        return ((!wasRejecting && nowRejecting) || (wasRejecting && !nowRejecting));
+    }
+
+    private Notification createPacketRejectingNotification(final String message, final String attributeName, final boolean nowRejecting)
+    {
+        return new AttributeChangeNotification(jmxRouteNotificationManager,
+            NOTIFICATION_SEQUENCE_NUMBER_PLACEHOLDER, System.currentTimeMillis(),
+            String.format("%s %s.", notificationsPrefixString, message),
+            attributeName, boolean.class.getName(), !nowRejecting, nowRejecting);
+    }
+
+    public void sendRejectPacketNotification(final String message, final String attributeName, final boolean nowRejecting)
+    {
+        jmxRouteNotificationManager.sendNotification(createPacketRejectingNotification(message, attributeName, nowRejecting));
+    }
+}

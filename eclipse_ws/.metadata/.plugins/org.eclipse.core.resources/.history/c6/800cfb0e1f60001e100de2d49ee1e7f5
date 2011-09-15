@@ -1,0 +1,100 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.snapshot.manager.impl;
+
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.UDP_ROUTE_LOOKUP_MXBEAN_OBJECT_NAME;
+
+import java.util.Collection;
+
+import com.ccadllc.firebird.dss.common.datatypes.RouteDataType;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager;
+
+import net.jcip.annotations.ThreadSafe;
+
+import org.springframework.jmx.export.annotation.ManagedOperation;
+import org.springframework.jmx.export.annotation.ManagedResource;
+
+import com.google.common.collect.Sets;
+
+/**
+ * MXBean implementation to support the lookup of UDP Route information.
+ */
+@ManagedResource(objectName = UDP_ROUTE_LOOKUP_MXBEAN_OBJECT_NAME)
+@ThreadSafe
+public final class RealTimeSnapshotUdpRouteLookup implements RealtimeSnapshotUdpRouteLookupMXBean
+{
+    private final RealTimeSnapshotManager realTimeSnapshotManager;
+
+    public RealTimeSnapshotUdpRouteLookup(final RealTimeSnapshotManager realTimeSnapshotManager)
+    {
+        this.realTimeSnapshotManager = realTimeSnapshotManager;
+    }
+
+    @ManagedOperation
+    public Long[] getUdpRouteIdsForMappedPid(final Integer pid)
+    {
+        final Collection<Long> routeIds = Sets.newHashSet();
+        for (final RouteSnapshot route : realTimeSnapshotManager.getRoutes().values())
+        {
+            if (route.getPidMappings() != null)
+            {
+                for (final Integer pidKey : route.getPidMappings().keySet())
+                {
+                    if (pid.equals(pidKey))
+                    {
+                        routeIds.add(route.getId());
+                    }
+                }
+            }
+        }
+
+        return routeIds.toArray(new Long[routeIds.size()]);
+    }
+
+    @ManagedOperation
+    public Long getUdpRouteIdsForPort(final Integer port)
+    {
+        for (final RouteSnapshot route : realTimeSnapshotManager.getRoutes().values())
+        {
+            if (route.getPort() == port)
+            {
+                return route.getId();
+            }
+        }
+        return null;
+    }
+
+    @ManagedOperation
+    public Long[] getUdpRouteIdsForStreamId(final String streamId)
+    {
+        final Collection<Long> routeIds = Sets.newHashSet();
+        for (final RouteSnapshot route : realTimeSnapshotManager.getRoutes().values())
+        {
+            switch (route.getDataType())
+            {
+                case MPEG_PACKETS:
+                    addRouteIfStreamInUse(streamId, routeIds, route.getPidMappings().values(), route.getId());
+                    break;
+                case BLOCKS:
+                    addRouteIfStreamInUse(streamId, routeIds, route.getStreamIds(), route.getId());
+                    break;
+                default:
+                    logger.warn("Route data type not found on lookup.");
+                    break;
+            }
+        }
+
+        return routeIds.toArray(new Long[routeIds.size()]);
+    }
+
+    private void addRouteIfStreamInUse(final String streamId, final Collection<Long> routeIds, final Collection<Long> streamIds, final Long routeId)
+    {
+        for (final Long streamIdValue : streamIds)
+        {
+            if (streamIdValue.equals(Long.parseLong(streamId)))
+            {
+                routeIds.add(routeId);
+            }
+        }
+    }
+}

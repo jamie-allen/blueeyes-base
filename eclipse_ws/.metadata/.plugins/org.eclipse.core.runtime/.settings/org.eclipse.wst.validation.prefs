@@ -1,0 +1,24 @@
+#Thu Jun 25 16:22:49 EDT 2009
+vals/org.eclipse.jst.jsp.core.JSPContentValidator/global=TF01
+vals/org.eclipse.jst.jsp.core.TLDValidator/global=TF01
+vals/org.eclipse.wst.dtd.core.dtdDTDValidator/global=TF01
+USER_PREFERENCE=saveAutomaticallyfalseprojectsCanOverridetruedisableAllValidationfalseversion1.2.102.v200905201610
+DELEGATES_PREFERENCE=delegateValidatorList
+vals/org.eclipse.jst.jsf.ui.JSFAppConfigValidator/global=TF01
+eclipse.preferences.version=1
+vals/org.eclipse.jst.jsp.core.JSPBatchValidator/global=TF01
+override=true
+vals/org.eclipse.jpt.core.jpaValidator/global=TF01
+vf.version=3
+confirmDialog=true
+vals/org.eclipse.jst.jsf.ui.JSFNonELAttributeValueValidator/global=TF01
+stateTS=0
+vals/org.eclipse.wst.xsl.core.xsl/global=TF02
+vals/org.eclipse.wst.xsd.core.xsd/global=TF02162org.eclipse.wst.xsd.core.internal.validation.eclipse.Validator
+suspend=false
+USER_MANUAL_PREFERENCE=enabledManualValidatorList
+vals/org.eclipse.wst.html.ui.HTMLValidator/global=TF01
+USER_BUILD_PREFERENCE=enabledBuildValidatorList
+vals/org.eclipse.wst.wsdl.validation.wsdl/global=TF02158org.eclipse.wst.wsdl.validation.internal.eclipse.Validator
+vals/org.eclipse.wst.xml.core.xml/global=TF03
+saveAuto=false

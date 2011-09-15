@@ -1,0 +1,66 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.core.base.common.util;
+
+import junit.framework.Assert;
+
+import org.testng.annotations.Test;
+
+/**
+ *	Unit tests for {@link TextParsingUtility}.
+ */
+@Test
+public class TextParsingUtilityTest
+{
+	String upperCaseString = "RESET_ON_CONNECT_ONLY";
+	public void testHumanizeUpperCaseString()
+	{
+		final String s = TextParsingUtility.humanizeUpperCaseTextString(upperCaseString);
+		Assert.assertEquals(s, "Reset On Connect Only");
+	}
+
+	public void testValidateBooleanStringValue_withLowerCaseTrue()
+	{
+	    final String testValue = "true";
+	    Assert.assertTrue(TextParsingUtility.validateBooleanStringValue(testValue));
+	}
+
+    public void testValidateBooleanStringValue_withLowerCaseFalse()
+    {
+        final String testValue = "false";
+        Assert.assertFalse(TextParsingUtility.validateBooleanStringValue(testValue));
+    }
+
+    public void testValidateBooleanStringValue_withMixedCaseTrue()
+    {
+        final String testValue = "TrUe";
+        Assert.assertTrue(TextParsingUtility.validateBooleanStringValue(testValue));
+    }
+
+    public void testValidateBooleanStringValue_withMixedCaseFalse()
+    {
+
+    }
+
+    public void testValidateBooleanStringValue_withUpperCaseTrue()
+    {
+        final String testValue = "TRUE";
+        Assert.assertTrue(TextParsingUtility.validateBooleanStringValue(testValue));
+    }
+
+    public void testValidateBooleanStringValue_withUpperCaseFalse()
+    {
+
+    }
+
+    @Test(expectedExceptions = {IllegalArgumentException.class })
+    public void testValidateBooleanStringValue_withInvalidStringValue()
+    {
+        TextParsingUtility.validateBooleanStringValue("abc");
+    }
+
+    @Test(expectedExceptions = {IllegalArgumentException.class })
+    public void testValidateBooleanStringValue_withNumericValue()
+    {
+
+    }
+}

@@ -1,0 +1,76 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.test.tools.web;
+
+import com.ccadllc.firebird.vms.test.tools.support.DataManager;
+import com.ccadllc.firebird.vms.test.tools.support.DtaStreamsData;
+import com.ccadllc.firebird.vms.test.tools.support.GenericEdgeDevicesData;
+import com.ccadllc.firebird.vms.test.tools.support.ServingLocationsData;
+import com.ccadllc.firebird.vms.test.tools.web.schema.DtaStreams;
+import com.ccadllc.firebird.vms.test.tools.web.schema.GenericEdgeDevices;
+import com.ccadllc.firebird.vms.test.tools.web.schema.Sem;
+import com.ccadllc.firebird.vms.test.tools.web.schema.Sems;
+import com.ccadllc.firebird.vms.test.tools.web.schema.ServingLocations;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+
+@Controller
+public class ToolsController
+{
+    @Autowired private DataManager dataManager;
+
+    @RequestMapping("/modifyTopology.form")
+    public void modifyTopology(@RequestParam final DtaStreams dtaStreams,
+                               @RequestParam final GenericEdgeDevices genericEdgeDevices,
+                               @RequestParam final ServingLocations servingLocations) throws Exception
+    {
+        dataManager.modifyTopology(transformDtaStreamsToDtaStreamsData(dtaStreams),
+            transformGenericEdgeDevicesToGenericEdgeDevicesData(genericEdgeDevices),
+            transformServingLocationsToServingLocationsData(servingLocations));
+    }
+
+    @RequestMapping("/addSems.form")
+    public void addSems(@RequestParam final Sems sems) throws Exception
+    {
+        sems.getSem().size();
+        for (Sem sem : sems.getSem())
+        {
+            dataManager.addSemToTopology(sem.getName(), sems.getStartingLocation(), sem.getAddress());
+        }
+    }
+
+    private DtaStreamsData transformDtaStreamsToDtaStreamsData(final DtaStreams dtaStreams)
+    {
+        final DtaStreamsData dtaStreamsData = new DtaStreamsData.Builder()
+            .isPlaceAtParentNode(dtaStreams.isPlaceAtParentNode())
+            .caPid(dtaStreams.getCaPid().intValue())
+            .emmPid(dtaStreams.getEmmPid().intValue())
+            .codeDownloadPid(dtaStreams.getCodeDownloadPid().intValue())
+            .networkPid(dtaStreams.getNetworkPid().intValue())
+            .build();
+        return dtaStreamsData;
+    }
+
+    private GenericEdgeDevicesData transformGenericEdgeDevicesToGenericEdgeDevicesData(final GenericEdgeDevices genericEdgeDevices)
+    {
+        final GenericEdgeDevicesData genericEdgeDevicesData = new GenericEdgeDevicesData.Builder()
+            .amount(Integer.valueOf(genericEdgeDevices.getAmount()))
+            .rfChannel(genericEdgeDevices.getQamChannels().intValue())
+            .startingAddress(genericEdgeDevices.getStartingAddress())
+            .build();
+        return genericEdgeDevicesData;
+    }
+
+    private ServingLocationsData transformServingLocationsToServingLocationsData(final ServingLocations servingLocations)
+    {
+        final ServingLocationsData servingLocationsData = new ServingLocationsData.Builder()
+            .startingLocation(servingLocations.getStartingLocation())
+            .servingLocationPrefix(servingLocations.getServingLocationPrefix())
+            .width(servingLocations.getWidth().intValue())
+            .length(servingLocations.getLength().intValue())
+            .build();
+        return servingLocationsData;
+    }
+}

@@ -1,0 +1,61 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.stream.manager.impl;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+
+import java.util.List;
+
+import com.ccadllc.firebird.vms.common.packetfiltering.AbstractPacketFilter;
+
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+import com.google.common.collect.Lists;
+
+@Test
+public class Mpeg2PacketizerTest
+{
+    private static class PacketRecordingPacketFilter extends AbstractPacketFilter
+    {
+        private final List<byte[]> packets = Lists.newArrayList();
+
+        @Override
+        public boolean insert(final byte[] packet)
+        {
+            packets.add(packet);
+            return true;
+        }
+
+        public List<byte[]> getPacktets()
+        {
+            return packets;
+        }
+    }
+
+    private byte[] mpeg2Packet;
+    private PacketRecordingPacketFilter packetRecorder;
+    private Mpeg2Packetizer mpeg2Packetizer;
+    private Mpeg2Encoder encoder;
+
+    @BeforeMethod
+    public void setUp()
+    {
+        encoder = new DefaultMpeg2Encoder();
+        packetRecorder = new PacketRecordingPacketFilter();
+        mpeg2Packetizer = new Mpeg2Packetizer(encoder, packetRecorder);
+        mpeg2Packet = MultiplexerTestUtils.getMpeg2Packet();
+    }
+
+    public void testSinkInserts()
+    {
+        assertThat(mpeg2Packetizer.insert(mpeg2Packet), is(true));
+    }
+
+    public void testStartingByteInMpegPacketIsZero()
+    {
+        mpeg2Packetizer.insert(mpeg2Packet);
+        final List<byte[]> packets = packetRecorder.getPacktets();
+        assertThat(packets.get(0)[4], is((byte)0));
+    }
+}

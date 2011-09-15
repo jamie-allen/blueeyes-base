@@ -1,0 +1,20 @@
+package akka.util
+
+class RingBuffer[E <: AnyRef](val maxCapacity: Int) {
+  require(maxCapacity > 0)
+
+  // Define sequence cursor on it's own cache line to prevent 
+  val p1, p2, p3, p4, p5, p6, p7: Long = -1L // cache line padding
+  @volatile private var _cursor = -1L
+  val p8, p9, p10, p11, p12, p13, p14: Long = -1L // cache line padding
+
+  
+  val sizeAsPowerOfTwo = Util.ceilingNextPowerOfTwo(size)
+  val ringModMask = sizeAsPowerOfTwo - 1
+  val entries: Array[T] = new Array[T](sizeAsPowerOfTwo)
+  
+  
+  private def fill(entryFactory: E) { for (i <- 0 until entries.length) entries(i) = entryFactory.create() }
+  
+  private def ceilingNextPowerOfTwo(x: Int) = 1 << (32 - Integer.numberOfLeadingZeros(x - 1))
+}

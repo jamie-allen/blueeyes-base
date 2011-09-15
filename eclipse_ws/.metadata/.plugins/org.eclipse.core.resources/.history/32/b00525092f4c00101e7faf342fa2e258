@@ -1,0 +1,45 @@
+/*
+ * Copyright 2010 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+
+import org.apache.mina.core.session.IdleStatus;
+import org.apache.mina.transport.socket.SocketSessionConfig;
+import org.apache.mina.transport.socket.nio.NioSocketAcceptor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Accepts data from a TCP source.
+ */
+public class TcpSource extends AbstractSource
+{
+    private static final int SOCKET_IDLE_TIMEOUT = 600;
+    private final Logger logger = LoggerFactory.getLogger(TcpSource.class);
+
+    private final TcpRouteEstablisher tcpRouteEstablisher;
+
+    public TcpSource(final RouteSnapshot route, final Decoder decoder, final TcpRouteEstablisher tcpRouteEstablisher) throws IOException
+    {
+        super(route, decoder, new NioSocketAcceptor());
+        this.tcpRouteEstablisher = tcpRouteEstablisher;
+        final SocketSessionConfig socketSessionConfig = (SocketSessionConfig)(getAcceptor().getSessionConfig());
+        socketSessionConfig.setKeepAlive(true);
+        socketSessionConfig.setIdleTime(IdleStatus.BOTH_IDLE, SOCKET_IDLE_TIMEOUT);
+        getAcceptor().bind(new InetSocketAddress(route.getPort()));
+        getAcceptor().setCloseOnDeactivation(false);
+        logger.debug("Opened TCP port " + route.getPort());
+    }
+
+    @Override
+    public void dispose()
+    {
+        super.dispose();
+        tcpRouteEstablisher.unregisterTcpPort(route.getPort());
+    }
+}

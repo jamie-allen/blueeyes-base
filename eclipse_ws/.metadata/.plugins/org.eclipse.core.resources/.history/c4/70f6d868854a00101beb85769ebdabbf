@@ -1,0 +1,252 @@
+/*
+ * Copyright 2007 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.core.ui.navigation.impl;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.io.UnsupportedEncodingException;
+import java.util.Arrays;
+import java.util.List;
+
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.xpath.XPath;
+import javax.xml.xpath.XPathConstants;
+import javax.xml.xpath.XPathExpressionException;
+import javax.xml.xpath.XPathFactory;
+
+import net.jcip.annotations.Immutable;
+
+import org.apache.commons.io.IOUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.core.io.Resource;
+import org.w3c.dom.Document;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+import org.xml.sax.InputSource;
+import org.xml.sax.SAXException;
+
+import com.google.common.collect.Lists;
+
+/** Parses an XML file and provides <code>NavigationConfiguration</code>. */
+@Immutable
+public final class XmlNavigationConfigurationParser
+{
+    private final Logger logger = LoggerFactory.getLogger(XmlNavigationConfigurationParser.class);
+
+    /**
+     * Parses the XML file referenced by the specified resource.
+     *
+     * @param location resource referencing the XML file to parse
+     * @return parsed items
+     * @throws IOException if an error is encountered opening the resource
+     * @throws NavigationConfigurationException if an error is encountered while parsing
+     */
+    public ImmutableNavigationConfiguration parse(final Resource location) throws IOException
+    {
+        final InputStream istream = location.getInputStream();
+        try
+        {
+            return parse(istream);
+        }
+        finally
+        {
+            IOUtils.closeQuietly(istream);
+        }
+    }
+
+    /**
+     * Parses the XML navigation configuration.
+     *
+     * @param inputStream input to the XML navigation configuration file
+     * @return parsed navigation configuration
+     * @throws NavigationConfigurationException if error is encountered while parsing the navigation configuration
+     */
+    private ImmutableNavigationConfiguration parse(final InputStream inputStream)
+    {
+        final DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+
+        try
+        {
+            final DocumentBuilder builder = factory.newDocumentBuilder();
+//            final Document document = builder.parse(inputStream);
+//            final InputSource inputSource = new InputSource(inputStream);
+//            inputSource.setEncoding("UTF-8");
+            final Reader reader = new BufferedReader(new InputStreamReader(inputStream, "UTF-8"));
+            final InputSource inputSource = new InputSource(reader);
+            inputSource.setEncoding("UTF-8");
+            final Document document = builder.parse(inputSource);
+            final List<NavigationItem> items = parseNavigationItems(document.getFirstChild());
+            return new ImmutableNavigationConfiguration(items);
+        }
+        catch (final ParserConfigurationException e)
+        {
+            throw new NavigationConfigurationException("Encountered unexpected parser configuration exception.", e);
+        }
+        catch (final SAXException e)
+        {
+            throw new NavigationConfigurationException("Unable to parse XML document.", e);
+        }
+        catch (final IOException e)
+        {
+            throw new NavigationConfigurationException("Encountered IO error while parsing XML document.", e);
+        }
+    }
+
+    /**
+     * Parses the navigation items from the XML navigation configuration, if any exist.
+     *
+     * @param node XML <code>Node</code> to parse
+     * @return navigation items, <code>null</code> if none exist
+     * @throws NavigationConfigurationException if an unexpected XPath expression is encountered or there is an exception parsing a
+     *             sub item.
+     */
+    private List<NavigationItem> parseNavigationItems(final Node node)
+    {
+        final XPath xpath = XPathFactory.newInstance().newXPath();
+        final NodeList subnodes;
+        try
+        {
+            subnodes = (NodeList)xpath.evaluate("item", node, XPathConstants.NODESET);
+        }
+        catch (final XPathExpressionException e)
+        {
+            throw new NavigationConfigurationException("Unexpected XPath exception encountered.", e);
+        }
+        final List<NavigationItem> subitems = Lists.newArrayList();
+
+        for (int i = 0; i < subnodes.getLength(); ++i)
+        {
+            final Node subnode = subnodes.item(i);
+            final NavigationItem subitem = parseNavigationItem(subnode);
+            subitems.add(subitem);
+        }
+        return subitems.size() == 0 ? null : subitems;
+    }
+
+    /**
+     * Parses a <code>NavigationItem</code>.
+     *
+     * @param node node to parse
+     * @return <code>NavigationItem</code>
+     * @throws NavigationConfigurationException if error is encountered parsing the node
+     */
+    private NavigationItem parseNavigationItem(final Node node)
+    {
+        final String id = parseNavigationItemId(node);
+        final String href = parseNavigationItemHref(node);
+        final boolean home = parseNavigationItemHomeScreenStatus(node);
+        final int rank = parseNavigationItemRank(node);
+        final List<NavigationItem> subitems = parseNavigationItems(node);
+        final List<String> roles = parseRoles(node);
+
+        if (href != null)
+        {
+            if (subitems == null || subitems.isEmpty())
+            {
+                return new NavigationItem(id, href, rank, home, roles);
+            }
+            else
+            {
+                throw new NavigationConfigurationException("A navigation item cannot both define an href and have subitems.");
+            }
+        }
+        else
+        {
+            return new NavigationItem(id, rank, subitems, roles);
+        }
+    }
+
+    private boolean parseNavigationItemHomeScreenStatus(final Node node)
+    {
+        final Node homeNode = node.getAttributes().getNamedItem("home");
+        final String homeScreen = homeNode == null ? null : homeNode.getNodeValue();
+        if (homeScreen != null && homeScreen.length() > 0)
+        {
+            return Boolean.parseBoolean(homeScreen);
+        }
+
+        return false;
+    }
+
+    /**
+     * Parses a navigation item <code>id</code> attribute.
+     *
+     * @param node node to parse
+     * @return navigation item path
+     * @throws NavigationConfigurationException if the id attribute is not present
+     */
+    private String parseNavigationItemId(final Node node)
+    {
+        final Node idNode = node.getAttributes().getNamedItem("id");
+        final String tempId = idNode == null ? null : idNode.getNodeValue();
+        logger.debug("########## Nav Config Item ID: {}, string tempId: {}", idNode.getNodeValue(), tempId);
+//        logger.debug("########## Default charset of this JVM: {}", Charset.defaultCharset());
+//        for (final String csId : Charset.availableCharsets().keySet())
+//        {
+//            logger.debug("########## Available charset: {}", csId);
+//        }
+
+        String id = null;
+        try
+        {
+            final byte[] idBytes = tempId.getBytes("UTF-8");
+            id = new String(idBytes);
+            logger.debug("########## Converted id: {}", id);
+        }
+        catch (final UnsupportedEncodingException e)
+        {
+            throw new NavigationConfigurationException("Invalid charset?");
+        }
+
+
+        if (id == null || id.length() == 0)
+        {
+            throw new NavigationConfigurationException("Missing required attribute \"id\" on item element.");
+        }
+        return id;
+    }
+
+    /**
+     * Parses the navigation item <code>href</code> attribute.
+     *
+     * @param node node to parse
+     * @return navigation item href, <code>null</code> if not present
+     */
+    private String parseNavigationItemHref(final Node node)
+    {
+        final Node hrefNode = node.getAttributes().getNamedItem("href");
+        return hrefNode == null ? null : hrefNode.getNodeValue();
+    }
+
+    /**
+     * Parses the navigation item <code>rank</code> attribute.
+     *
+     * @param node node to parse
+     * @return navigation item rank, <code>0</code> if not present
+     */
+    private int parseNavigationItemRank(final Node node)
+    {
+        final Node rankNode = node.getAttributes().getNamedItem("rank");
+        return rankNode == null ? 0 : Integer.valueOf(rankNode.getNodeValue());
+    }
+
+    /**
+     * Parses the navigation item <code>roles</code> attribute.
+     *
+     * @param node node to parse
+     * @return roles, <code>null</code> if not present
+     * @throws NavigationConfigurationException if an unexpected XPath expression is encountered
+     */
+    private List<String> parseRoles(final Node node)
+    {
+        final Node rolesNode = node.getAttributes().getNamedItem("roles");
+        return rolesNode == null ? null : Arrays.asList(rolesNode.getNodeValue().split(","));
+    }
+}

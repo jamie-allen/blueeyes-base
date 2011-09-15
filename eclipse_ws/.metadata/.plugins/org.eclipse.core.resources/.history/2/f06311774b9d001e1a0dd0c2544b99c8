@@ -1,0 +1,174 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dssrm.core;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.InetSocketAddress;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
+import org.hamcrest.Matcher;
+
+import com.google.common.collect.Multimap;
+
+public interface DataStreamServerResourceManager
+{
+    /**
+     * Adds a periodic.
+     *
+     * @param periodic description of the periodic
+     * @param data data to be transmitted
+     * @throws NullPointerException if the associated stream does not exist in topology
+     */
+    void addPeriodic(PeriodicDescription periodic, PeriodicData data);
+
+    void deletePeriodic(UUID periodicId);
+
+    /**
+     * Adds a new block set.
+     *
+     * @param blockSet description of the block set to be written
+     * @param blockSetData streamed data to write
+     * @return block set Id
+     * @throws IOException if input stream creation fails
+     */
+    UUID addBlockSet(BlockSetDescription blockSet, InputStream blockSetData) throws IOException;
+
+    /**
+     * Deletes a block set.
+     *
+     * @param blockSetId unique identifier for the block set to remove
+     */
+    void deleteBlockSet(UUID blockSetId);
+
+    /**
+     * Performs query of periodics in the repository that should return only a single periodic instance.
+     * @param matcher to use in filtering queried periodic data
+     * @return an iterable collection of PeriodicDescription instances that meet the filter
+     *         requirement, which should only have a single PeriodicDescription instance in it
+     */
+    PeriodicDescription queryForPeriodic(Matcher<PeriodicDescription> matcher);
+
+    /**
+     * Performs query of periodics in the repository that can return multiple periodic instances.
+     * @param matcher to use in filtering queried periodic data
+     * @return an iterable collection of PeriodicDescription instances that meet the filter requirement
+     */
+    Iterable<PeriodicDescription> queryForPeriodics(Matcher<PeriodicDescription> matcher);
+
+    /**
+     * Performs query of block sets in the repository that a single block set instance by ID.
+     * @param matcher to use in filtering queried block set data
+     * @return a BlockSetSummary instance that meets the filter requirement
+     */
+    BlockSetDescription queryForBlockSet(Matcher<BlockSetDescription> matcher);
+
+    /**
+     * Performs query of block sets in the repository that can return multiple block set instances.
+     * @param matcher to use in filtering queried block set data
+     * @return an iterable collection of BlockSetDescription instances that meet the filter requirement
+     */
+    Iterable<BlockSetDescription> queryForBlockSets(Matcher<BlockSetDescription> matcher);
+
+    /**
+     * Establishes a dedicated UDP route that listens for and routes MPEG 2 packets.
+     *
+     * <p>Note: Attempts to establish a route where the pid mappings within the route are not valid will result
+     * in throwing {@link DataStreamServerException}.  For example, a
+     * {@link DataStreamServerException} is thrown if the route instance requires a mapping
+     * for stream insertion and the stream is not defined within DSS.</p>
+     *
+     * @param properties properties for querying purposes
+     * @param port port to listen for UDP input data on
+     * @param pidMappings pid mappings for the route
+     * @return unique identifier of newly established route
+     * @throws DataStreamServerException upon issue establishing the route, for example, if the port is already in use
+     */
+    long establishUdpRoute(Map<String, String> properties, int port, Multimap<Integer, Long> pidMappings) throws DataStreamServerException;
+
+    /**
+     * Establishes a dedicated UDP route that listens for and routes blocks.
+     *
+     * <p>Note: Attempts to establish a route where the streams within the route are not valid will result
+     * in throwing {@link DataStreamServerException}.  For example, a
+     * {@link DataStreamServerException} is thrown if the route instance requires a mapping
+     * for stream insertion and the stream is not defined within DSS.</p>
+     *
+     * @param properties properties for querying purposes
+     * @param port port to listen for UDP input data on
+     * @param streamIds streams to route blocks to
+     * @return unique identifier of newly established route
+     * @throws DataStreamServerException upon issue establishing the route, for example, if the port is already in use
+     */
+    long establishUdpRoute(Map<String, String> properties, int port, Set<Long> streamIds) throws DataStreamServerException;
+
+    /**
+     * Performs query of routes in the repository that should return only a single route instance.
+     * @param matcher to use in filtering queried route data
+     * @return an iterable collection of RouteDescription instances that meet the filter
+     *         requirement, which should only have a single RouteDescription instance in it
+     */
+    RouteDescription queryForUdpRoute(Matcher<RouteDescription> matcher);
+
+    /**
+     * Performs query of periodics in the repository that can return multiple periodic instances.
+     * @param matcher to use in filtering queried periodic data
+     * @return an iterable collection of PeriodicDescription instances that meet the filter requirement
+     */
+    Iterable<RouteDescription> queryForUdpRoutes(Matcher<RouteDescription> matcher);
+
+    /**
+     * Establishes a dedicated TCP route that listens for and routes MPEG 2 packets.
+     *
+     * <p>Note: Attempts to establish a route where the pid mappings within the route are not valid will result
+     * in throwing {@link DataStreamServerException}.  For example, a
+     * {@link DataStreamServerException} is thrown if the route instance requires a mapping
+     * for stream insertion and the stream is not defined within DSS.</p>
+     *
+     * @param pidMappings pid mappings for the route
+     * @return address for the client to use for sending data
+     * @throws DataStreamServerException upon issue establishing the route, for example, if the port is already in use
+     */
+    InetSocketAddress establishTcpRoute(Multimap<Integer, Long> pidMappings) throws DataStreamServerException;
+
+    /**
+     * Establishes a dedicated TCP route that listens for and routes blocks.
+     *
+     * <p>Note: Attempts to establish a route where the streams within the route are not valid will result
+     * in throwing {@link DataStreamServerException}.  For example, a
+     * {@link DataStreamServerException} is thrown if the route instance requires a mapping
+     * for stream insertion and the stream is not defined within DSS.</p>
+     *
+     * @param streamIds streams to route blocks to
+     * @return address for the client to use for sending data
+     * @throws DataStreamServerException upon issue establishing the route, for example, if the port is already in use
+     */
+    InetSocketAddress establishTcpRoute(Set<Long> streamIds) throws DataStreamServerException;
+
+    /**
+     * Updates pid mappings for UDP routes that already handle MPEG 2 packets.
+     *
+     * @param routeId unique identifier of the route to update data on
+     * @param pidMappings pid mappings for the route
+     * @throws DataStreamServerException upon attempt to update pid mappings for a route that already exists to handle {@link com.ccadllc.firebird.dss.common.datatypes.RouteDataType#BLOCKS} data
+     */
+    void updateUdpRoute(long routeId, Multimap<Integer, Long> pidMappings) throws DataStreamServerException;
+
+    /**
+     * Updates streams for UDP routes that already handle blocks.
+     *
+     * @param routeId unique identifier of the route to update data on
+     * @param streamIds streams to route blocks to
+     * @throws DataStreamServerException upon attempt to update pid mappings for a route that already exists to handle {@link com.ccadllc.firebird.dss.common.datatypes.RouteDataType#MPEG_PACKETS} data
+     */
+    void updateUdpRoute(long routeId, Set<Long> streamIds) throws DataStreamServerException;
+
+    /**
+     * @param routeId unique identifier for the route to remove
+     * @throws DataStreamServerException upon issue removing the route
+     */
+    void removeUdpRoute(long routeId) throws DataStreamServerException;
+}
+
+

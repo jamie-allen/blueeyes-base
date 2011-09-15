@@ -1,0 +1,409 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.it;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.greaterThan;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
+
+import java.lang.management.ManagementFactory;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.List;
+import java.util.Set;
+
+import javax.management.InstanceNotFoundException;
+import javax.management.MBeanServer;
+import javax.management.ObjectName;
+import javax.management.openmbean.CompositeDataSupport;
+
+import com.ccadllc.firebird.dss.common.datatypes.MeteringType;
+import com.ccadllc.firebird.dss.common.remote.messages.StreamDestinationInfo;
+import com.ccadllc.firebird.dss.common.remote.messages.StreamType;
+import com.ccadllc.firebird.dss.common.remote.messages.TransmissionType;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.impl.DefaultStreamManager;
+import com.ccadllc.firebird.dss.server.realtime.timer.manager.TimerManager;
+
+import com.google.common.collect.Sets;
+
+/**
+ * Instrumentation of JMX in the DSS to provide users with monitoring capabilities into the state of the streams and periodics.
+ */
+public class JmxStreamsAndPeriodicsIntegrationTest extends AbstractDssOsgiIntegrationTest
+{
+    /** Constants used for traffic shaping parameter verification. */
+    private static final String MXBEAN_COMPOSITE_DATA_SHAPER_STATISTICS_KEY = "ShaperStatistics";
+    private static final String STREAM_LOOKUP_MXBEAN_OBJECT_NAME = "DSS:type=StreamLookup,datatype=Streams";
+    private static final String PERIODIC_LOOKUP_MXBEAN_OBJECT_NAME = "DSS:type=PeriodicLookup,datatype=Periodics";
+    private static final String MXBEAN_COMPOSITE_DATA_PROFILE_KEY = "profile";
+    private static final String MXBEAN_MAX_AVERAGE_KEY = "averageBytesPerSecond";
+    private static final String MXBEAN_MAX_BURST_KEY = "burstLimitInBytes";
+    private static final String MXBEAN_MAX_LATENCY_KEY = "maxLatencyInSeconds";
+    private static final String MXBEAN_PERIODIC_STATE_KEY = "State";
+    private static final String MXBEAN_PERIODIC_DATA_TYPE_KEY = "PeriodicDataType";
+    private static final String MXBEAN_PERIODIC_NUMBER_OF_BLOCKS_KEY = "NumberOfBlocks";
+    private static final String MXBEAN_PERIODIC_START_TIME_KEY = "StartTime";
+    private static final String MXBEAN_PERIODIC_STOP_TIME_KEY = "StopTime";
+    private static final String MXBEAN_PERIODIC_INSERTION_RATE_KEY = "InsertionRate";
+    private static final String MXBEAN_PERIODIC_METERING_TYPE = "MeteringType";
+    private static final String MXBEAN_STREAM_ID_KEY = "StreamId";
+    private static final String MXBEAN_STREAM_TRANSMISSION_TYPE_KEY = "TransmissionType";
+    private static final String MXBEAN_STREAM_TYPE_KEY = "Type";
+    private static final String MXBEAN_STREAM_PID_KEY = "Pid";
+    private static final String MXBEAN_STREAM_DESTINATIONS_KEY = "Destinations";
+    private static final String MXBEAN_STREAM_MAX_AVERAGE_KEY = "MaxAverageRate";
+    private static final String MXBEAN_STREAM_MAX_BURST_KEY = "MaxBurstSize";
+    private static final String MXBEAN_STREAM_MAX_LATENCY_KEY = "MaxShapingLatency";
+    private static final long FUTURE_START_TIME = new Date().getTime() + 120000;
+    private static final long PAST_START_TIME = new Date().getTime() - 10000;
+    private static final String[] IP_ADDRESSES_FOR_TEST = new String[] {IP_STRING, IP_STRING2, IP_STRING3};
+    private static final int[] PORT_NUMBERS_FOR_TEST = new int[] {PORT1, PORT2, PORT3};
+
+    private int pid;
+    private Long streamId;
+    private StreamDestinationInfo[] destinations;
+    private long unstartedPeriodicId;
+    private long startedPeriodicId;
+
+    @Override
+    protected void onSetUp() throws Exception
+    {
+        super.onSetUp();
+
+        // Note that streamId and pid are instance variables in this test for reuse
+        // between methods.  JUnit invalidates those values between each test.
+        pid = getNextUniqueStreamPid();
+        createValidStreamAndSendData(pid, IP_ADDRESSES_FOR_TEST, PORT_NUMBERS_FOR_TEST);
+    }
+
+    @Override
+    protected void onTearDown() throws Exception
+    {
+        try
+        {
+            deleteStream(streamId);
+        }
+        // CHECKSTYLE:OFF
+        catch (final Exception e)
+        {
+        // CHECKSTYLE:ON
+            // Ignore - the stream didn't exist and did not need to be removed.
+        }
+
+        super.onTearDown();
+    }
+
+    public void testInstrumentationWhen_NewStreamAndPeriodicsCreated() throws Exception
+    {
+        verifyStreamInformation(streamId, TransmissionType.MPEG2, StreamType.STANDALONE, pid, destinations, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, new String[] {STREAM_PROPERTIES_VALUE});
+        verifyPeriodicInformation(startedPeriodicId, "ACTIVE", "FUNCTION", 1, null, null, 1, MeteringType.FRONT_LOADED, streamId, new String[] {PERIODIC_PROPERTIES_VALUE});
+
+        verifyLookupStreamIdsByPid(pid, streamId);
+        verifyLookupStreamIdsByIpAddress(IP_STRING, streamId);
+        verifyLookupStreamIdsByIpAddressAndPort(IP_STRING, PORT1, streamId);
+        verifyLookupStreamIdByPidAndDestination(pid, IP_STRING, PORT1, streamId);
+        verifyLookupStreamIdAndPidByPeriodicMessageType(PERIODIC_PROPERTIES_VALUE, String.format("Stream ID: %s, PID: %d", streamId, pid));
+        verifyLookupPeriodicIdsByStreamId(streamId, startedPeriodicId, unstartedPeriodicId);
+        verifyLookupPidAndDestinationsByStreamId(streamId, pid, String.format("%s:%s", IP_STRING, PORT1), String.format("%s:%s", IP_STRING2, PORT2), String.format("%s:%s", IP_STRING3, PORT3));
+    }
+
+    public void testInstrumentationWhen_StreamDestinationsAreUpdated() throws Exception
+    {
+        updateStreamAndVerifyStreamAndDestinationExists(streamId, DESTINATION2);
+
+        verifyLookupStreamIdByPidAndDestination(pid, IP_STRING, PORT2, streamId);
+        verifyLookupPidAndDestinationsByStreamId(streamId, pid, String.format("%s:%s", IP_STRING, PORT2));
+    }
+
+    public void testInstrumentationWhen_StreamShapingParametersAreUpdated() throws Exception
+    {
+        updateStreamShapingPolicyAndVerify(streamId, MAX_AVERAGE + 10, MAX_BURST + 20, MAX_LATENCY + 30);
+
+        verifyTokenBucketTrafficShapingParameters(streamId, MAX_AVERAGE + 10, MAX_BURST + 20, MAX_LATENCY + 30);
+    }
+
+    public void testInstrumentationWhen_PeriodicDeleted() throws Exception
+    {
+        deletePeriodic(startedPeriodicId);
+
+        verifyStreamInformation(streamId, TransmissionType.MPEG2, StreamType.STANDALONE, pid, destinations, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, new String[] {STREAM_PROPERTIES_VALUE});
+        try
+        {
+            verifyPeriodicInformation(startedPeriodicId, "ACTIVE", "FUNCTION", 1, null, null, 1, MeteringType.FRONT_LOADED, streamId, new String[] {PERIODIC_PROPERTIES_VALUE});
+            fail("Periodic instrumentation found for deleted periodic.");
+        }
+        catch (final InstanceNotFoundException infe)
+        {
+            // Expected exception
+        }
+    }
+
+    public void testInstrumentationWhen_StreamDeleted() throws Exception
+    {
+        // Delete the stream and it should delete the perioidics associated to it
+        deleteStream(streamId);
+
+        try
+        {
+            verifyStreamInformation(streamId, TransmissionType.MPEG2, StreamType.STANDALONE, pid, destinations, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, new String[] {STREAM_PROPERTIES_VALUE});
+            fail("Stream information found when stream was deleted.");
+        }
+        catch (final InstanceNotFoundException infe)
+        {
+            // Expected exception
+        }
+
+        try
+        {
+            verifyTokenBucketTrafficShapingParameters(streamId, MAX_AVERAGE, MAX_BURST, MAX_LATENCY);
+            fail("Stream token bucket information found when stream was deleted.");
+        }
+        catch (final InstanceNotFoundException infe)
+        {
+            // Expected exception
+        }
+
+        try
+        {
+            verifyPeriodicInformation(unstartedPeriodicId, "ACTIVE", "FUNCTION", 1, new Date(FUTURE_START_TIME), null, 30, MeteringType.FRONT_LOADED, streamId, new String[] {PERIODIC_PROPERTIES_VALUE});
+            fail("Unstarted periodic information found when stream was deleted.");
+        }
+        catch (final InstanceNotFoundException infe)
+        {
+            // Expected exception
+        }
+
+        try
+        {
+            verifyPeriodicInformation(startedPeriodicId, "ACTIVE", "FUNCTION", 1, new Date(PAST_START_TIME), null, 1, MeteringType.FRONT_LOADED, streamId, new String[] {PERIODIC_PROPERTIES_VALUE});
+            fail("Started periodic information found when stream was deleted.");
+        }
+        catch (final InstanceNotFoundException infe)
+        {
+            // Expected exception
+        }
+    }
+
+    public void testLastInsertionTimeUpdatedWhenStreamInsertionOccurs() throws Exception
+    {
+        final Date initialLastInsertionTimeUpdated = getLastStreamInsertionTime(streamId);
+        assertThat(initialLastInsertionTimeUpdated, notNullValue());
+        Thread.sleep(2000);
+        final Date nextLastInsertionTimeUpdated = getLastStreamInsertionTime(streamId);
+        assertThat(nextLastInsertionTimeUpdated, greaterThan(initialLastInsertionTimeUpdated));
+    }
+
+    public void testLastIntervalStartTimeUpdatedWhenPeriodicFireOccurs() throws Exception
+    {
+        final Date initialLastIntervalStartTime = getLastPeriodicIntervalStartTime(dssClient.getAllPeriodicIds().get(1), streamId);
+        assertThat(initialLastIntervalStartTime, notNullValue());
+        Thread.sleep(2000);
+        final Date nextLastIntervalStartTime = getLastPeriodicIntervalStartTime(dssClient.getAllPeriodicIds().get(1), streamId);
+        assertThat(nextLastIntervalStartTime, greaterThan(initialLastIntervalStartTime));
+    }
+
+    public void testLastBlockInsertedWhenPeriodicFireOccurs() throws Exception
+    {
+        assertThat(getLastPeriodicBlockInserted(dssClient.getAllPeriodicIds().get(1), streamId), greaterThan(0));
+    }
+
+    private void createValidStreamAndSendData(final int pid, final String[] ipAddresses, final int[] ports) throws Exception
+    {
+        // The ipAddresses and ports arrays must have the same number of elements.
+        assertThat(ipAddresses.length, is(ports.length));
+
+        // Set up destinations.
+        destinations = new StreamDestinationInfo[ipAddresses.length];
+        for (int count = 0; count < ipAddresses.length; count++)
+        {
+            destinations[count] = new StreamDestinationInfo(ipAddresses[count], ports[count]);
+        }
+
+        streamId = createStream(streamProperties, pid, TransmissionType.MPEG2, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, destinations);
+
+        createPeriodics();
+        sendDataViaStreamToEnsureStreamCreated();
+    }
+
+    private void createPeriodics() throws Exception
+    {
+        unstartedPeriodicId = addPeriodic(periodicProperties, streamId, MPEG_PACKET_PAYLOAD_SIZE_FOR_FIRST_IN_SERIES, FUTURE_START_TIME, null, 30);
+        startedPeriodicId = addPeriodic(periodicProperties, streamId, MPEG_PACKET_PAYLOAD_SIZE_FOR_FIRST_IN_SERIES, PAST_START_TIME, null, 1);
+    }
+
+    private void sendDataViaStreamToEnsureStreamCreated() throws Exception
+    {
+        final DatagramPacket packet = new DatagramPacket(new byte[MAX_BUFFER_VALUE], MAX_BUFFER_VALUE);
+        final DatagramSocket datagramSocketForDest = outputHandler.createDatagramSocket(PORT1, IP_STRING);
+
+        outputHandler.receivePackets(datagramSocketForDest, packet);
+    }
+
+    private void verifyTokenBucketTrafficShapingParameters(final Long streamId, final int maxAverage, final int maxBurst, final int maxLatency) throws Exception
+    {
+        // Get the JMX MBean data for the traffic shaper.
+        final MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
+        final ObjectName mbeanName = new ObjectName(String.format(DefaultStreamManager.MXBEAN_DOMAIN + ":type=Streams,id=%s,datatype=Shaper", streamId.toString()));
+
+        final CompositeDataSupport profile = (CompositeDataSupport)((CompositeDataSupport)mbs.getAttribute(mbeanName,
+                MXBEAN_COMPOSITE_DATA_SHAPER_STATISTICS_KEY)).get(MXBEAN_COMPOSITE_DATA_PROFILE_KEY);
+
+        // Verify that the values are correct for the test's traffic shaper.
+        assertThat((Integer)profile.get(MXBEAN_MAX_AVERAGE_KEY), is(maxAverage));
+        assertThat((Integer)profile.get(MXBEAN_MAX_BURST_KEY), is(maxBurst));
+        assertThat((Integer)profile.get(MXBEAN_MAX_LATENCY_KEY), is(maxLatency));
+    }
+
+    private void verifyPeriodicInformation(final Long periodicId, final String expectedState, final String expectedPeriodicDataType,
+        final Integer expectedNumberOfBlocks, final Date expectedStartTime, final Date expectedStopTime, final Integer expectedInsertionRate,
+        final MeteringType expectedMeteringType, final Long expectedStreamId, final String ... expectedPropertyValues) throws Exception
+    {
+        final MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
+        final ObjectName mbeanName = new ObjectName(String.format(TimerManager.MXBEAN_OBJECT_NAME, expectedStreamId, periodicId));
+
+        assertThat((String)mbs.getAttribute(mbeanName, MXBEAN_PERIODIC_STATE_KEY), is(expectedState));
+        assertThat((String)mbs.getAttribute(mbeanName, MXBEAN_PERIODIC_DATA_TYPE_KEY), is(expectedPeriodicDataType));
+        assertThat((Integer)mbs.getAttribute(mbeanName, MXBEAN_PERIODIC_NUMBER_OF_BLOCKS_KEY), is(expectedNumberOfBlocks));
+        if (expectedStartTime != null)
+        {
+            assertNotNull(mbs.getAttribute(mbeanName, MXBEAN_PERIODIC_START_TIME_KEY));
+        }
+        if (expectedStopTime != null)
+        {
+            assertNotNull(mbs.getAttribute(mbeanName, MXBEAN_PERIODIC_STOP_TIME_KEY));
+        }
+        assertThat((Integer)mbs.getAttribute(mbeanName, MXBEAN_PERIODIC_INSERTION_RATE_KEY), is(expectedInsertionRate));
+        assertThat((String)mbs.getAttribute(mbeanName, MXBEAN_PERIODIC_METERING_TYPE), is(expectedMeteringType.toString()));
+        assertThat((Long)mbs.getAttribute(mbeanName, MXBEAN_STREAM_ID_KEY), is(expectedStreamId));
+
+        // Check the periodic properties.  Note that the expected size of the returned properties is twice the size of the
+        // expected array.  That is because key values are counted as property "values" in the CompositeDataSupport type.
+        verifyPropertiesInJmxInstrumentation(mbs, mbeanName, periodicProperties);
+    }
+
+    private void verifyStreamInformation(final Long streamId, final TransmissionType expectedTransmissionType, final StreamType expectedType, final Integer expectedPid, final StreamDestinationInfo[] expectedDestinations,
+        final Integer expectedMaxAverage, final Integer expectedMaxBurst, final Integer expectedMaxLatency, final String ... expectedPropertyValues) throws Exception
+    {
+        final MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
+        final ObjectName mbeanName = new ObjectName(String.format(DefaultStreamManager.MXBEAN_OBJECT_NAME, streamId));
+
+        assertThat((Long)mbs.getAttribute(mbeanName, MXBEAN_STREAM_ID_KEY), is(streamId));
+        assertThat((String)mbs.getAttribute(mbeanName, MXBEAN_STREAM_TRANSMISSION_TYPE_KEY), is(expectedTransmissionType.toString()));
+        assertThat((String)mbs.getAttribute(mbeanName, MXBEAN_STREAM_TYPE_KEY), is(expectedType.toString()));
+        assertThat((Integer)mbs.getAttribute(mbeanName, MXBEAN_STREAM_PID_KEY), is(expectedPid));
+
+        final Set<String> destinations = Sets.newHashSet(((String[])mbs.getAttribute(mbeanName, MXBEAN_STREAM_DESTINATIONS_KEY)));
+        for (final StreamDestinationInfo destination : expectedDestinations)
+        {
+            assertTrue(destinations.contains(String.format("%s:%d", destination.getIpAddress(), destination.getPort())));
+        }
+
+        assertThat((Integer)mbs.getAttribute(mbeanName, MXBEAN_STREAM_MAX_AVERAGE_KEY), is(expectedMaxAverage));
+        assertThat((Integer)mbs.getAttribute(mbeanName, MXBEAN_STREAM_MAX_BURST_KEY), is(expectedMaxBurst));
+        assertThat((Integer)mbs.getAttribute(mbeanName, MXBEAN_STREAM_MAX_LATENCY_KEY), is(expectedMaxLatency));
+
+        // Check the periodic properties.  Note that the expected size of the returned properties is twice the size of the
+        // expected array.  That is because key values are counted as property "values" in the CompositeDataSupport type.
+        verifyPropertiesInJmxInstrumentation(mbs, mbeanName, streamProperties);
+    }
+
+    private Date getLastStreamInsertionTime(final long streamId) throws Exception
+    {
+        return (Date)ManagementFactory.getPlatformMBeanServer().getAttribute(new ObjectName(String.format(DefaultStreamManager.MXBEAN_OBJECT_NAME, streamId)), "LastInsertionTime");
+    }
+
+    private Date getLastPeriodicIntervalStartTime(final long periodicId, final long streamId) throws Exception
+    {
+        return (Date)ManagementFactory.getPlatformMBeanServer().getAttribute(new ObjectName(String.format(TimerManager.MXBEAN_OBJECT_NAME, streamId, periodicId)), "LastIntervalStartTime");
+    }
+
+    private int getLastPeriodicBlockInserted(final long periodicId, final long streamId) throws Exception
+    {
+        return (Integer)ManagementFactory.getPlatformMBeanServer().getAttribute(new ObjectName(String.format(TimerManager.MXBEAN_OBJECT_NAME, streamId, periodicId)), "LastBlockInserted");
+    }
+
+    private void verifyLookupStreamIdByPidAndDestination(final int pid, final String ipAddress, final int port, final Long streamId) throws Exception
+    {
+        final Long[] streamIds = (Long[])ManagementFactory.getPlatformMBeanServer().invoke(
+            new ObjectName(STREAM_LOOKUP_MXBEAN_OBJECT_NAME), "getStreamIdForPidAndDestination",
+            new Object[] {pid, ipAddress, port}, new String[] {"java.lang.Integer", "java.lang.String", "java.lang.Integer"});
+        assertThat(streamIds[0], is(streamId));
+    }
+
+    private void verifyLookupStreamIdsByPid(final int pid, final Long ... expectedStreamId) throws Exception
+    {
+        final Long[] streamIds = (Long[])ManagementFactory.getPlatformMBeanServer().invoke(
+            new ObjectName(STREAM_LOOKUP_MXBEAN_OBJECT_NAME), "getStreamIdsForPid",
+            new Object[] {pid}, new String[] {"java.lang.Integer"});
+
+        verifyExpectedStreamIdsFoundInReturnedLookupData(streamIds, expectedStreamId);
+    }
+
+    private void verifyLookupStreamIdsByIpAddress(final String ipAddress, final Long ... expectedStreamId) throws Exception
+    {
+        final Long[] streamIds = (Long[])ManagementFactory.getPlatformMBeanServer().invoke(
+            new ObjectName(STREAM_LOOKUP_MXBEAN_OBJECT_NAME), "getStreamIdsForIpAddress",
+            new Object[] {ipAddress}, new String[] {"java.lang.String"});
+
+        verifyExpectedStreamIdsFoundInReturnedLookupData(streamIds, expectedStreamId);
+    }
+
+    private void verifyLookupStreamIdsByIpAddressAndPort(final String ipAddress, final Integer port, final Long ... expectedStreamId) throws Exception
+    {
+        final Long[] streamIds = (Long[])ManagementFactory.getPlatformMBeanServer().invoke(
+            new ObjectName(STREAM_LOOKUP_MXBEAN_OBJECT_NAME), "getStreamIdsForDestination",
+            new Object[] {ipAddress, port}, new String[] {"java.lang.String", "java.lang.Integer"});
+
+        verifyExpectedStreamIdsFoundInReturnedLookupData(streamIds, expectedStreamId);
+    }
+
+    private void verifyLookupPeriodicIdsByStreamId(final Long streamId, final Long ... periodicIds) throws Exception
+    {
+        final Long[] periodics = ((Long[])ManagementFactory.getPlatformMBeanServer().invoke(
+            new ObjectName(PERIODIC_LOOKUP_MXBEAN_OBJECT_NAME), "getPeriodicIdsForStreamId",
+            new Object[] {String.valueOf(streamId)}, new String[] {"java.lang.String"}));
+
+        verifyExpectedStreamIdsFoundInReturnedLookupData(periodics, periodicIds);
+    }
+
+    private void verifyExpectedStreamIdsFoundInReturnedLookupData(final Long[] streamIds, final Long... expectedStreamId)
+    {
+        final List<Long> foundStreamIds = Arrays.asList(streamIds);
+        for (final Long streamId : expectedStreamId)
+        {
+            assertTrue(foundStreamIds.contains(streamId));
+        }
+    }
+
+    private void verifyLookupStreamIdAndPidByPeriodicMessageType(final String queryMessageType, final String ... expectedStreamIdsAndPids) throws Exception
+    {
+        final String[] returnedData = ((String[])ManagementFactory.getPlatformMBeanServer().invoke(
+            new ObjectName(PERIODIC_LOOKUP_MXBEAN_OBJECT_NAME), "getStreamIdAndPidForAllPeriodicsByMessageType",
+            new Object[] {String.valueOf(queryMessageType)}, new String[] {"java.lang.String"}));
+
+        final List<String> returnedDataList = Arrays.asList(returnedData);
+        for (final String expectedStreamIdAndPid : expectedStreamIdsAndPids)
+        {
+            assertTrue(returnedDataList.contains(expectedStreamIdAndPid));
+        }
+    }
+
+    private void verifyLookupPidAndDestinationsByStreamId(final Long streamId, final int pid, final String ... destinations) throws Exception
+    {
+        final String[] streamData = (String[])ManagementFactory.getPlatformMBeanServer().invoke(
+            new ObjectName(STREAM_LOOKUP_MXBEAN_OBJECT_NAME), "getPidAndDestinationForStreamId",
+            new Object[] {String.valueOf(streamId)}, new String[] {"java.lang.String"});
+
+        assertThat(streamData.length, is(destinations.length + 1));
+        assertThat(streamData[0], is("PID: " + pid));
+
+        // Order is not guaranteed.
+        final List<String> streamDataList = Arrays.asList(streamData);
+        for (final String destination : destinations)
+        {
+            assertTrue(streamDataList.contains("Destination: " + destination));
+        }
+    }
+}

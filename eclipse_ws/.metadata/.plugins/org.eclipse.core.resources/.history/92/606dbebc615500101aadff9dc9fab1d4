@@ -1,0 +1,29 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.terminals.manager.impl;
+
+import java.util.Date;
+
+/** Management interface for an operation. */
+public interface OperationMXBean
+{
+    String getId();
+    String getName();
+    String getAction();
+    String getSelector();
+    String getStreamId();
+    String getBandwidthPercent();
+    boolean isOptimize();
+    Date getStartDate();
+    Date getEndDate();
+    boolean isSystemOperation();
+
+    int getTotalPasses();
+    int getCurrentPass();
+    int getTerminalCount();
+
+    double getPercentComplete();
+    long getTimeToComplete();
+
+    int getBatchSize();
+    long getEstimatedBatchLoadTime();
+}

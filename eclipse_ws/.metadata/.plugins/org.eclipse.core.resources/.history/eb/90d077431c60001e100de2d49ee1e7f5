@@ -1,0 +1,85 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.management;
+
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.TCP_ROUTE_LOOKUP_MXBEAN_OBJECT_NAME;
+import java.util.Collection;
+
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteCache;
+
+import org.springframework.jmx.export.annotation.ManagedOperation;
+import org.springframework.jmx.export.annotation.ManagedResource;
+
+import net.jcip.annotations.Immutable;
+
+import com.google.common.collect.Sets;
+
+/**
+ * MXBean implementation to support the lookup of TCP Route information.
+ */
+@ManagedResource(objectName = TCP_ROUTE_LOOKUP_MXBEAN_OBJECT_NAME)
+@Immutable
+public final class TcpRouteLookup implements TcpRouteLookupMXBean
+{
+    private final RouteCache routes;
+
+    public TcpRouteLookup(final RouteCache routes)
+    {
+        this.routes = routes;
+    }
+
+    @ManagedOperation
+    @Override
+    public Long[] getTcpRouteIdsForStreamId(final String streamId)
+    {
+        final Collection<Long> routeIds = Sets.newHashSet();
+        for (final RouteSnapshot route :  routes.getTcpRoutes())
+        {
+            if (route.getPidMappings() != null)
+            {
+                addRouteIfStreamInUse(streamId, routeIds, route.getPidMappings().values(), route.getId());
+            }
+            else if (route.getStreamIds() != null)
+            {
+                addRouteIfStreamInUse(streamId, routeIds, route.getStreamIds(), route.getId());
+            }
+        }
+
+        return routeIds.toArray(new Long[routeIds.size()]);
+    }
+
+    @ManagedOperation
+    @Override
+    public Long[] getTcpRouteIdsForMappedPid(final Integer pid)
+    {
+        final Collection<Long> routeIds = Sets.newHashSet();
+        for (final RouteSnapshot route : routes.getTcpRoutes())
+        {
+            if (route.getPidMappings() != null)
+            {
+                for (final Integer pidKey : route.getPidMappings().keySet())
+                {
+                    if (pid.equals(pidKey))
+                    {
+                        routeIds.add(route.getId());
+                    }
+                }
+            }
+        }
+
+        return routeIds.toArray(new Long[routeIds.size()]);
+    }
+
+    private void addRouteIfStreamInUse(final String streamId, final Collection<Long> routeIds, final Collection<Long> streamIds, final Long routeId)
+    {
+        for (final Long streamIdValue : streamIds)
+        {
+            if (streamIdValue.equals(Long.parseLong(streamId)))
+            {
+                routeIds.add(routeId);
+            }
+        }
+    }
+}

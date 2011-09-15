@@ -1,0 +1,19 @@
+1265122177524	Extract constant 'DESTINATIONS'
+1265122195864	Extract constant 'RESERVED_PID_RANGES'
+1265122222102	Extract constant 'RESERVED_PROGRAM_NUMBER_RANGES'
+1265122332113	Extract constant 'NETWORK_PID'
+1265122346408	Extract constant 'BASE_PORT'
+1265151218220	Delete element
+1265301444619	Copy file
+1265301487061	Rename resource 'context.xml'
+1265301527331	Rename resource 'topology-context.xml'
+1265301532635	Copy file
+1265301543640	Rename resource 'context.xml'
+1265302414242	Rename field 'bundleApplicationContext'
+1265312008515	Move file
+1265312020376	Move file
+1265312274921	Extract constant 'TOPOLOGY_MODEL'
+1265312375121	Extract constant 'DSS_PROVISIONING_FACADE'
+1265313710227	Move compilation units
+1265313760166	Move compilation unit
+1265313805151	Move compilation unit

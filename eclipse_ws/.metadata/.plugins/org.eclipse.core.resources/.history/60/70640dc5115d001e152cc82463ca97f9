@@ -1,0 +1,94 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter;
+
+import java.util.Collection;
+
+import com.ccadllc.firebird.dss.common.datatypes.StreamType;
+import com.ccadllc.firebird.dss.server.common.MBeanServerUtility;
+import com.ccadllc.firebird.dss.server.common.RouteJmxUtility;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.management.InserterInstrumentation;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+import com.ccadllc.firebird.vms.common.packetfiltering.AbstractPacketFilter;
+
+import net.jcip.annotations.GuardedBy;
+import net.jcip.annotations.ThreadSafe;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Sets;
+
+/**
+ * Inserts data into the stream manager for each stream associated with this external route's PID.
+ */
+@ThreadSafe
+public class Inserter extends AbstractPacketFilter
+{
+    private static final String STREAM_MANAGER_PARAMETER = "stream manager";
+    private static final String STREAM_IDS_PARAMETER = "stream ids collection";
+
+    private final Logger logger = LoggerFactory.getLogger(Inserter.class);
+
+    private final String objectName;
+
+    @GuardedBy("lock")
+    private Collection<Long> streamIds;
+
+    /** Lock used when manipulating the streamIds collection. */
+    private final Object lock = new Object();
+
+    private final StreamManager streamManager;
+
+    public Inserter(final StreamManager streamManager, final Collection<Long> streamIds, final String objectName)
+    {
+        super();
+        Preconditions.checkNotNull(streamManager, STREAM_MANAGER_PARAMETER);
+        Preconditions.checkNotNull(streamIds, STREAM_IDS_PARAMETER);
+
+        this.streamManager = streamManager;
+        setStreamIds(streamIds);
+
+        this.objectName = objectName;
+        MBeanServerUtility.register(new InserterInstrumentation(this), objectName);
+    }
+
+    @Override
+    public boolean insert(final byte[] packets)
+    {
+        synchronized (lock)
+        {
+            for (final Long streamId : streamIds)
+            {
+                logger.debug("Insert block to Stream Id {} of size {}", streamId, packets.length);
+                streamManager.insert(packets, streamId, StreamType.MPEG2);
+            }
+        }
+
+        return true;
+    }
+
+    public String getStreamIdsAsString()
+    {
+        return RouteJmxUtility.getStreamIdsAsString(streamIds);
+    }
+
+    public void setStreamIds(final Collection<Long> streamIds)
+    {
+        synchronized (lock)
+        {
+            this.streamIds = Sets.newHashSet(streamIds);
+        }
+    }
+
+    @Override
+    public void dispose()
+    {
+        synchronized (lock)
+        {
+            MBeanServerUtility.unregister(objectName);
+            streamIds.clear();
+            super.dispose();
+        }
+    }
+}

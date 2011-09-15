@@ -1,0 +1,134 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.topology.core;
+
+import static org.hamcrest.Matchers.hasProperty;
+import static org.hamcrest.Matchers.is;
+
+import java.util.UUID;
+
+import org.hamcrest.Description;
+import org.hamcrest.Matcher;
+import org.hamcrest.TypeSafeMatcher;
+
+import com.google.common.base.Preconditions;
+
+/** Utility class that provides matchers for {@link Device}s. */
+public final class DeviceMatchers
+{
+    /** Prevents instantiation. */
+    private DeviceMatchers()
+    {
+        // Nothing to do.
+    }
+
+    public static Matcher<Device> hasId(final UUID id)
+    {
+        Preconditions.checkNotNull(id);
+
+        return new TypeSafeMatcher<Device>() {
+            @Override
+            public boolean matchesSafely(final Device toMatch)
+            {
+                return id.equals(toMatch.getId());
+            }
+
+            @Override
+            public void describeTo(final Description desc)
+            {
+                desc.appendText("has id ").appendValue(id);
+            }
+        };
+    }
+
+    public static Matcher<Device> hasName(final String name)
+    {
+        Preconditions.checkNotNull(name);
+
+        return new TypeSafeMatcher<Device>() {
+            @Override
+            public boolean matchesSafely(final Device toMatch)
+            {
+                // TODO: JLA
+                return ServingLocationQName.ORPHANED.equals(toMatch.getLocation());
+//                return name.equals(toMatch.getName());
+            }
+
+            @Override
+            public void describeTo(final Description desc)
+            {
+                desc.appendText("has name ").appendValue(name);
+            }
+        };
+    }
+
+    public static Matcher<Device> isOrphaned()
+    {
+        return new TypeSafeMatcher<Device>() {
+            @Override
+            public boolean matchesSafely(final Device toMatch)
+            {
+                return toMatch.getLocation().equals(ServingLocationQName.of(""));
+            }
+
+            @Override
+            public void describeTo(final Description desc)
+            {
+                desc.appendText("is orphaned");
+            }
+        };
+    }
+
+    public static Matcher<Device> hasExactLocation(final ServingLocationQName location)
+    {
+        Preconditions.checkNotNull(location);
+
+        return new TypeSafeMatcher<Device>() {
+            @Override
+            public boolean matchesSafely(final Device toMatch)
+            {
+                return location.equals(toMatch.getLocation());
+            }
+
+            @Override
+            public void describeTo(final Description desc)
+            {
+                desc.appendText("has exact location ").appendValue(location);
+            }
+        };
+    }
+
+    public static Matcher<Device> hasLocation(final Matcher<ServingLocationQName> locationNameMatcher)
+    {
+        return hasProperty("location", locationNameMatcher);
+    }
+
+    public static Matcher<Device> hasType(final Matcher<String> typeMatcher)
+    {
+        return hasProperty("type", typeMatcher);
+    }
+
+    public static Matcher<Device> isType(final String type)
+    {
+        return hasType(is(type));
+    }
+
+    public static Matcher<Device> locationAncestorOf(final ServingLocationQName qualifiedName)
+    {
+        return hasLocation(ServingLocationMatchers.ancestorOf(qualifiedName));
+    }
+
+    public static Matcher<Device> presentIncludingParentLocations(final ServingLocationQName qualifiedName)
+    {
+        return hasLocation(ServingLocationMatchers.presentIncludingParentLocations(qualifiedName));
+    }
+
+    public static Matcher<Device> presentIncludingChildLocations(final ServingLocationQName qualifiedName)
+    {
+        return hasLocation(ServingLocationMatchers.presentIncludingChildLocations(qualifiedName));
+    }
+
+    public static Matcher<Device> presentIncludingParentAndChildNetworks(final ServingLocationQName qualifiedName)
+    {
+        return hasLocation(ServingLocationMatchers.presentIncludingParentAndChildNetworks(qualifiedName));
+    }
+}

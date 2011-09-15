@@ -1,0 +1,727 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.it;
+
+import static com.ccadllc.firebird.dss.common.datatypes.RouteDataType.BLOCKS;
+import static com.ccadllc.firebird.dss.common.datatypes.RouteType.TRANSPORT_STREAM;
+import static com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType.UDP;
+import static com.ccadllc.firebird.dss.it.StreamMatcher.PAT_PID;
+import static com.ccadllc.firebird.dss.it.StreamMatcher.withPid;
+import static com.ccadllc.firebird.dss.server.realtime.common.jmx.StreamJmxConstants.ANCILLARY_STREAM_FROM_TEMPLATE;
+import static com.ccadllc.firebird.dss.server.realtime.common.jmx.StreamJmxConstants.ANCILLARY_STREAM_INFO_TEMPLATE;
+import static com.ccadllc.firebird.dss.server.realtime.common.jmx.StreamJmxConstants.COMPONENT_STREAM_TEMPLATE;
+import static com.ccadllc.firebird.dss.server.realtime.common.jmx.StreamJmxConstants.PMT_STREAM_FROM_TEMPLATE;
+import static com.ccadllc.firebird.dss.server.realtime.common.jmx.StreamJmxConstants.PMT_STREAM_TEMPLATE;
+import static com.ccadllc.firebird.dss.server.realtime.common.jmx.StreamJmxConstants.ROUTES;
+import static com.ccadllc.firebird.dss.server.realtime.common.jmx.StreamJmxConstants.ROUTE_KEY_NAME;
+import static com.ccadllc.firebird.dss.server.realtime.common.jmx.StreamJmxConstants.TRANSPORT_STREAM_LEVEL_KEY_NAME;
+import static com.ccadllc.firebird.dss.server.realtime.common.jmx.StreamJmxConstants.TRANSPORT_STREAM_ROOT_TEMPLATE;
+import static com.ccadllc.firebird.dss.server.realtime.common.jmx.StreamJmxConstants.TRANSPORT_STREAM_SHAPER_TEMPLATE;
+import static com.google.common.collect.Lists.newArrayList;
+import static com.google.common.collect.Sets.newHashSet;
+import static java.net.InetSocketAddress.createUnresolved;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.isIn;
+import static org.hamcrest.Matchers.notNullValue;
+
+import java.lang.management.ManagementFactory;
+import java.net.InetSocketAddress;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import javax.management.MalformedObjectNameException;
+import javax.management.ObjectName;
+import javax.management.openmbean.CompositeData;
+import javax.management.openmbean.CompositeDataSupport;
+import javax.management.openmbean.TabularDataSupport;
+
+import com.ccadllc.commons.net.UnresolvedInetAddress;
+import com.ccadllc.commons.util.IntegerRange;
+import com.ccadllc.commons.util.MapUtility;
+import com.ccadllc.commons.util.MoreHamcrest;
+import com.ccadllc.firebird.dss.common.datatypes.TransmissionType;
+import com.ccadllc.firebird.dss.common.remote.messages.DestinationInfo;
+import com.ccadllc.firebird.dss.common.remote.messages.IntegerRangeSummary;
+import com.ccadllc.firebird.dss.common.remote.messages.StreamDestinationInfo;
+import com.ccadllc.firebird.dss.server.realtime.common.Events;
+import com.ccadllc.firebird.vms.common.mpeg2.psi.ProgramElement;
+import com.ccadllc.firebird.vms.common.mpeg2.psi.ProgramPidMapping;
+
+import org.hamcrest.BaseMatcher;
+import org.hamcrest.Description;
+import org.hamcrest.Matcher;
+import org.junit.Assert;
+import org.junit.Test;
+
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
+/**
+ * JMX Instrumentation of transport streams.
+ */
+public class JmxTransportStreamIntegrationTest extends AbstractDssOsgiIntegrationTest
+{
+    private static final byte TYPE1 = (byte)0x50;
+    private static final int QUERY_PORT = 5165;
+    private static final String MPEG2_DESTINATION_ADDRESS = "127.0.0.1";
+    private static final String IP_DIRECT_DESTINATION_ADDRESS = "127.0.0.2";
+    private static final String BAD_ADDRESS = "127.0.0.3";
+    private static final int STREAM_TYPE_THREE = 3;
+    private static final int STREAM_TYPE_TWO = 2;
+    private static final int STREAM_TYPE_ONE = 1;
+    private static final Set<IntegerRange> RESERVED_PID_RANGES = Sets.newHashSet(new IntegerRange(1, 2), new IntegerRange(3, 4));
+    private static final Set<IntegerRange> RESERVED_PROGRAM_NUMBER_RANGES = Sets.newHashSet(new IntegerRange(103, 104), new IntegerRange(105, 106));
+    private static final Set<InetSocketAddress> MPEG_DESTINATIONS = Sets.newHashSet(createUnresolved(MPEG2_DESTINATION_ADDRESS, 5165));
+    private static final int NETWORK_PID = 501;
+    private static final int BASE_PORT = 5005;
+    private static final String TRANSPORT_STREAM_LOOKUP_MXBEAN_OBJECT_NAME = "DSS:type=TransportStreamLookup";
+    private static final Set<UnresolvedInetAddress> IP_DIRECT_DESTINATIONS = Sets.newHashSet(UnresolvedInetAddress.create(IP_DIRECT_DESTINATION_ADDRESS));
+    private static final int PROGRAM_N0_1 = 201;
+    private static final int PROGRAM_N0_2 = 202;
+    private static final int PROGRAM_N0_3 = 2002;
+    private static final StreamDestinationInfo STREAM_ON_PORT1 = new StreamDestinationInfo(IP_STRING, PORT1);
+    private static final int NETWORK_PID_1000 = 1000;
+    private static final int PROGRAM_NUMBER_40 = 40;
+    private static final Map<String, String> PROPERTIES = MapUtility.toMap("keyOne", "valueOne");
+    private static final int COMPONENT_TYPE_ONE = 0x80;
+    private static final int COMPONENT_PID_1701 = 1701;
+    private static final List<ProgramElement> SINGLE_PROGRAM_COMPONENT =  newArrayList(new ProgramElement(COMPONENT_TYPE_ONE, COMPONENT_PID_1701, EMPTY_MPEG_DESCRIPTOR));
+
+    @Test public void testTransportStreamLookup() throws Exception
+    {
+        final TransportStream expectedIpDirectTransportStream = addIpDirectTransportStream();
+        final TransportStream expectedMpegTransportStream = addMpeg2TransportStream();
+
+        final CompositeData[] data = (CompositeData[]) ManagementFactory.getPlatformMBeanServer().invoke(
+                new ObjectName(TRANSPORT_STREAM_LOOKUP_MXBEAN_OBJECT_NAME), "retrieveAllTransportStreams",
+                null, null);
+
+        assertThat(data.length, is(2));
+        for (final CompositeData transportStreamData : data)
+        {
+            final Object transmissionType = transportStreamData.get("transmissionType");
+
+            if (transmissionType.equals(TransmissionType.IP_DIRECT.name()))
+            {
+                validateAgainstExpectedTransportStream(transportStreamData, expectedIpDirectTransportStream);
+            }
+            else if (transmissionType.equals(TransmissionType.MPEG2.name()))
+            {
+                validateAgainstExpectedTransportStream(transportStreamData, expectedMpegTransportStream);
+            }
+            else
+            {
+                Assert.fail("Unhandled transmission type encountered.");
+            }
+        }
+    }
+
+    @Test public void testLookUpIpDirectTransportStreamByDestinationReturnsExpectedTransportStreamsForValidAddress() throws Exception
+    {
+        final TransportStream expectedIpDirectTransportStream = addIpDirectTransportStream();
+        MoreHamcrest.waitUntil(null, fullyFormedTransportStream(TRANSPORT_STREAM_LOOKUP_MXBEAN_OBJECT_NAME, "getIPDirectTransportStreamForDestination",
+            new Object[]{IP_DIRECT_DESTINATION_ADDRESS}, new String[]{"java.lang.String"}, 1, expectedIpDirectTransportStream), 5000);
+    }
+
+    @Test public void testLookUpIpDirectTransportStreamByDestinationReturnsNoTransportStreamsOnInvalidAddress() throws Exception
+    {
+        addIpDirectTransportStream();
+        final CompositeData[] data = (CompositeData[]) ManagementFactory.getPlatformMBeanServer().invoke(
+                new ObjectName(TRANSPORT_STREAM_LOOKUP_MXBEAN_OBJECT_NAME), "getIPDirectTransportStreamForDestination",
+                new Object[]{BAD_ADDRESS}, new String[]{"java.lang.String"});
+
+        assertThat(data.length, is(0));
+    }
+
+    @Test public void testLookUpMpegTransportStreamByDestinationReturnsExpectedTransportStreams() throws Exception
+    {
+        final TransportStream expectedMpegTransportStream = addMpeg2TransportStream();
+        MoreHamcrest.waitUntil(null, fullyFormedTransportStream(TRANSPORT_STREAM_LOOKUP_MXBEAN_OBJECT_NAME, "getMpegTransportStreamForDestination",
+            new Object[]{MPEG2_DESTINATION_ADDRESS, QUERY_PORT}, new String[]{"java.lang.String", "java.lang.Integer"}, 1, expectedMpegTransportStream), 5000);
+    }
+
+    private Matcher<Boolean> fullyFormedTransportStream(final String objectName, final String methodName, final Object[] params, final String[] paramTypes,
+        final int expectedSize, final TransportStream expectedTransportStream)
+    {
+        return new BaseMatcher<Boolean>()
+        {
+            public boolean matches(final Object item)
+            {
+                try
+                {
+                    final CompositeData[] transportStreamData = (CompositeData[]) ManagementFactory.getPlatformMBeanServer().invoke(
+                        new ObjectName(objectName), methodName, params, paramTypes);
+                    assertThat(transportStreamData.length, is(expectedSize));
+                    validateAgainstExpectedTransportStream(transportStreamData[0], expectedTransportStream);
+                    return true;
+                }
+                //CHECKSTYLE:OFF
+                catch (final Exception e)
+                //CHECKSTYLE:ON
+                {
+                    return false;
+                }
+            }
+
+            public void describeTo(final Description description)
+            {
+            }
+        };
+    }
+
+    private void validateAgainstExpectedTransportStream(final CompositeData retrievedTransportStream, final TransportStream expectedTransportStream) throws Exception
+    {
+        assertThat((Integer)retrievedTransportStream.get("networkPid"), is(expectedTransportStream.getNetworkPid()));
+        assertThat((Integer)retrievedTransportStream.get("transportStreamId"), is(expectedTransportStream.getId()));
+
+        switch (expectedTransportStream.getType())
+        {
+            case IP_DIRECT:
+                assertThat((Integer)retrievedTransportStream.get("basePort"), is(expectedTransportStream.getBasePort()));
+                verifyIPDirectTransportStreamDestinations((String[]) retrievedTransportStream.get("destinations"), expectedTransportStream.getIpDirectDestinations());
+                break;
+            case MPEG2:
+                verifyMpeg2TransportStreamDestinations((String[]) retrievedTransportStream.get("destinations"), expectedTransportStream.getMpegDestinations());
+                break;
+            default:
+                Assert.fail("Unsupported transport stream type");
+        }
+
+        verifyProperties((TabularDataSupport) retrievedTransportStream.get("properties"), expectedTransportStream.getProperties());
+        validateAgainstExpectedIntegerRange(expectedTransportStream.getReservedProgramNumberRanges(), (CompositeData[]) retrievedTransportStream.get("reservedProgramNumberRanges"));
+        validateAgainstExpectedIntegerRange(expectedTransportStream.getReservedPidRanges(), (CompositeData[]) retrievedTransportStream.get("reservedPidRanges"));
+
+        final Set<CompositeData> actualPrograms = Sets.newHashSet();
+        for (final CompositeData programSummary : (CompositeData[]) retrievedTransportStream.get("programs"))
+        {
+            validateAgainstExpectedProgram(programSummary, expectedTransportStream.getPrograms().get(programSummary.get("programNumber")));
+            actualPrograms.add(programSummary);
+        }
+
+        assertThat(expectedTransportStream.getPrograms().size(), is(actualPrograms.size()));
+        final Set<CompositeData> actualAncillaryStreams = Sets.newHashSet();
+        for (final CompositeData ancillaryStream : (CompositeData[]) retrievedTransportStream.get("ancillaryStreams"))
+        {
+            validateAgainstExpectedStream(ancillaryStream, expectedTransportStream.getAncillaryStreams().get(ancillaryStream.get("id")), true);
+            actualAncillaryStreams.add(ancillaryStream);
+        }
+
+        assertThat(actualAncillaryStreams.size(), is(expectedTransportStream.getAncillaryStreams().size()));
+    }
+
+    private void validateAgainstExpectedProgram(final CompositeData programSummary, final Program expectedProgram) throws Exception
+    {
+        assertThat((Integer) programSummary.get("programNumber"), is(expectedProgram.getProgramNumber()));
+        verifyProperties((TabularDataSupport) programSummary.get("properties"), expectedProgram.getProperties());
+
+        final Set<CompositeData> actualComponetStreams = Sets.newHashSet();
+        for (final CompositeData componentSummary : (CompositeData[]) programSummary.get("components"))
+        {
+            final ComponentStream expectedComponentStream = expectedProgram.getComponentStreams().get(componentSummary.get("id"));
+            assertThat((Integer) componentSummary.get("componentStreamType"), is(expectedComponentStream.getComponentType()));
+            validateAgainstExpectedStream(componentSummary, expectedComponentStream, false);
+            actualComponetStreams.add(componentSummary);
+        }
+
+        assertThat(actualComponetStreams.size(), is(expectedProgram.getComponentStreams().size()));
+    }
+
+    @Test public void testLookUpMpegTransportStreamByDestinationReturnsNoTransportStreamsWhenPortDoesNotMatch() throws Exception
+    {
+        addIpDirectTransportStream();
+        addMpeg2TransportStream();
+        final CompositeData[] data = (CompositeData[]) ManagementFactory.getPlatformMBeanServer().invoke(
+                new ObjectName(TRANSPORT_STREAM_LOOKUP_MXBEAN_OBJECT_NAME), "getMpegTransportStreamForDestination",
+                new Object[]{MPEG2_DESTINATION_ADDRESS, 5100}, new String[]{"java.lang.String", "java.lang.Integer"});
+        assertThat(data.length, is(0));
+    }
+
+    @Test public void testLookUpMpegTransportStreamByDestinationReturnsNoTransportStreamsWhenIpAddressDoesNotMatch() throws Exception
+    {
+        addIpDirectTransportStream();
+        addMpeg2TransportStream();
+        final CompositeData[] data = (CompositeData[]) ManagementFactory.getPlatformMBeanServer().invoke(
+                new ObjectName(TRANSPORT_STREAM_LOOKUP_MXBEAN_OBJECT_NAME), "getMpegTransportStreamForDestination",
+                new Object[]{BAD_ADDRESS, QUERY_PORT}, new String[]{"java.lang.String", "java.lang.Integer"});
+        assertThat(data.length, is(0));
+    }
+
+    private TransportStream addIpDirectTransportStream() throws Exception
+    {
+        // Send messages to create data.
+        final int ipDirectTransportStreamId = dssClient.createIpDirectTransportStream(asDestinationInfos(IP_DIRECT_DESTINATIONS), BASE_PORT, NETWORK_PID, asRangeInfos(RESERVED_PID_RANGES), asRangeInfos(RESERVED_PROGRAM_NUMBER_RANGES), transportStreamProperties, MAX_AVERAGE, MAX_BURST, MAX_LATENCY);
+        final int ipProgOne = dssClient.addProgram(ipDirectTransportStreamId, PROGRAM_N0_1, programProperties);
+        final long ipCompOne = dssClient.addComponentStream(ipDirectTransportStreamId, ipProgOne, STREAM_TYPE_ONE, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, componentStreamProperties);
+        final long ipCompTwo = dssClient.addComponentStream(ipDirectTransportStreamId, ipProgOne, STREAM_TYPE_TWO, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, componentStreamProperties);
+
+        final int ipProgTwo = dssClient.addProgram(ipDirectTransportStreamId, PROGRAM_N0_2, programProperties);
+        final int ancillaryPid = 7644;
+        final long ipDirectAncillaryStreamId = dssClient.addAncillaryStreamRequest(ipDirectTransportStreamId, ancillaryPid, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, ancillaryStreamProperties);
+
+        // ensure ancillary stream exists before processing
+        final String ancillaryStreamObjectName = String.format(ANCILLARY_STREAM_INFO_TEMPLATE,
+            ipDirectTransportStreamId, ancillaryPid);
+        MxBeanUtils.verifyMBeanRegistered(new ObjectName(ancillaryStreamObjectName));
+
+        // Create Data to test against
+        final Map<Integer, Program> expectedIpDirectPrograms = Maps.newHashMap();
+        final Map<Long, ComponentStream> expectedIpDirectComponentStreamsForProgOne = Maps.newHashMap();
+        final Map<Long, AncillaryStream> expectedIpDirectAncillaryStreams = Maps.newHashMap();
+        expectedIpDirectComponentStreamsForProgOne.put(ipCompOne, new ComponentStream(ipCompOne, STREAM_TYPE_ONE, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, componentStreamProperties));
+        expectedIpDirectComponentStreamsForProgOne.put(ipCompTwo, new ComponentStream(ipCompTwo, STREAM_TYPE_TWO, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, componentStreamProperties));
+        expectedIpDirectPrograms.put(ipProgOne, new Program(programProperties, expectedIpDirectComponentStreamsForProgOne, ipProgOne));
+        expectedIpDirectPrograms.put(ipProgTwo, new Program(programProperties, Maps.<Long, ComponentStream>newHashMap(), ipProgTwo));
+        expectedIpDirectAncillaryStreams.put(ipDirectAncillaryStreamId, new AncillaryStream(ipDirectAncillaryStreamId, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, ancillaryStreamProperties, 7644));
+
+        return new TransportStream(ipDirectTransportStreamId, IP_DIRECT_DESTINATIONS, BASE_PORT, NETWORK_PID, transportStreamProperties, expectedIpDirectPrograms,
+            expectedIpDirectAncillaryStreams);
+    }
+
+    private TransportStream addMpeg2TransportStream() throws Exception
+    {
+        // Send messages to create data.
+        final int mpegTransportStreamId = dssClient.createMpeg2TransportStream(asStreamDestinationInfos(MPEG_DESTINATIONS), NETWORK_PID, asRangeInfos(RESERVED_PID_RANGES), asRangeInfos(RESERVED_PROGRAM_NUMBER_RANGES), transportStreamProperties, MAX_AVERAGE, MAX_BURST, MAX_LATENCY);
+        final int mpegProgOne = dssClient.addProgram(mpegTransportStreamId, PROGRAM_N0_3, programProperties);
+        final long mpegCompOne = dssClient.addComponentStream(mpegTransportStreamId, mpegProgOne, STREAM_TYPE_THREE, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, componentStreamProperties);
+        final int ancillaryPid = 7642;
+        final Long mpegAncillaryStreamId = dssClient.addAncillaryStreamRequest(mpegTransportStreamId, ancillaryPid, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, ancillaryStreamProperties);
+
+        // ensure ancillary stream exists before processing
+        final String ancillaryStreamObjectName = String.format(ANCILLARY_STREAM_INFO_TEMPLATE,
+            mpegTransportStreamId, ancillaryPid);
+        MxBeanUtils.verifyMBeanRegistered(new ObjectName(ancillaryStreamObjectName));
+
+        final Map<Integer, Program> expectedMpegPrograms = Maps.newHashMap();
+        final Map<Long, ComponentStream> expectedMpegComponentStreamsForProgOne = Maps.newHashMap();
+        final Map<Long, AncillaryStream> expectedMpegAncillaryStreams = Maps.newHashMap();
+        expectedMpegComponentStreamsForProgOne.put(mpegCompOne, new ComponentStream(mpegCompOne, STREAM_TYPE_THREE, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, componentStreamProperties));
+        expectedMpegPrograms.put(mpegProgOne, new Program(programProperties, expectedMpegComponentStreamsForProgOne, mpegProgOne));
+        expectedMpegAncillaryStreams.put(mpegAncillaryStreamId, new AncillaryStream(mpegAncillaryStreamId, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, ancillaryStreamProperties, 7642));
+
+        return new TransportStream(mpegTransportStreamId, MPEG_DESTINATIONS, NETWORK_PID, transportStreamProperties, expectedMpegPrograms,
+            expectedMpegAncillaryStreams);
+    }
+
+
+    private void validateAgainstExpectedStream(final CompositeData componentSummary, final AbstractElementaryStream expectedStream,
+        final boolean validatePid) throws Exception
+    {
+        assertThat((Long)(componentSummary.get("id")), is(expectedStream.getId()));
+
+        if (validatePid)
+        {
+            assertThat((Integer)componentSummary.get("pid"), is(expectedStream.getPid()));
+        }
+        else
+        {
+            assertThat(componentSummary.get("pid"), notNullValue());
+        }
+
+        assertThat((Integer) componentSummary.get("maxAverageRate"), is(expectedStream.getMaxAverageRate()));
+        assertThat((Integer) componentSummary.get("maxBurstSize"), is(expectedStream.getMaxBurstSize()));
+        assertThat((Integer) componentSummary.get("maxShapingLatency"), is(expectedStream.getMaxShapingLatency()));
+        verifyProperties((TabularDataSupport) componentSummary.get("properties"), expectedStream.getProperties());
+    }
+
+    private void validateAgainstExpectedIntegerRange(final Set<IntegerRange> expectedRanges, final CompositeData[] retrievedRanges)
+    {
+        assertThat(retrievedRanges.length, is(expectedRanges.size()));
+        for (final CompositeData programNumberRange : retrievedRanges)
+        {
+            final IntegerRange testRange = new IntegerRange((Integer) programNumberRange.get("begin"), (Integer) programNumberRange.get("end"));
+            assertThat(testRange, isIn(expectedRanges));
+        }
+    }
+
+    private void verifyMpeg2TransportStreamDestinations(final String[] retrievedDestinations, final Set<InetSocketAddress> expectedDestinations)
+    {
+        final Set<String> retrievedDestinationsSet = Sets.newHashSet(retrievedDestinations);
+        assertThat(retrievedDestinations.length, is(expectedDestinations.size()));
+        for (final InetSocketAddress destination : expectedDestinations)
+        {
+            assertThat(retrievedDestinationsSet, hasItem(String.format("%s:%d", destination.getHostName(), destination.getPort())));
+        }
+    }
+
+    private void verifyIPDirectTransportStreamDestinations(final String[] retrievedDestinations, final Set<UnresolvedInetAddress> expectedDestinations)
+    {
+        final Set<String> retrievedDestinationsSet = Sets.newHashSet(retrievedDestinations);
+        assertThat(retrievedDestinations.length, is(expectedDestinations.size()));
+        for (final UnresolvedInetAddress destination : expectedDestinations)
+        {
+            assertThat(retrievedDestinationsSet, hasItem(destination.getAddress()));
+        }
+    }
+
+    private void verifyProperties(final TabularDataSupport retrievedProperties,
+                                  final Map<String, String> expectedProperties) throws Exception
+    {
+        assertThat(retrievedProperties.entrySet().size(), is(expectedProperties.entrySet().size()));
+
+        for (final String expectedPropertyKey : expectedProperties.keySet())
+        {
+            final CompositeDataSupport retrievedEntry = (CompositeDataSupport) retrievedProperties.get(new Object[]{expectedPropertyKey});
+            assertThat(retrievedEntry.containsValue(expectedProperties.get(expectedPropertyKey)), is(true));
+        }
+    }
+
+    private List<IntegerRangeSummary> asRangeInfos(final Set<IntegerRange> ranges)
+    {
+        final List<IntegerRangeSummary> rangeInfos = Lists.newArrayList();
+        for (final IntegerRange range : ranges)
+        {
+            rangeInfos.add(new IntegerRangeSummary(range.getStart(), range.getEnd()));
+        }
+        return rangeInfos;
+    }
+
+    private List<StreamDestinationInfo> asStreamDestinationInfos(final Set<InetSocketAddress> destinations)
+    {
+        final List<StreamDestinationInfo> streamDestinationInfos = Lists.newArrayList();
+        for (final InetSocketAddress destination : destinations)
+        {
+            streamDestinationInfos.add(new StreamDestinationInfo(destination.getHostName(), destination.getPort()));
+        }
+
+        return streamDestinationInfos;
+    }
+
+    private List<DestinationInfo> asDestinationInfos(final Set<UnresolvedInetAddress> destinations)
+    {
+        final List<DestinationInfo> destinationInfos = Lists.newArrayList();
+
+        for (final UnresolvedInetAddress destination : destinations)
+        {
+            destinationInfos.add(new DestinationInfo(destination.getAddress()));
+        }
+        return destinationInfos;
+    }
+
+    private class TransportStream
+    {
+        private Set<UnresolvedInetAddress> ipDirectDestinations;
+        private Set<InetSocketAddress> mpegDestinations;
+        private int basePort;
+        private final Integer networkPid;
+        private final Map<String, String> properties;
+        private final TransmissionType type;
+        private final Map<Integer, Program> programs;
+        private final Map<Long, AncillaryStream> ancillaryStreams;
+        private final int id;
+
+        public TransportStream(final int id, final Set<UnresolvedInetAddress> ipDirectDestinations, final int basePort, final Integer networkPid, final Map<String, String> properties, final Map<Integer, Program> programs,
+                                   final Map<Long, AncillaryStream> ancillaryStreams)
+        {
+            this.ipDirectDestinations = ipDirectDestinations;
+            this.basePort = basePort;
+            this.networkPid = networkPid;
+            this.properties = properties;
+            type = TransmissionType.IP_DIRECT;
+            this.id = id;
+            this.programs = programs;
+            this.ancillaryStreams = ancillaryStreams;
+        }
+
+        public TransportStream(final int id, final Set<InetSocketAddress> mpegDestinations, final int networkPid, final Map<String, String> properties, final  Map<Integer, Program> programs,
+                                   final Map<Long, AncillaryStream> ancillaryStreams)
+        {
+            this.mpegDestinations = mpegDestinations;
+            this.networkPid = networkPid;
+            this.properties = properties;
+            type = TransmissionType.MPEG2;
+            this.id = id;
+            this.programs = programs;
+            this.ancillaryStreams = ancillaryStreams;
+        }
+
+        public Map<Long, AncillaryStream> getAncillaryStreams()
+        {
+            return ancillaryStreams;
+        }
+
+        public Set<UnresolvedInetAddress> getIpDirectDestinations()
+        {
+            return ipDirectDestinations;
+        }
+
+        public int getBasePort()
+        {
+            return basePort;
+        }
+
+        public Integer getNetworkPid()
+        {
+            return networkPid;
+        }
+
+        public Set<IntegerRange> getReservedPidRanges()
+        {
+            return RESERVED_PID_RANGES;
+        }
+
+        public Set<IntegerRange> getReservedProgramNumberRanges()
+        {
+            return RESERVED_PROGRAM_NUMBER_RANGES;
+        }
+
+        public Map<String, String> getProperties()
+        {
+            return properties;
+        }
+
+        public TransmissionType getType()
+        {
+            return type;
+        }
+
+        public int getId()
+        {
+            return id;
+        }
+
+        public Set<InetSocketAddress> getMpegDestinations()
+        {
+            return mpegDestinations;
+        }
+
+        public Map<Integer, Program> getPrograms()
+        {
+            return programs;
+        }
+    }
+
+    private abstract class AbstractElementaryStream
+    {
+        private final long id;
+        private final int maxAverageRate;
+        private final int maxBurstSize;
+        private final int maxShapingLatency;
+        private final Map<String, String> properties;
+        private final Integer pid;
+
+        public AbstractElementaryStream(final long id, final int maxAverageRate, final int maxBurstSize,
+                                    final int maxShapingLatency, final Integer pid, final Map<String, String> properties)
+        {
+            this.maxAverageRate = maxAverageRate;
+            this.maxBurstSize = maxBurstSize;
+            this.maxShapingLatency = maxShapingLatency;
+            this.properties = properties;
+            this.id = id;
+            this.pid = pid;
+        }
+
+        public long getId()
+        {
+            return id;
+        }
+
+        public int getMaxAverageRate()
+        {
+            return maxAverageRate;
+        }
+
+        public int getMaxBurstSize()
+        {
+            return maxBurstSize;
+        }
+
+        public int getMaxShapingLatency()
+        {
+            return maxShapingLatency;
+        }
+
+        public Map<String, String> getProperties()
+        {
+            return properties;
+        }
+
+        public Integer getPid()
+        {
+            return pid;
+        }
+    }
+
+    private class AncillaryStream extends AbstractElementaryStream
+    {
+        public AncillaryStream(final long id, final int maxAverageRate, final int maxBurstSize,
+            final int maxShapingLatency, final Map<String, String> properties, final Integer pid)
+        {
+            super(id, maxAverageRate, maxBurstSize, maxShapingLatency, pid, properties);
+        }
+    }
+
+    private class ComponentStream extends AbstractElementaryStream
+    {
+        private final Integer componentType;
+
+        public ComponentStream(final long id, final Integer componentType, final int maxAverageRate, final int maxBurstSize, final int maxShapingLatency, final Map<String, String> properties)
+        {
+            super(id, maxAverageRate, maxBurstSize, maxShapingLatency, null, properties);
+            this.componentType = componentType;
+        }
+
+        public int getComponentType()
+        {
+            return componentType;
+        }
+    }
+
+    private final class Program
+    {
+        private final Map<String, String> properties;
+        private final Map<Long, ComponentStream> componentStreams;
+
+        private final int programNumber;
+
+        private Program(final Map<String, String> properties, final Map<Long, ComponentStream> componentStreams, final int programNumber)
+        {
+            this.properties = properties;
+            this.componentStreams = componentStreams;
+            this.programNumber = programNumber;
+        }
+
+        public Map<String, String> getProperties()
+        {
+            return properties;
+        }
+
+        public Map<Long, ComponentStream> getComponentStreams()
+        {
+            return componentStreams;
+        }
+
+        public int getProgramNumber()
+        {
+            return programNumber;
+        }
+    }
+
+    @Test public void testUdpBlockTransportStreamWithRoute_withPatPmtAndAncillaryStreamComingOnlyFromInputRoute() throws Exception
+    {
+        // Set up transport stream and route
+        final int transportStreamId = createMpeg2TransportStream(newArrayList(STREAM_ON_PORT1), NETWORK_PID_1000, null, null, PROPERTIES, MAX_AVERAGE, MAX_BUFFER_VALUE, MAX_LATENCY);
+        final long routeId = establishAUdpRouteWithBlockDataForTransportStream(PORT3, newHashSet(transportStreamId));
+        waitForEvent(Events.ESTABLISH_EXTERNAL_ROUTE_EVENT);
+
+        // Set up PAT on route and send
+        final List<byte[]> patMsgs = aPat(transportStreamId, newArrayList(new ProgramPidMapping(PROGRAM_NUMBER_40, VALID_PID2)), 10);
+        routeTestUtility.sendDataToRouteAndReceiveDataFromUdpSource(PORT3, wrapAMsgSectionWithBlockHeader(TYPE1, (byte)(5), patMsgs.get(0), (byte)0x80, PAT_PID), Lists.newArrayList(STREAM_ON_PORT1), outputHandler, new PacketCollectorWithMatcher(withPid(PAT_PID, null)));
+
+        // Verify: route exists under transport stream
+        final String routeTemplate = String.format("%s,%s=%s,%s=%%d - .*", TRANSPORT_STREAM_ROOT_TEMPLATE, TRANSPORT_STREAM_LEVEL_KEY_NAME, ROUTES, ROUTE_KEY_NAME);
+        assertThat(isTransportStreamMBeanRegistered(transportStreamId, String.format(routeTemplate, transportStreamId, routeId)), is(true));
+
+        // Set up PMT on route and send
+        final List<byte[]> pmtMsgs = aPmtMessage(PROGRAM_NUMBER_40, SINGLE_PROGRAM_COMPONENT, 0);
+        routeTestUtility.sendDataToRouteAndReceiveDataFromUdpSource(PORT3, wrapAMsgSectionWithBlockHeader(TYPE1, (byte)(5), pmtMsgs.get(0), (byte)0x80, VALID_PID2), Lists.newArrayList(STREAM_ON_PORT1), outputHandler, new PacketCollectorWithMatcher(withPid(VALID_PID2, null)));
+
+        // Verify: PMT stream and component stream from route exist under transport stream
+        assertThat(MxBeanUtils.verifyMBeanRegistered(new ObjectName(String.format(PMT_STREAM_TEMPLATE, transportStreamId, PROGRAM_NUMBER_40, VALID_PID2))), is(true));
+        assertThat(MxBeanUtils.verifyMBeanRegistered(new ObjectName(String.format(PMT_STREAM_FROM_TEMPLATE, transportStreamId, PROGRAM_NUMBER_40, VALID_PID2, String.format("(from) Route %d", routeId)))), is(true));
+        assertThat(MxBeanUtils.verifyMBeanRegistered(new ObjectName(String.format(COMPONENT_STREAM_TEMPLATE, transportStreamId, PROGRAM_NUMBER_40, COMPONENT_PID_1701))), is(true));
+
+        // Set up Ancillary Stream on route and send
+        routeTestUtility.sendDataToRouteAndReceiveDataFromUdpSource(PORT3, getTestBlockWithHeaderData(TYPE1, (byte)(15), 183, (byte)0x80, VALID_PID), newArrayList(STREAM_ON_PORT1), outputHandler, new PacketCollectorWithMatcher(withPid(VALID_PID, null)));
+
+        // Verify: ancillary stream from route exists under transport stream; ancillary stream information bean doesn't exist.
+        assertThat(MxBeanUtils.verifyMBeanRegistered(new ObjectName(String.format(ANCILLARY_STREAM_FROM_TEMPLATE, transportStreamId, VALID_PID, String.format("(from) Route %d", routeId)))), is(true));
+        assertThat(MxBeanUtils.verifyMBeanRegistered(new ObjectName(String.format(ANCILLARY_STREAM_INFO_TEMPLATE, transportStreamId, VALID_PID))), is(false));
+
+        dssClient.addAncillaryStreamRequest(transportStreamId, VALID_PID, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, ancillaryStreamProperties);
+
+        // Verify: ancillary stream is from both DSS and route; ancillary stream information bean exists.
+        assertThat(MxBeanUtils.verifyMBeanRegistered(new ObjectName(String.format(ANCILLARY_STREAM_FROM_TEMPLATE, transportStreamId, VALID_PID, String.format("(from) DSS; Route %d", routeId)))), is(true));
+        assertThat(MxBeanUtils.verifyMBeanRegistered(new ObjectName(String.format(ANCILLARY_STREAM_INFO_TEMPLATE, transportStreamId, VALID_PID))), is(true));
+    }
+
+    @Test public void testUdpBlockTransportStreamWithTwoRoutes_whereRoutesAreNotRemoved_automaticallyAfterTransportStreamIsDeleted() throws Exception
+    {
+        // Set up transport stream and route
+        final int transportStreamId = createMpeg2TransportStream(newArrayList(STREAM_ON_PORT1), NETWORK_PID_1000, null, null, PROPERTIES, MAX_AVERAGE, MAX_BUFFER_VALUE, MAX_LATENCY);
+        final long routeId1 = establishAUdpRouteWithBlockDataForTransportStream(PORT3, newHashSet(transportStreamId));
+        final long routeId2 = establishAUdpRouteWithBlockDataForTransportStream(PORT4, newHashSet(transportStreamId));
+        waitForEvent(Events.ESTABLISH_EXTERNAL_ROUTE_EVENT);
+
+        // Set up PAT on route and send through first route
+        final List<byte[]> patMsgs = aPat(transportStreamId, newArrayList(new ProgramPidMapping(PROGRAM_NUMBER_40, VALID_PID2)), 10);
+        routeTestUtility.sendDataToRouteAndReceiveDataFromUdpSource(PORT3, wrapAMsgSectionWithBlockHeader(TYPE1, (byte)(5), patMsgs.get(0), (byte)0x80, PAT_PID), Lists.newArrayList(STREAM_ON_PORT1), outputHandler, new PacketCollectorWithMatcher(withPid(PAT_PID, null)));
+
+        // Verify: route exists under transport stream
+        final String routeTemplate = String.format("%s,%s=%s,%s=%%d - .*", TRANSPORT_STREAM_ROOT_TEMPLATE, TRANSPORT_STREAM_LEVEL_KEY_NAME, ROUTES, ROUTE_KEY_NAME);
+        assertThat(isTransportStreamMBeanRegistered(transportStreamId, String.format(routeTemplate, transportStreamId, routeId1)), is(true));
+
+        // Set up PMT on route and send through second route
+        final List<byte[]> pmtMsgs = aPmtMessage(PROGRAM_NUMBER_40, SINGLE_PROGRAM_COMPONENT, 0);
+        routeTestUtility.sendDataToRouteAndReceiveDataFromUdpSource(PORT3, wrapAMsgSectionWithBlockHeader(TYPE1, (byte)(5), pmtMsgs.get(0), (byte)0x80, VALID_PID2), Lists.newArrayList(STREAM_ON_PORT1), outputHandler, new PacketCollectorWithMatcher(withPid(VALID_PID2, null)));
+
+        // Set up Ancillary Stream on route and send
+        routeTestUtility.sendDataToRouteAndReceiveDataFromUdpSource(PORT3, getTestBlockWithHeaderData(TYPE1, (byte)(15), 183, (byte)0x80, VALID_PID), newArrayList(STREAM_ON_PORT1), outputHandler, new PacketCollectorWithMatcher(withPid(VALID_PID, null)));
+        dssClient.deleteTransportStream(transportStreamId);
+        MxBeanUtils.verifyMBeanUnregistered(new ObjectName(String.format(TRANSPORT_STREAM_SHAPER_TEMPLATE, transportStreamId)));
+
+        // Verify that the routes were automatically unregistered
+        verifyRouteDescriptorRegistered(UDP, BLOCKS, TRANSPORT_STREAM, routeId1, PORT3);
+        verifyBlockHeaderDecoderRegistered(UDP, routeId1);
+        verifyRouterRegistered(UDP, TRANSPORT_STREAM, routeId1);
+
+        verifyRouteDescriptorRegistered(UDP, BLOCKS, TRANSPORT_STREAM, routeId2, PORT4);
+        verifyBlockHeaderDecoderRegistered(UDP, routeId2);
+        verifyRouterRegistered(UDP, TRANSPORT_STREAM, routeId2);
+    }
+
+    @Test public void testUdpBlockTransportStreamWithTwoRoutes_whereRoutesAreNotRemoved_manuallyBeforeTheTransportStream() throws Exception
+    {
+        // Set up transport stream and route
+        final int transportStreamId = createMpeg2TransportStream(newArrayList(STREAM_ON_PORT1), NETWORK_PID_1000, null, null, PROPERTIES, MAX_AVERAGE, MAX_BUFFER_VALUE, MAX_LATENCY);
+        final long routeId1 = establishAUdpRouteWithBlockDataForTransportStream(PORT3, newHashSet(transportStreamId));
+        final long routeId2 = establishAUdpRouteWithBlockDataForTransportStream(PORT4, newHashSet(transportStreamId));
+        waitForEvent(Events.ESTABLISH_EXTERNAL_ROUTE_EVENT);
+
+        // Set up PAT on route and send through first route
+        final List<byte[]> patMsgs = aPat(transportStreamId, newArrayList(new ProgramPidMapping(PROGRAM_NUMBER_40, VALID_PID2)), 10);
+        routeTestUtility.sendDataToRouteAndReceiveDataFromUdpSource(PORT3, wrapAMsgSectionWithBlockHeader(TYPE1, (byte)(5), patMsgs.get(0), (byte)0x80, PAT_PID), Lists.newArrayList(STREAM_ON_PORT1), outputHandler, new PacketCollectorWithMatcher(withPid(PAT_PID, null)));
+
+        // Verify: route exists under transport stream
+        final String routeTemplate = String.format("%s,%s=%s,%s=%%d - .*", TRANSPORT_STREAM_ROOT_TEMPLATE, TRANSPORT_STREAM_LEVEL_KEY_NAME, ROUTES, ROUTE_KEY_NAME);
+        assertThat(isTransportStreamMBeanRegistered(transportStreamId, String.format(routeTemplate, transportStreamId, routeId1)), is(true));
+
+        // Set up PMT on route and send through second route
+        final List<byte[]> pmtMsgs = aPmtMessage(PROGRAM_NUMBER_40, SINGLE_PROGRAM_COMPONENT, 0);
+        routeTestUtility.sendDataToRouteAndReceiveDataFromUdpSource(PORT3, wrapAMsgSectionWithBlockHeader(TYPE1, (byte)(5), pmtMsgs.get(0), (byte)0x80, VALID_PID2), Lists.newArrayList(STREAM_ON_PORT1), outputHandler, new PacketCollectorWithMatcher(withPid(VALID_PID2, null)));
+
+        // Set up Ancillary Stream on route and send
+        routeTestUtility.sendDataToRouteAndReceiveDataFromUdpSource(PORT3, getTestBlockWithHeaderData(TYPE1, (byte)(15), 183, (byte)0x80, VALID_PID), newArrayList(STREAM_ON_PORT1), outputHandler, new PacketCollectorWithMatcher(withPid(VALID_PID, null)));
+
+        // Remove the routes and verify that their MBeans were unregistered
+        dssClient.removeRoute(routeId1);
+        verifyRouteDescriptorRegistered(UDP, BLOCKS, TRANSPORT_STREAM, routeId1, PORT3);
+        verifyBlockHeaderDecoderRegistered(UDP, routeId1);
+        verifyRouterRegistered(UDP, TRANSPORT_STREAM, routeId1);
+
+        dssClient.removeRoute(routeId2);
+        verifyRouteDescriptorRegistered(UDP, BLOCKS, TRANSPORT_STREAM, routeId2, PORT4);
+        verifyBlockHeaderDecoderRegistered(UDP, routeId2);
+        verifyRouterRegistered(UDP, TRANSPORT_STREAM, routeId2);
+
+        // Remove the transport stream
+        dssClient.deleteTransportStream(transportStreamId);
+        MxBeanUtils.verifyMBeanUnregistered(new ObjectName(String.format(TRANSPORT_STREAM_SHAPER_TEMPLATE, transportStreamId)));
+    }
+
+    private boolean isTransportStreamMBeanRegistered(final int transportStreamId, final String objectNamePattern) throws MalformedObjectNameException
+    {
+        final ObjectName rootObjectName = new ObjectName(String.format(TRANSPORT_STREAM_ROOT_TEMPLATE, transportStreamId) + ",*");
+        final Set<ObjectName> queryObjectNames = ManagementFactory.getPlatformMBeanServer().queryNames(rootObjectName, null);
+        for (final ObjectName objectName : queryObjectNames)
+        {
+            if (objectName.toString().matches(objectNamePattern))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+}

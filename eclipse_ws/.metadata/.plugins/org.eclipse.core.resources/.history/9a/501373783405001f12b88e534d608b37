@@ -1,0 +1,233 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.topology.core;
+
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.concurrent.ConcurrentMap;
+import java.util.regex.Pattern;
+
+import net.jcip.annotations.Immutable;
+
+import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang.builder.EqualsBuilder;
+import org.apache.commons.lang.builder.HashCodeBuilder;
+
+import com.google.common.base.Function;
+import com.google.common.base.Preconditions;
+import com.google.common.collect.MapMaker;
+
+/** Qualified name of a serving location. */
+@Immutable
+public final class ServingLocationQName
+{
+    public static final String SEPARATOR = ":";
+
+    public static final int MAX_LENGTH = 255;
+
+    // TODO: JLA
+    public static final ServingLocationQName ROOT = new ServingLocationQName(SEPARATOR);
+
+    private static final String ORPHANED_QNAME = "";
+
+    // TODO: JLA
+    public static final ServingLocationQName ORPHANED = new ServingLocationQName(ORPHANED_QNAME);
+
+    private static final ConcurrentMap<String, ServingLocationQName> CACHE = new MapMaker()
+        .softKeys()
+        .softValues()
+        .makeComputingMap(new Function<String, ServingLocationQName>() {
+            @Override
+            public ServingLocationQName apply(final String key)
+            {
+                return new ServingLocationQName(key);
+            }
+        });
+
+    private final String qualifiedName;
+
+    private ServingLocationQName()
+    {
+        qualifiedName = null;
+    }
+
+    private ServingLocationQName(final String qualifiedName)
+    {
+        validateQualifiedName(qualifiedName);
+
+        this.qualifiedName = qualifiedName;
+    }
+
+    public static ServingLocationQName of(final String qualifiedName)
+    {
+        validateQualifiedName(qualifiedName);
+
+        if (ROOT.getQualifiedName().equals(qualifiedName))
+        {
+            return ROOT;
+        }
+        // TODO: JLA
+        else if (ORPHANED.getQualifiedName().equals(qualifiedName) || qualifiedName == null || qualifiedName.equals(""))
+        {
+            return ORPHANED;
+        }
+        // TODO: END JLA
+        else
+        {
+            return CACHE.get(qualifiedName);
+        }
+    }
+
+    public String getQualifiedName()
+    {
+        return qualifiedName;
+    }
+
+    public String getLocalName()
+    {
+        final int lastIndexOfSeparator = qualifiedName.lastIndexOf(SEPARATOR);
+        return lastIndexOfSeparator >= 0 ? qualifiedName.substring(lastIndexOfSeparator + 1) : qualifiedName;
+    }
+
+    public ServingLocationQName getParent()
+    {
+        return of(getParentName());
+    }
+
+    private String getParentName()
+    {
+        // TODO: JLA
+        if (qualifiedName.equals(ServingLocationQName.of(ORPHANED_QNAME)))
+        {
+            return qualifiedName;
+        }
+
+        final int lastIndexOfSeparator = qualifiedName.lastIndexOf(SEPARATOR);
+        if (lastIndexOfSeparator < 0)
+        {
+            throw new IllegalStateException("Cannot retrieve parent of a relative name.");
+        }
+        return lastIndexOfSeparator > 0 ? qualifiedName.substring(0, lastIndexOfSeparator) : SEPARATOR;
+    }
+
+    public Iterable<String> getNameComponents()
+    {
+        final String relativePath = asRelative();
+        if (relativePath.length() == 0)
+        {
+            return Collections.emptyList();
+        }
+        else
+        {
+            return Arrays.asList(relativePath.split(Pattern.quote(SEPARATOR)));
+        }
+    }
+
+    public boolean isAbsolute()
+    {
+        return qualifiedName.startsWith(SEPARATOR);
+    }
+
+    private String asRelative()
+    {
+        return isAbsolute() ? qualifiedName.substring(1) : qualifiedName;
+    }
+
+    /**
+     * True if the specified {@link ServingLocationQName} is either equal to or is a child of this location.
+     *
+     * @param other other
+     * @return true if it contains other
+     */
+    public boolean contains(final ServingLocationQName other)
+    {
+        // TODO: JLA
+        if (this == ORPHANED || other == ORPHANED)
+        {
+            return false;
+        }
+
+        final Iterator<String> myComponentsIterator = getNameComponents().iterator();
+        final Iterator<String> otherComponentsIterator = other.getNameComponents().iterator();
+
+        while (myComponentsIterator.hasNext() && otherComponentsIterator.hasNext())
+        {
+            final String myNextComponent = myComponentsIterator.next();
+            final String otherNextComponent = otherComponentsIterator.next();
+
+            if (!myNextComponent.equals(otherNextComponent))
+            {
+                return false;
+            }
+        }
+
+        return !myComponentsIterator.hasNext();
+    }
+
+    @Override
+    public boolean equals(final Object obj)
+    {
+        return EqualsBuilder.reflectionEquals(this, obj);
+    }
+
+    @Override
+    public int hashCode()
+    {
+        return HashCodeBuilder.reflectionHashCode(this);
+    }
+
+    @Override
+    public String toString()
+    {
+        return getQualifiedName();
+    }
+
+    public String humanize()
+    {
+        return qualifiedName.equals(SEPARATOR) ? "Root" : qualifiedName;
+    }
+
+    public static void validateQualifiedName(final String qualifiedName)
+    {
+        // TODO: JLA
+        if (!"".equals(qualifiedName) && !qualifiedName.startsWith(SEPARATOR))
+        {
+            throw new IllegalArgumentException("Qualified names must start with [" + SEPARATOR + "].");
+        }
+//        if (!qualifiedName.startsWith(SEPARATOR))
+//        {
+//            throw new IllegalArgumentException("Qualified names must start with [" + SEPARATOR + "].");
+//        }
+
+        if (qualifiedName.length() > MAX_LENGTH)
+        {
+            throw new IllegalArgumentException(String.format("A qualified location name cannot be greater than %d characters. [%s]", MAX_LENGTH, qualifiedName));
+        }
+    }
+
+    public static void validateLocalName(final String localName)
+    {
+        if (StringUtils.isEmpty(localName))
+        {
+            throw new IllegalArgumentException("Local names must not be non-empty.");
+        }
+
+        if (localName.contains(ServingLocationQName.SEPARATOR))
+        {
+            throw new IllegalArgumentException("Local names must not contain [" + ServingLocationQName.SEPARATOR + "].");
+        }
+    }
+
+    public static ServingLocationQName newAbsolute(final String name)
+    {
+        return of(name.startsWith(SEPARATOR) ? name : SEPARATOR + name);
+    }
+
+    public static ServingLocationQName newAbsolute(final ServingLocationQName parent, final String localName)
+    {
+        Preconditions.checkNotNull(parent);
+        validateLocalName(localName);
+
+        return StringUtils.isEmpty(parent.getLocalName()) ? newAbsolute(localName) : newAbsolute(parent + SEPARATOR + localName);
+    }
+}

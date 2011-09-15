@@ -1,0 +1,47 @@
+package com.lmax.disruptor.support;
+
+import com.jamieallen.sdisruptor.Consumer;
+import com.jamieallen.sdisruptor.ConsumerBarrier;
+import com.jamieallen.sdisruptor.RingBuffer;
+
+private static final class TestConsumer implements Consumer
+{
+    private final ConsumerBarrier<StubEntry> consumerBarrier;
+    private volatile long sequence = RingBuffer.InitialCursorValue;
+
+    public TestConsumer(final ConsumerBarrier<StubEntry> consumerBarrier)
+    {
+        this.consumerBarrier = consumerBarrier;
+    }
+
+    @Override
+    public long sequence()
+    {
+        return sequence;
+    }
+
+    @Override
+    public void sequence_(final long sequence)
+    {
+        this.sequence = sequence;
+    }
+
+    @Override
+    public void halt()
+    {
+    }
+
+    @Override
+    public void run()
+    {
+        try
+        {
+            consumerBarrier.waitFor(0L);
+        }
+        catch (Exception ex)
+        {
+            throw new RuntimeException(ex);
+        }
+        ++sequence;
+    }
+}

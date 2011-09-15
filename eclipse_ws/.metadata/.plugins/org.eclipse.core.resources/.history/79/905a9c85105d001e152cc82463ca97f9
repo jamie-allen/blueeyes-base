@@ -1,0 +1,129 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.MPEG2_JMX_DISPLAY_NAME;
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.PID_MAPPING_STATISTICS_JMX_BEAN_TYPE;
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.ROUTE_NOTIFICATIONS_MESSAGE_PREFIX;
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.UDP_JMX_DISPLAY_NAME;
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteNotificationHelper.JMX_ROUTE_NOTIFICATION_MANAGER;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter.Mpeg2AdaptationFieldValidator;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter.Mpeg2PacketStatisticsCollector;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter.PidToStreamMapper;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter.UdpDatagramToMpeg2Transformer;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+import com.ccadllc.firebird.vms.common.packetfiltering.CompositePacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilter;
+
+import net.jcip.annotations.ThreadSafe;
+
+import org.apache.mina.transport.socket.DatagramSessionConfig;
+import org.apache.mina.transport.socket.nio.NioDatagramAcceptor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
+
+@ThreadSafe
+public class UdpMpeg2RouteController extends AbstractRouteController
+{
+    private static final String STREAM_MANAGER_PARAMETER = "stream manager";
+    private static final String PID_TO_STREAM_MAPPINGS_PARAMETER = "pid to stream mappings";
+
+    private final Logger logger = LoggerFactory.getLogger(UdpMpeg2RouteController.class);
+    private NioDatagramAcceptor acceptor;
+
+    private final CompositePacketFilter chain;
+    private final PidToStreamMapper mapper;
+    private final String notificationsPrefixString;
+    private volatile boolean disposed;
+
+    /** Lock used when manipulating the streamIds collection. */
+    private final Object lock = new Object();
+
+    public UdpMpeg2RouteController(
+            final RouteSnapshot route,
+            final StreamManager streamManager,
+            final JmxRouteNotificationManager jmxRouteNotificationManager) throws IOException
+    {
+        super(route, jmxRouteNotificationManager);
+        Preconditions.checkNotNull(streamManager, STREAM_MANAGER_PARAMETER);
+        Preconditions.checkNotNull(jmxRouteNotificationManager, JMX_ROUTE_NOTIFICATION_MANAGER);
+
+        notificationsPrefixString = String.format(ROUTE_NOTIFICATIONS_MESSAGE_PREFIX,
+            route.getId(), UDP_JMX_DISPLAY_NAME, MPEG2_JMX_DISPLAY_NAME);
+        mapper = new PidToStreamMapper(route, streamManager, jmxRouteNotificationManager, notificationsPrefixString);
+        final PacketFilter pidMappingStatistics = new Mpeg2PacketStatisticsCollector(mapper, route, PID_MAPPING_STATISTICS_JMX_BEAN_TYPE);
+        final PacketFilter adaptationFieldValidator = new Mpeg2AdaptationFieldValidator(pidMappingStatistics, jmxRouteNotificationManager, notificationsPrefixString);
+        final PacketFilter datagramToMpeg2Transformer = new UdpDatagramToMpeg2Transformer(adaptationFieldValidator, jmxRouteNotificationManager,
+            notificationsPrefixString);
+        chain = new CompositePacketFilter(ImmutableList.of(datagramToMpeg2Transformer, adaptationFieldValidator, pidMappingStatistics, mapper));
+
+        openUdpPort(route.getPort());
+    }
+
+    @Override
+    public void update(final RouteSnapshot route, final StreamManager streamManager,
+        final JmxRouteNotificationManager jmxRouteNotificationManager)
+    {
+        logger.debug("Updating pid to stream mappings.");
+        Preconditions.checkNotNull(streamManager, STREAM_MANAGER_PARAMETER);
+        Preconditions.checkNotNull(route, ROUTE_SNAPSHOT_PARAMETER);
+        Preconditions.checkNotNull(route.getPidMappings(), PID_TO_STREAM_MAPPINGS_PARAMETER);
+        Preconditions.checkNotNull(jmxRouteNotificationManager, JMX_ROUTE_NOTIFICATION_MANAGER);
+
+        synchronized (lock)
+        {
+            ensureNotDisposed();
+            mapper.update(route, streamManager, jmxRouteNotificationManager, notificationsPrefixString);
+
+            super.handleUpdate(route);
+        }
+    }
+
+    @Override
+    public void shutdown()
+    {
+        logger.debug("Shutdown...");
+        synchronized (lock)
+        {
+            super.cleanUp();
+
+            if (acceptor != null)
+            {
+                acceptor.dispose();
+            }
+
+            chain.dispose();
+            disposed = true;
+        }
+    }
+
+    protected void unbindPort() throws IOException {}
+
+    private void openUdpPort(final int port) throws IOException
+    {
+        acceptor = new NioDatagramAcceptor();
+        acceptor.setHandler(new UdpMpeg2RouteControllerHandler(chain));
+
+        final DatagramSessionConfig datagramSessionConfig = acceptor.getSessionConfig();
+        datagramSessionConfig.setReuseAddress(true);
+
+        acceptor.bind(new InetSocketAddress(port));
+        logger.debug("UDPServer listening on port " + port);
+    }
+
+    private void ensureNotDisposed()
+    {
+        if (disposed)
+        {
+            logger.warn("Action called on disposed filter chain.");
+            throw new IllegalStateException("Object has been disposed.");
+        }
+    }
+}

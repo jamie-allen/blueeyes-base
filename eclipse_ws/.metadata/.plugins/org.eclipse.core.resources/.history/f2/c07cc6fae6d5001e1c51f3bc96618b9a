@@ -1,0 +1,91 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerUnitTestUtility.createEmptyPidMappings;
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerUnitTestUtility.createEmptyStreamIdsList;
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerUnitTestUtility.createPidStreamMappingFromStreamIds;
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerUnitTestUtility.createUdpMpeg2RouteSnapshot;
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerUnitTestUtility.getStubbedNotifier;
+
+import java.util.Set;
+
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+
+import org.easymock.EasyMock;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+@Test
+public class UdpMpeg2RouteControllerTest
+{
+    private static final int PORT1 = 8150;
+    private StreamManager mockStreamManager;
+
+    @BeforeMethod
+    public void setUp() throws Exception
+    {
+        mockStreamManager = EasyMock.createMock(StreamManager.class);
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testNullPidToStreamMap() throws Exception
+    {
+        new UdpMpeg2RouteController(createUdpMpeg2RouteSnapshot(1L, PORT1, null), mockStreamManager, getStubbedNotifier());
+    }
+
+    public void testEmptyPidToStreamMap() throws Exception
+    {
+        new UdpMpeg2RouteController(createUdpMpeg2RouteSnapshot(1L, PORT1, createEmptyPidMappings()), mockStreamManager, getStubbedNotifier());
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testNullStreamManager() throws Exception
+    {
+        new UdpMpeg2RouteController(createUdpMpeg2RouteSnapshot(1L, PORT1, createEmptyPidMappings()), null, getStubbedNotifier());
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testNullNotificationManager() throws Exception
+    {
+        new UdpMpeg2RouteController(createUdpMpeg2RouteSnapshot(1L, PORT1, createEmptyPidMappings()), mockStreamManager, null);
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testInvalidPortNumber() throws Exception
+    {
+        new UdpMpeg2RouteController(createUdpMpeg2RouteSnapshot(1L, -1, createEmptyPidMappings()),
+            mockStreamManager, getStubbedNotifier());
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testNullRouteSnapshotOnUpdate() throws Exception
+    {
+        final UdpMpeg2RouteController udpRouteController = new UdpMpeg2RouteController(
+            createUdpMpeg2RouteSnapshot(1L, PORT1, createEmptyPidMappings()), mockStreamManager, getStubbedNotifier());
+        udpRouteController.update(null);
+    }
+
+    public void testEmptyPidToStreamMapOnUpdate() throws Exception
+    {
+        final UdpMpeg2RouteController udpRouteController = new UdpMpeg2RouteController(
+            createUdpMpeg2RouteSnapshot(2L, PORT1, createEmptyPidMappings()), mockStreamManager, getStubbedNotifier());
+        udpRouteController.update(createUdpMpeg2RouteSnapshot(2L, PORT1, createEmptyPidMappings()));
+    }
+
+    public void testValidStreamIdsOnUpdate() throws Exception
+    {
+        final Set<Long> streamIds = createEmptyStreamIdsList();
+        streamIds.add(1L);
+        streamIds.add(2L);
+        final UdpMpeg2RouteController udpRouteController = new UdpMpeg2RouteController(
+            createUdpMpeg2RouteSnapshot(4L, PORT1, createPidStreamMappingFromStreamIds(streamIds)),
+            mockStreamManager, getStubbedNotifier());
+
+        streamIds.clear();
+        streamIds.add(2L);
+        streamIds.add(3L);
+        udpRouteController.update(createUdpMpeg2RouteSnapshot(4L, PORT1, createPidStreamMappingFromStreamIds(streamIds)));
+
+        // TODO: Verify results.
+    }
+}

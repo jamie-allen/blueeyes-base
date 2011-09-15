@@ -1,0 +1,94 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter;
+
+import java.nio.ByteBuffer;
+
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.JmxRouteNotificationManager;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.RouteNotificationHelper;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.impl.Mpeg2Packet;
+import com.ccadllc.firebird.vms.common.packetfiltering.ForwardingPacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilter;
+
+import net.jcip.annotations.ThreadSafe;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Packet filter that takes the raw UDP datagram payload and sections it into Mpeg2 packets.
+ * If the payload size is not divisible by the size of an Mpeg2 packet, the payload is not
+ * inserted further into the chain.
+ */
+@ThreadSafe
+public class UdpDatagramToMpeg2Transformer extends ForwardingPacketFilter
+{
+    private final Logger logger = LoggerFactory.getLogger(UdpDatagramToMpeg2Transformer.class);
+
+    private final RouteNotificationHelper routeNotificationHelper;
+    private volatile boolean rejecting;
+
+    private final Object lock = new Object();
+
+    public UdpDatagramToMpeg2Transformer(final PacketFilter sink, final JmxRouteNotificationManager jmxRouteNotificationManager,
+        final String notificationsPrefixString)
+    {
+        super(sink);
+
+        routeNotificationHelper = new RouteNotificationHelper(jmxRouteNotificationManager,
+            notificationsPrefixString);
+    }
+
+    @Override
+    public boolean insert(final byte[] datagram)
+    {
+        synchronized (lock)
+        {
+            if (isRejectingDatagram(datagram))
+            {
+                logger.debug("Not inserting packets from UdpDatagramToMpeg2Transformer.");
+                return false;
+            }
+
+            boolean goodPacketFlag = true;
+            final ByteBuffer udpPayloadToProcessBuffer = ByteBuffer.wrap(datagram);
+            while (udpPayloadToProcessBuffer.hasRemaining())
+            {
+                final byte[] mpeg2Packet = new byte[Mpeg2Packet.PACKET_SIZE_IN_BYTES];
+                udpPayloadToProcessBuffer.get(mpeg2Packet).array();
+
+                logger.debug("Inserting packets from UdpDatagramToMpeg2Transformer.");
+                if (!sink().insert(mpeg2Packet))
+                {
+                    goodPacketFlag = false;
+                }
+            }
+
+            return goodPacketFlag;
+        }
+    }
+
+    private boolean isRejectingDatagram(final byte[] datagram)
+    {
+        final boolean nowRejecting = !isUdpPayloadDivisibleByMpeg2PacketSizeInBytes(datagram);
+        if (routeNotificationHelper.isRejectingStatusChanged(rejecting, nowRejecting))
+        {
+            routeNotificationHelper.sendRejectPacketNotification(createRejectingString(nowRejecting),
+                "UdpDatagramToMpeg2TransformerRejectingDatagrams", nowRejecting);
+        }
+        rejecting = nowRejecting;
+        return rejecting;
+    }
+
+    private boolean isUdpPayloadDivisibleByMpeg2PacketSizeInBytes(final byte[] udpPayload)
+    {
+        logger.debug("Is udp payload divisible by mpeg2packet size...");
+        logger.debug("udpPayload size = {}, udpPayload is: {}", udpPayload.length, udpPayload);
+
+        return udpPayload.length % Mpeg2Packet.PACKET_SIZE_IN_BYTES == 0;
+    }
+
+    private String createRejectingString(final boolean rejecting)
+    {
+        return String.format("UdpDatagramToMpeg2Transformer %s rejecting UDP datagrams", (rejecting ? "is" : "is not"));
+    }
+}

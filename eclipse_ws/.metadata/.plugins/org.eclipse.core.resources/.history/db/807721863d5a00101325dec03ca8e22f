@@ -1,0 +1,424 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.topology.changeset;
+
+import static com.ccadllc.commons.util.MorePredicates.hasId;
+import static com.google.common.base.Preconditions.checkNotNull;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+
+import javax.persistence.CascadeType;
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.EntityManager;
+import javax.persistence.FetchType;
+import javax.persistence.GeneratedValue;
+import javax.persistence.GenerationType;
+import javax.persistence.Id;
+import javax.persistence.OneToMany;
+import javax.persistence.PersistenceContext;
+import javax.persistence.Table;
+
+import com.ccadllc.commons.util.FunctionalIterable;
+import com.ccadllc.commons.util.FunctionalIterables;
+import com.ccadllc.commons.util.Option;
+import com.ccadllc.firebird.vms.topology.core.ServingLocationQName;
+import com.ccadllc.firebird.vms.topology.core.TopologyModel;
+import com.ccadllc.firebird.vms.topology.core.change.Change;
+import com.ccadllc.firebird.vms.topology.core.change.Changeset;
+import com.ccadllc.firebird.vms.topology.core.change.ChangesetStatus;
+import com.ccadllc.firebird.vms.topology.core.change.ChangesetSummary;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableTopologyModel;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableTopologyModelPurpose;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableTopologyService;
+import com.ccadllc.firebird.vms.topology.core.status.Severity;
+import com.ccadllc.firebird.vms.topology.core.validation.TopologyValidationService;
+import com.ccadllc.firebird.vms.topology.core.validation.ValidationItem;
+import com.ccadllc.firebird.vms.topology.core.validation.ValidationItemPredicates;
+import com.ccadllc.firebird.vms.topology.spi.ChangeAgent;
+
+import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang.builder.ToStringBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Configurable;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
+
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+
+/**
+ * Default implementation of {@link Changeset}.
+ */
+@Entity
+@Table(name = "changeset")
+@Configurable
+public class DefaultChangeset implements Changeset, ChangesetSummary
+{
+    @Id
+    @GeneratedValue(strategy = GenerationType.AUTO)
+    private long id;
+
+    @Column(name = "name", unique = true)
+    private volatile String name;
+
+    @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER, targetEntity = DefaultChange.class, mappedBy = "changeset", orphanRemoval = true)
+    private volatile List<Change> changes;
+
+    // CHECKSTYLE:OFF
+    protected final transient Logger logger = LoggerFactory.getLogger(getClass());
+    @PersistenceContext protected transient EntityManager sharedEntityManager;
+    // CHECKSTYLE:ON
+    private transient ChangeAgentRegistry changeAgentRegistry;
+    private transient MutableTopologyService topologyService;
+    private transient volatile MutableTopologyModel realizedTopologyModel;
+    private transient volatile ChangesetStatus cachedStatus;
+    private transient TopologyValidationService topologyValidationService;
+
+    /**
+     * Private constructor for JPA.
+     */
+    protected DefaultChangeset()
+    {
+    }
+
+    /**
+     * Constructor.
+     *
+     * @param name the name given to this changeset
+     */
+    public DefaultChangeset(final String name)
+    {
+        this();
+
+        this.name = checkNotNull(name);
+        changes = Lists.newArrayList();
+    }
+
+    @Override
+    public Long getId()
+    {
+        return id;
+    }
+
+    @Override
+    public FunctionalIterable<Change> getChanges()
+    {
+        return FunctionalIterables.of(changes);
+    }
+
+    public void clearChanges()
+    {
+        changes = Lists.newArrayList();
+    }
+
+    @Override
+    public String getName()
+    {
+        return name;
+    }
+
+    @Override
+    public ChangesetStatus getStatus()
+    {
+        if (cachedStatus == null)
+        {
+            updateStatus();
+        }
+        return cachedStatus;
+    }
+
+    @Override
+    public void setName(final String name)
+    {
+        this.name = name;
+    }
+
+    @Override
+    public MutableTopologyModel getRealizedModel()
+    {
+        // If realizedModel is null we know we haven't ran through existing changes yet
+        if (realizedTopologyModel == null)
+        {
+            updateStatus();
+        }
+        return realizedTopologyModel;
+    }
+
+    @Override
+    public void updateStatus()
+    {
+        // If this is a live changeset, the disconnected model is only use for validation
+        final MutableTopologyModelPurpose purpose = id == 0 ? MutableTopologyModelPurpose.VALIDATION : MutableTopologyModelPurpose.SPECULATIVE;
+        realizedTopologyModel = topologyService.getDisconnectedMutableModel(purpose);
+        cachedStatus = getStatusWithModel(realizedTopologyModel);
+    }
+
+    private ChangesetStatus getStatusWithModel(final MutableTopologyModel model)
+    {
+        checkNotNull(model, "Model can't be null.");
+
+        final List<ValidationItem> validationItems = Lists.newArrayList();
+        for (final Change change : getChanges())
+        {
+            try
+            {
+                executeChange(model, change, true);
+            }
+            // CHECKSTYLE:OFF
+            catch (final Throwable e)
+            // CHECKSTYLE:ON
+            {
+                validationItems.add(validationFromException(e));
+            }
+        }
+
+        return new ChangesetStatus(topologyValidationService.validate(model).getValidationItems().concat(validationItems));
+    }
+
+    @Override
+    public void removeChanges(final long ... changeIdsToRemove)
+    {
+        changes.removeAll(extractChangesById(changeIdsToRemove));
+        updateStatus();
+    }
+
+    @Override
+    public void addChanges(final Change ... proposedChanges)
+    {
+        final List<ValidationItem> validationItems = Lists.newArrayList();
+        final MutableTopologyModel realizedModel = getRealizedModel();
+        for (final Change proposedChange : proposedChanges)
+        {
+            trimParameters(proposedChange);
+            try
+            {
+                executeChange(realizedModel, proposedChange, true);
+            }
+            // CHECKSTYLE:OFF
+            catch (final Throwable e)
+            // CHECKSTYLE:ON
+            {
+                validationItems.add(validationFromException(e));
+            }
+
+            // Connecting child to parent; only matters if we're in a transaction
+            ((DefaultChange) proposedChange).setChangeset(this);
+            changes.add(proposedChange);
+        }
+
+        cachedStatus = new ChangesetStatus(topologyValidationService.validate(realizedModel).getValidationItems().concat(validationItems));
+    }
+
+    /**
+     * Execute always goes against the connected model.  Normally by this point the user has already validated their changes.  But other users could
+     * have changed the model in ways to make our execution still fail.  So not only do we need to catch changeAgent errors, we need to intercept the validation exceptions
+     */
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public ChangesetStatus execute()
+    {
+        if (changes.isEmpty())
+        {
+            logger.debug("Skipping execution.  No changes.");
+            updateStatus();
+            return getStatus();
+        }
+        else
+        {
+            logger.debug("Executing changeset {}", name);
+
+            final FunctionalIterable<ValidationItem> validationItems = executeChangeset();
+            if (validationItems.exists(ValidationItemPredicates.hasSeverity(Severity.ERROR)))
+            {
+                if (TransactionAspectSupport.currentTransactionStatus() != null)
+                {
+                    TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+                }
+            }
+
+            cachedStatus = new ChangesetStatus(validationItems);
+            if (cachedStatus.isValid())
+            {
+                for (final Change change : getChanges())
+                {
+                    recordExecuteChangeEvent(change);
+                }
+            }
+
+            logger.debug("Changeset {} was executed [{}].", name, cachedStatus);
+
+            // Updating model with disconnected mutable model so future #addChange(s)
+            // apply against disconnected not connected.
+            setCachedModel(topologyService.getDisconnectedMutableModel(MutableTopologyModelPurpose.SPECULATIVE));
+            return cachedStatus;
+        }
+    }
+
+    protected void recordExecuteChangeEvent(final Change change)
+    {
+        ChangesetEventLogger.recordExecuteChangeEvent(getName(), change);
+    }
+
+    private FunctionalIterable<ValidationItem> executeChangeset()
+    {
+        final MutableTopologyModel model = getModelForExecution(false);
+        logger.debug("Using {} for execution.", model);
+
+        final List<ValidationItem> items = Lists.newArrayList();
+        for (final Change change : getChanges())
+        {
+            try
+            {
+                executeChange(model, change, false);
+                humanizeChange(model, change);
+
+                // Forcing flush to prevent Hibernate from reordering SQL statements
+                sharedEntityManager.flush();
+            }
+            // CHECKSTYLE:OFF
+            catch (final Throwable t)
+            // CHECKSTYLE:ON
+            {
+                items.add(validationFromException(t));
+            }
+        }
+
+        return FunctionalIterables.of(items);
+    }
+
+    private void executeChange(final MutableTopologyModel topologyModel, final Change change, final boolean dryRun)
+    {
+        final ChangeAgent changeAgent = changeAgentRegistry.getByType(change.getType());
+        if (changeAgent == null)
+        {
+            throw new IllegalArgumentException(String.format("Change type [%s] not supported.", change.getType()));
+        }
+        else
+        {
+            final StringBuffer sb = new StringBuffer("@@@@@@@@ Before humanization, Properties:");
+            for (Entry<String, String> entry : change.getParameters())
+            {
+                sb.append(String.format("Property: %s, Value: %s", entry.getKey(), entry.getValue()));
+            }
+            logger.warn("@@@@@@@@ Before humanization, Properties:");
+            humanizeChange(topologyModel, change, changeAgent);
+
+            final Map<String, String> copiedParams = copyParams(change.getParameters());
+            changeAgent.execute(topologyModel, copiedParams);
+
+            // Add any new parameters introduced in ChangeAgent#execute
+            // and Override any existing params (shouldn't really be any)
+            change.getParameters().putAll(copiedParams);
+        }
+
+        logger.debug("Executed change [{}].", change);
+    }
+
+
+    @Override
+    public String toString()
+    {
+        return ToStringBuilder.reflectionToString(this);
+    }
+
+    // -- Helpers
+
+    private Map<String, String> copyParams(final Map<String, String> params)
+    {
+        return params == null ? Maps.<String, String>newHashMap() : Maps.<String, String>newHashMap(params);
+    }
+
+    private MutableTopologyModel getModelForExecution(final boolean dryRun)
+    {
+        return dryRun ? getRealizedModel() : topologyService.getConnectedMutableModel();
+    }
+
+    /**
+     * Trim whitespace off both ends of parameter values.
+     *
+     * @param proposedChange
+     */
+    private void trimParameters(final Change proposedChange)
+    {
+        final Map<String, String> parameters = proposedChange.getParameters();
+        for (final String key : parameters.keySet())
+        {
+            if (key.startsWith(" ") || key.endsWith(" "))
+            {
+                throw new IllegalArgumentException(String.format("Change parameter keys cannot contain leading or trailing whitespace [%s]."));
+            }
+
+            parameters.put(key, StringUtils.trim(parameters.get(key)));
+        }
+    }
+
+    private void humanizeChange(final TopologyModel topologyModel, final Change change)
+    {
+        changeAgentRegistry.getByType(change.getType()).humanize(topologyModel, change);
+    }
+
+    private void humanizeChange(final TopologyModel topologyModel, final Change change, final ChangeAgent changeAgent)
+    {
+        changeAgent.humanize(topologyModel, change);
+    }
+
+    private ValidationItem validationFromException(final Throwable e)
+    {
+        String summary;
+        if (StringUtils.isBlank(e.getMessage()))
+        {
+            logger.error("Exception while processing changeset.  No message!", e);
+            summary = "Exception occurred processing change. Check logs. [" + e + "]";
+        }
+        else
+        {
+            logger.debug("Exception while processing changeset.", e);
+            summary = e.getMessage();
+        }
+
+        return new ValidationItem.Builder().severity(Severity.ERROR).summary(summary).relevantLocation(ServingLocationQName.ROOT).build();
+    }
+
+    private List<Change> extractChangesById(final long[] changeIds)
+    {
+        final List<Change> changes = Lists.newArrayList();
+        final FunctionalIterable<Change> existingChanges = getChanges();
+        for (final Long changeId : changeIds)
+        {
+            final Option<Change> matchingChange = existingChanges.find(hasId(changeId));
+            if (matchingChange.isDefined())
+            {
+                changes.add(matchingChange.get());
+            }
+        }
+
+        return changes;
+    }
+
+    // -- Setters
+
+    public void setCachedModel(final MutableTopologyModel cachedModel)
+    {
+        logger.debug("Updating realizedModel to {}", cachedModel);
+        realizedTopologyModel = cachedModel;
+    }
+
+    public void setTopologyValidationService(final TopologyValidationService topologyValidationService)
+    {
+        this.topologyValidationService = topologyValidationService;
+    }
+
+    public void setChangeAgentRegistry(final ChangeAgentRegistry changeAgentRegistry)
+    {
+        this.changeAgentRegistry = changeAgentRegistry;
+    }
+
+    public void setTopologyService(final MutableTopologyService topologyService)
+    {
+        this.topologyService = topologyService;
+    }
+}

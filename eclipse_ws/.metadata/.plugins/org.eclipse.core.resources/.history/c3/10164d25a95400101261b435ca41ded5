@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:osgi="http://www.springframework.org/schema/osgi"
+    xmlns:util="http://www.springframework.org/schema/util"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+        http://www.springframework.org/schema/osgi http://www.springframework.org/schema/osgi/spring-osgi.xsd
+        http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd">
+
+    <osgi:service interface="com.ccadllc.firebird.vms.terminals.manager.TerminalManager" ref="terminalManager" />
+    <osgi:service interface="com.ccadllc.firebird.vms.terminals.manager.OperationManager" ref="operationManager" />
+
+    <util:constant id="messageSenderEventTopics" static-field="com.ccadllc.firebird.vms.terminals.manager.impl.DefaultMessageSender.EVENT_TOPICS" />
+    <osgi:service interface="org.osgi.service.event.EventHandler" ref="messageSender">
+        <osgi:service-properties>
+            <entry key="event.topics" value-ref="messageSenderEventTopics" />
+        </osgi:service-properties>
+    </osgi:service>
+
+    <util:constant id="declarativeOperationsBridgeEventTopics" static-field="com.ccadllc.firebird.vms.terminals.manager.impl.DeclarativeOperationsBridge.EVENT_TOPICS" />
+    <osgi:service interface="org.osgi.service.event.EventHandler" ref="declarativeOperationsBridge">
+        <osgi:service-properties>
+            <entry key="event.topics" value-ref="declarativeOperationsBridgeEventTopics" />
+        </osgi:service-properties>
+    </osgi:service>
+
+    <util:constant id="operationManagerEventTopics" static-field="com.ccadllc.firebird.vms.terminals.manager.impl.DefaultOperationManager.EVENT_TOPICS" />
+    <osgi:service interface="org.osgi.service.event.EventHandler" ref="operationManager">
+        <osgi:service-properties>
+            <entry key="event.topics" value-ref="operationManagerEventTopics" />
+        </osgi:service-properties>
+    </osgi:service>
+
+    <util:constant id="terminalHandlerEventTopics" static-field="com.ccadllc.firebird.vms.terminals.spi.TerminalHandlerEvents.TOPICS_ALL" />
+    <osgi:service interface="org.osgi.service.event.EventHandler" ref="terminalOwnerSynchronizer">
+        <osgi:service-properties>
+            <entry key="event.topics" value-ref="terminalHandlerEventTopics" />
+        </osgi:service-properties>
+    </osgi:service>
+
+    <util:constant id="terminalOperationPassCompletedTopic"
+                   static-field="com.ccadllc.firebird.vms.terminals.domain.DomainEvents.TERMINAL_OPERATION_PASS_COMPLETED"/>
+    <osgi:service interface="org.osgi.service.event.EventHandler" ref="operationPassCountIncrementer">
+        <osgi:service-properties>
+            <entry key="event.topics" value-ref="terminalOperationPassCompletedTopic"/>
+        </osgi:service-properties>
+    </osgi:service>
+
+    <osgi:reference id="emmBuilderService" interface="com.ccadllc.firebird.vms.terminals.emmbuilder.EmmBuilderService" />
+    <osgi:reference id="terminalCacheFactory" interface="com.ccadllc.firebird.vms.terminals.domain.TerminalCacheFactory" />
+    <osgi:reference id="operationRepository" interface="com.ccadllc.firebird.vms.terminals.domain.OperationRepository" />
+    <osgi:reference id="terminalRepository" interface="com.ccadllc.firebird.vms.terminals.domain.TerminalRepository" />
+    <osgi:reference id="terminalOwnerRepository" interface="com.ccadllc.firebird.vms.terminals.domain.TerminalOwnerRepository" />
+    <osgi:reference id="dssrm" interface="com.ccadllc.firebird.vms.dssrm.core.DataStreamServerResourceManager" />
+    <osgi:reference id="topologyModel" interface="com.ccadllc.firebird.vms.topology.core.TopologyModel" />
+    <osgi:reference id="transactionManager" interface="org.springframework.transaction.PlatformTransactionManager" />
+    <osgi:reference id="eventAdmin" interface="org.osgi.service.event.EventAdmin" />
+
+    <osgi:reference id="terminalHandler" interface="com.ccadllc.firebird.vms.terminals.spi.TerminalHandler" cardinality="1..1" />
+    <osgi:reference id="terminalOwnerProvider" interface="com.ccadllc.firebird.vms.terminals.spi.TerminalOwnerProvider" cardinality="0..1" />
+
+</beans>
+

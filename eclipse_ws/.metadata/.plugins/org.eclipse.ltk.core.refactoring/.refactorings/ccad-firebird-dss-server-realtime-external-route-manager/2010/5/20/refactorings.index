@@ -1,0 +1,35 @@
+1273531746078	Copy compilation unit
+1273532750795	Copy compilation unit
+1273532966517	Copy compilation unit
+1273587310625	Rename field 'totalPackets'
+1273587318925	Rename field 'packetsInserted'
+1273587327095	Rename field 'packetsRejected'
+1273587576790	Rename method 'sendRejectPacketNotification'
+1273587652615	Rename method 'createPacketRejectingNotification'
+1273588534993	Copy compilation unit
+1273589174195	Rename method 'getTotalPackets'
+1273589185977	Rename method 'getPacketsInserted'
+1273589197130	Rename method 'getPacketsRejected'
+1273590587207	Rename field 'disposed'
+1273763161949	Rename local variable 'notifier'
+1273763650169	Rename type 'RouteControllerNotifier'
+1273770053064	Delete element
+1273771472536	Rename local variable 'routeControllerNotifier'
+1273771839965	Rename local variable 'routeControllerNotifier'
+1273771848584	Rename field 'routeControllerNotifier'
+1273847209664	Delete element
+1273847231495	Delete element
+1273847277300	Delete elements
+1273847299624	Delete element
+1273847491893	Delete element
+1273847506781	Delete element
+1273847569000	Delete elements
+1273847585212	Delete elements
+1273848777435	Delete elements
+1273848796978	Delete element
+1273859909354	Rename method 'incrementTotalPackets'
+1273859920641	Rename method 'incrementPacketsInserted'
+1273859940489	Rename field 'totalPackets'
+1273859949857	Rename field 'packetsInserted'
+1273863660889	Delete element
+1273866814842	Rename method 'getNumberInserted'

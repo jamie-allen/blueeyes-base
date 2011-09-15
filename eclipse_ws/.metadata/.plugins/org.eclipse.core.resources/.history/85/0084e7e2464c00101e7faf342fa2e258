@@ -1,0 +1,122 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.ROUTE_NOTIFICATIONS_PREFIX;
+
+import java.io.IOException;
+
+import com.ccadllc.commons.util.concurrent.CallbackSupportingScheduledExecutorService;
+import com.ccadllc.commons.util.concurrent.ExtendedScheduledExecutorService;
+import com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter.PacketFilterRouter;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter.RouterController;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.JmxRouteNotificationManager;
+import com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+import com.ccadllc.firebird.vms.common.packetfiltering.InsertionMetricsCalculator;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Factory to create valid {@link RouteController}s.
+ */
+public final class DefaultRouteControllerFactory implements RouteControllerFactory
+{
+    private static final Logger logger = LoggerFactory.getLogger(DefaultRouteControllerFactory.class);
+    private static final int INSERTION_METRICS_PERIOD_SECONDS = 10;
+
+    private final StreamManager streamManager;
+    private final RealTimeSnapshotManager snapshotManager;
+    private final JmxRouteNotificationManager jmxRouteNotificationManager;
+    private final CallbackSupportingScheduledExecutorService executor;
+
+    public DefaultRouteControllerFactory(final JmxRouteNotificationManager jmxRouteNotificationManager,
+        final StreamManager streamManager, final RealTimeSnapshotManager snapshotManager, final CallbackSupportingScheduledExecutorService executor)
+    {
+        this.streamManager = streamManager;
+        this.snapshotManager = snapshotManager;
+        this.jmxRouteNotificationManager = jmxRouteNotificationManager;
+        this.executor = executor;
+    }
+
+    public RouteController create(final RouteSnapshot route, final RouteManager routeManager) throws IOException
+    {
+        final String notificationsPrefixString = String.format(ROUTE_NOTIFICATIONS_PREFIX,
+            route.getId(), route.getTransportProtocolType(), route.getRouteDataType(), route.getRouteType(), route.getPort());
+
+        final PacketFilterRouter router = createRouter(route, notificationsPrefixString);
+        final Router routerController = new RouterController(route, router, new InsertionMetricsCalculator(INSERTION_METRICS_PERIOD_SECONDS, router, (ExtendedScheduledExecutorService)executor));
+        final Decoder decoder = createDecoder(route, routerController, notificationsPrefixString, new RouteManagerNotifier()
+        {
+            public void notifyRouteManagerThatSessionClosed()
+            {
+                if (route.getTransportProtocolType() == TransportProtocolType.TCP)
+                {
+                    routeManager.removeRoute(route);
+                }
+            }
+        });
+
+        final Source source = createSource(route, decoder);
+        return new DefaultRouteController(route, source, decoder, routerController);
+    }
+
+    private PacketFilterRouter createRouter(final RouteSnapshot route, final String notificationsPrefixString)
+    {
+        switch (route.getRouteType())
+        {
+            case ELEMENTARY_STREAM:
+                logger.debug("RouteControllerFactory creating ELEMENTARY_STREAM router.");
+                return new ElementaryStreamRouter(streamManager, snapshotManager, route);
+            case TRANSPORT_STREAM:
+                logger.debug("RouteControllerFactory creating TRANSPORT_STREAM router.");
+                return new TransportStreamRouter(streamManager, route);
+            case PID_MAPPED:
+                logger.debug("RouteControllerFactory creating PID_MAPPED router.");
+                return new PidMappedRouter(streamManager, snapshotManager, route);
+            default:
+                throw new IllegalArgumentException(String.format("Unknown route type detected while defining router for route %s", route));
+        }
+    }
+
+    private Decoder createDecoder(final RouteSnapshot route, final Router router, final String notificationsPrefixString, final RouteManagerNotifier routeManagerNotifier)
+    {
+        switch (route.getRouteDataType())
+        {
+            case BLOCKS:
+                logger.debug("RouteControllerFactory creating BLOCKS decoder.");
+                return new BlockDecoder(route, router, jmxRouteNotificationManager, notificationsPrefixString, routeManagerNotifier);
+            case MPEG_PACKETS:
+                logger.debug("RouteControllerFactory creating MPEG_PACKETS decoder.");
+                return new MpegPacketDecoder(route, router, jmxRouteNotificationManager, notificationsPrefixString, routeManagerNotifier);
+            default:
+                throw new IllegalArgumentException(String.format("Unknown route data type detected while defining decoder for route %s", route));
+        }
+    }
+
+    private Source createSource(final RouteSnapshot route, final Decoder decoder) throws IOException
+    {
+        switch (route.getTransportProtocolType())
+        {
+            case UDP:
+                logger.debug("RouteControllerFactory creating UDP source.");
+                return new UdpSource(route, decoder);
+            case TCP:
+                logger.debug("RouteControllerFactory creating TCP source.");
+                return new TcpSource(route, decoder, new RouteEstablisherNotifier()
+                {
+
+                    @Override
+                    public void notifyRouteEstablisherThatSessionClosed(int port)
+                    {
+                    }
+                });
+            default:
+                throw new IllegalArgumentException(String.format("Unknown transpoort protocol type detected while defining source for route {}", route));
+        }
+    }
+}

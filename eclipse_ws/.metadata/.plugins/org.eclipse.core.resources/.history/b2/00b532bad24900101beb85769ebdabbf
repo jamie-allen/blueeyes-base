@@ -1,0 +1,26 @@
+package com.blah.test;
+
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.EncodedResource;
+
+public class XmlTester
+{
+    private static final String LOCATION = "/Users/jallen/ccad/development/tracks/firebird/vms/test-plugin-1.0/tools/web/src/main/resources/META-INF/firebird/navigation-config.xml";
+
+    public static void main(final String[] args)
+    {
+        System.out.println("Looking for file: " + LOCATION);
+        final Resource resource = new FileSystemResource(LOCATION);
+        if (resource.exists())
+        {
+            final EncodedResource encodedResource = new EncodedResource(new FileSystemResource(LOCATION), "UTF-8");
+        }
+        else
+        {
+            System.out.println("DID NOT FIND THE FILE!");
+        }
+    }
+
+
+}

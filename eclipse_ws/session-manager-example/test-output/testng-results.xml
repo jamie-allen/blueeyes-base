@@ -1,0 +1,14 @@
+<testng-results>
+  <reporter-output>
+  </reporter-output>
+  <suite name="session-manager-example">
+    <groups>
+    </groups>
+    <test name="com.ccadllc.example.session.TestSessionTest">
+      <class name="com.ccadllc.example.session.TestSessionTest">
+        <test-method status="PASS" signature="testSession()" name="testSession" duration-ms="6124" started-at="2007-07-31T16:44:22Z" finished-at="2007-07-31T16:44:28Z">
+        </test-method>
+      </class>
+    </test>
+  </suite>
+</testng-results>

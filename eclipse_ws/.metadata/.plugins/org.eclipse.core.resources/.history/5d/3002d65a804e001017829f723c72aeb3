@@ -1,0 +1,6 @@
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+public interface RouteEstablisherNotifier
+{
+
+}

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.ccadllc.example.session.TestSessionTest" failures="0" tests="1" time="6.14" errors="0">
+  <properties/>
+  <testcase name="testSession" time="6.124" classname="com.ccadllc.example.session.TestSessionTest"/>
+</testsuite>

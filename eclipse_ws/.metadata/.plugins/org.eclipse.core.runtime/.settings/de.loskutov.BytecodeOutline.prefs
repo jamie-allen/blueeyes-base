@@ -1,0 +1,7 @@
+#Tue Feb 22 11:18:26 EST 2011
+expandStackmap=true
+showASMifierCode=true
+showAnalyzer=true
+eclipse.preferences.version=1
+diff_expandStackmap=true
+diff_showASMifierCode=true

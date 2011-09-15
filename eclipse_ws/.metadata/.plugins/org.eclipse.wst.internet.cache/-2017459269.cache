@@ -1,0 +1,793 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en" dir="ltr">
+
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <title>SpringSource.org | </title>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<link rel="alternate" type="application/rss+xml" title="SpringSource.org RSS" href="http://www.springsource.org/node/feed" />
+<link rel="shortcut icon" href="/sites/all/themes/dotorg09/favicon.ico" type="image/x-icon" />
+  <link type="text/css" rel="stylesheet" media="all" href="/files/css/css_c517dbbcf3c5ae32d96d568c1b14faa3.css" />
+  <!--[if IE]>
+    <link rel="stylesheet" href="/sites/all/themes/dotorg09/ie.css" type="text/css">
+      <![endif]-->
+  <script type="text/javascript" src="/files/js/js_90343df1ba31ae8d4c0bd9e6bc913aa8.js"></script>
+<script type="text/javascript">
+<!--//--><![CDATA[//><!--
+jQuery.extend(Drupal.settings, { "basePath": "/", "CTools": { "pageId": "page-51d965dc302610f0824176dfeda6a9b0" } });
+//--><!]]>
+</script>
+<!--<script type="text/javascript" src="//scripts/jquery.validate.pack.js"></script>-->
+  
+  <!-- Begin Google Analytics code --><script type="text/javascript">
+		var gaJsHost = (("https:" == document.location.protocol) ? "https://ssl." : "http://www.");
+		document.write(unescape("%3Cscript src='" + gaJsHost + "google-analytics.com/ga.js' type='text/javascript'%3E%3C/script%3E"));
+		
+		</script>
+	<script type="text/javascript">
+		var pageTracker = _gat._getTracker("UA-2728886-3");
+		pageTracker._setDomainName("none");
+		pageTracker._setAllowLinker(true);
+		pageTracker._trackPageview();
+	</script><!-- End Google Analytics code -->
+</head>
+
+<body class="front not-logged-in page-node two-sidebars">
+
+  <div id="page"><div id="page-inner">
+  	<a name="top" id="navigation-top"></a>
+
+  	<div id="header">
+  
+      <div id="masthead">        
+                  <div id="logo">
+            <a href="http://www.springsource.com"  title="www.springsource.com">
+            <img src="/sites/all/themes/dotorg09/images/dotorg09_logo.png" alt="www.springsource.com" id="logo-image" /></a>
+            <a href="http://www.springsource.org/">
+            <img src="/sites/all/themes/dotorg09/images/global/logo-masthead-community.png" id="community-image" /></a>              
+          </div> 
+                      
+      </div> <!-- /#masthead -->
+    
+      <div id="supernav">
+      	<div id="top-links">
+        	<ul class="menu"><li class="leaf first"><a href="http://www.springsource.com/support" title="">Support</a></li>
+<li class="leaf last"><a href="http://www.springsource.com/about/contact" title="">Contact</a></li>
+</ul>        </div>
+        
+        <div id="country-flag">
+          <a href="http://www.springsource.com/de"> 
+            <img alt="Deutsch" src="/sites/all/themes/dotorg09/images/global/deutsch.png"/>
+          </a>
+          <a href="http://www.springsource.com/fr"> 
+          <img alt="Francais" src="/sites/all/themes/dotorg09/images/global/francais.png"/>
+          </a>
+        </div>
+
+      <div id="search-box">
+        <form action="/search/google" method="get" id="search-theme-form">
+          <div><div id="search" class="container-inline">
+
+            <input type="text" maxlength="128" size="16" name="query" value="Search SpringSource" class="form-text" onblur="this.value = this.value || 'Search SpringSource'; this.style.color = '#656565';" onfocus="if(this.value=='Search SpringSource') {this.value='';} this.style.color = '#000';" />
+                        <input type="image" style="position: relative;" id="edit-submitpic" name="op" src="/sites/all/themes/dotorg09/images/global/masthead-form-button.gif" class="search-button" value="Search" />
+            <input type="hidden" name="output" value="xml_no_dtd" />
+            <input type="hidden" name="client" value="google-csbe" />
+            <input type="hidden" name="cx" value="009687201310241541466:zerjfa_shxo" />
+            <input type="hidden" name="ie" value="utf-8" />
+            <input type="hidden" name="oe" value="utf-8" />
+            <input type="hidden" name="op" value="Search" />
+          </div></div>
+        </form>
+      </div>
+
+      </div> <!-- /#supernav-->
+    
+    	<div id="greenmenu">
+				          <div id="block-nice_menus-1" class="block "><div class="block-inner">
+
+  <div class="content">
+    <ul class="nice-menu nice-menu-down" id="nice-menu-1"><li id="menu-4289" class="menuparent menu-path-front"><a href="/" class="active">Community</a><ul><li id="menu-4290" class="menu-path-node-11"><a href="/about" title="Mission Statement and Spring Features">About</a></li>
+<li id="menu-4439" class="menu-path-front"><a href="/" class="active">News &amp; Announcements</a></li>
+<li id="menu-4293" class="menu-path-event"><a href="/event" title="Upcoming events">Events</a></li>
+<li id="menu-4440" class="menu-path-www.springone.com"><a href="http://www.springone.com">Conferences</a></li>
+<li id="menu-4305" class="menu-path-node-62"><a href="/jira" title="Links Related to Developement of Spring Itself">Development</a></li>
+<li id="menu-4306" class="menu-path-jira.springframework.org"><a href="http://jira.springframework.org" title="The JIRA Issue Tracker for Spring and Spring Sub-Projects">Issue Tracker</a></li>
+<li id="menu-4405" class="menu-path-node-782"><a href="/extensions">Extensions</a></li>
+<li id="menu-4430" class="menu-path-node-830"><a href="/successstories">Success Stories</a></li>
+</ul>
+</li>
+<li id="menu-4402" class="menuparent menu-path-www.springsource.com"><a href="http://www.springsource.com">SpringSource</a><ul><li id="menu-4403" class="menu-path-www.springsource.com-products"><a href="http://www.springsource.com/products">Products</a></li>
+<li id="menu-4406" class="menu-path-www.springsource.com-services"><a href="http://www.springsource.com/services">Services</a></li>
+<li id="menu-4407" class="menu-path-www.springsource.com-news"><a href="http://www.springsource.com/news">News</a></li>
+<li id="menu-4408" class="menu-path-www.springsource.com-partners"><a href="http://www.springsource.com/partners">Partners</a></li>
+<li id="menu-4428" class="menu-path-www.springsource.com-exchange"><a href="http://www.springsource.com/exchange" title="Exchange">Exchange</a></li>
+</ul>
+</li>
+<li id="menu-4409" class="menuparent menu-path-node-64"><a href="/projects">Projects</a><ul><li id="menu-4410" class="menu-path-node-11"><a href="/about">Spring</a></li>
+<li id="menu-4411" class="menu-path-node-659"><a href="/go-webflow2">Spring Web Flow</a></li>
+<li id="menu-4438" class="menu-path-node-898"><a href="/spring-flex">Spring BlazeDS Integration</a></li>
+<li id="menu-4412" class="menu-path-static.springsource.org-spring-ws-sites-1.5-"><a href="http://static.springsource.org/spring-ws/sites/1.5/">Spring Web Services</a></li>
+<li id="menu-4413" class="menu-path-static.springsource.org-spring-security-site-index.html"><a href="http://static.springsource.org/spring-security/site/index.html">Spring Security</a></li>
+<li id="menu-12817" class="menu-path-static.springsource.org-spring-security-oauth"><a href="http://static.springsource.org/spring-security/oauth" title="">Spring Security OAuth</a></li>
+<li id="menu-4414" class="menu-path-node-344"><a href="/osgi">Spring Dynamic Modules</a></li>
+<li id="menu-4415" class="menu-path-static.springsource.org-spring-batch-"><a href="http://static.springsource.org/spring-batch/">Spring Batch</a></li>
+<li id="menu-4416" class="menu-path-node-579"><a href="/spring-integration">Spring Integration</a></li>
+<li id="menu-4423" class="menu-path-www.springsource.org-spring-amqp"><a href="http://www.springsource.org/spring-amqp" title="">Spring AMQP</a></li>
+<li id="menu-12816" class="menu-path-www.springsource.org-spring-gemfire"><a href="http://www.springsource.org/spring-gemfire" title="">Spring Gemfire</a></li>
+<li id="menu-4418" class="menu-path-www.springframework.net-"><a href="http://www.springframework.net/">Spring .NET</a></li>
+<li id="menu-4419" class="menu-path-www.springsource.org-dmserver"><a href="http://www.springsource.org/dmserver">SpringSource dm Server</a></li>
+<li id="menu-12586" class="menu-path-node-2586"><a href="/roo" title="Spring Roo">Spring Roo</a></li>
+<li id="menu-12818" class="menu-path-node-2859"><a href="/spring-data" title="">Spring Data</a></li>
+<li id="menu-12819" class="menu-path-node-2879"><a href="/spring-social" title="">Spring Social</a></li>
+</ul>
+</li>
+<li id="menu-4422" class="menu-path-node-2"><a href="/download">Downloads</a></li>
+<li id="menu-4294" class="menuparent menu-path-node-14"><a href="/documentation">Documentation</a><ul><li id="menu-4302" class="menu-path-node-14"><a href="/documentation">Reference</a></li>
+<li id="menu-4295" class="menu-path-opensource.atlassian.com-confluence-spring-dashboard.action"><a href="http://opensource.atlassian.com/confluence/spring/dashboard.action">Community Wiki</a></li>
+</ul>
+</li>
+<li id="menu-4420" class="menu-path-forum.springsource.org-"><a href="http://forum.springsource.org/">Forums</a></li>
+<li id="menu-4424" class="menuparent menu-path-www.springsource.com-training-nav"><a href="http://www.springsource.com/training/?nav">Training</a><ul><li id="menu-4425" class="menu-path-www.springsource.com-training-nav"><a href="http://www.springsource.com/training/?nav">Training Overview</a></li>
+<li id="menu-4426" class="menu-path-springsource.com-node-1023"><a href="http://springsource.com/node/1023">Onsite Training</a></li>
+<li id="menu-4427" class="menu-path-www.springsource.com-training-certification"><a href="http://www.springsource.com/training/certification">Certification</a></li>
+</ul>
+</li>
+<li id="menu-4429" class="menu-path-www.springsource.com-exchange"><a href="http://www.springsource.com/exchange">Exchange</a></li>
+<li id="menu-4421" class="menu-path-blog.springsource.com-main-"><a href="http://blog.springsource.com/main/">Blogs</a></li>
+</ul>
+  </div>
+
+</div></div> <!-- /block-inner, /block -->
+          
+              </div>
+      
+      				          <div class="feed-icons"><a href="http://www.springsource.org/node/feed" class="feed-icon"><img src="/misc/feed.png" alt="Syndicate content" title="SpringSource.org RSS" width="16" height="16" /></a></div>
+                    
+      <div id="content-header">      
+      
+     </div>
+    
+  	</div>  <!-- /#header -->
+            
+        <div id="main"><div id="main-inner">
+          					
+          <div id="content"><div id="content-inner">                       
+    
+                          <div id="content-top">
+                <div id="block-block-13" class="block "><div class="block-inner">
+
+  
+  <div class="content">
+    <!-- 
+Note: only post non-geo-targeted banners on this page. When posting a new image file, be sure to include the full path (e.g. 
+
+http://www.springsource.com/files/banner.png) in the src markup. If this is not done, the banner will not show up on the forum.
+-->
+<div style="overflow: hidden; position: relative;"><a href="http://www.springsource.com/products/cloud-application-platform?cid=70170000000XBq5"><img border="0" src="http://www.springsource.org/files/S2Org_Banner_vFabricAnnouncement_0.png" alt="VMware vFabric" /></a></div>  </div>
+
+  
+</div></div> <!-- /block-inner, /block -->              </div> <!-- /#content-top -->
+                         
+            <div class="contentTop">
+              <div class="contentTopLeft">
+                <div class="contentTopRight"> </div>
+              </div>
+            </div>                                
+            
+            <div class="contentOuter"><div class="contentInner">                            
+
+                          <div id="mission"><p>Welcome to the home of <strong>Spring</strong>, the leading platform to build and run enterprise Java applications. Led and sustained by <a href="http://www.springsource.com">SpringSource</a>, Spring delivers significant benefits for many projects, increasing development productivity and runtime performance while improving test coverage and application quality.</p></div>
+                          
+            <div id="content-header">
+                                                               
+            </div>
+              
+            <div id="content-area">
+              <div class="node " id="node-2961"><div class="node-inner">
+
+      <h2 class="title">
+      <a href="/node/2961">Spring LDAP 1.3.1 released</a>
+    </h2>
+  
+  
+  
+      <div class="submitted">
+      Submitted by Ulrik Sandberg on Tue, 2010-11-30 14:44    </div>
+  
+      <div class="taxonomy"> in <ul class="links inline"><li class="taxonomy_term_4 first last"><a href="/taxonomy/term/4" rel="tag" title="News and announcements
+">News and Announcements</a></li>
+</ul></div>
+  
+  <div class="content">
+    <p>Dear Spring Community,</p> 
+<p>We are pleased to announce that Spring LDAP version 1.3.1 has been released. This is an update release that adds a new LDIF parsing library, an Object-Directory Mapping (ODM) framework, and fixes a few problems that were in 1.3.0. <a target="_blank" href="http://www.springsource.com/download/community?project=Spring%20LDAP">Download</a> | <a target="_blank" href="http://static.springsource.org/spring-ldap/docs/1.3.x/changelog.txt">ChangeLog</a> 
+<!--
+enable when docs are uploaded
+| <a target="_blank" href="http://static.springframework.org/spring-ldap/docs/1.2.1/reference/">Documentation</a> | <a target="_blank" href="http://static.springframework.org/spring-ldap/docs/1.2.1/api/">API</a>
+-->
+</p>
+<p>A summary of the more important changes:</p>
+<ul>
+  <li>Added an Object-Directory Mapping (ODM) framework for annotation-based mapping between LDAP and Java objects; much like Hibernate or JPA, but for LDAP. Thanks to Paul Harvey for this contribution. (<a href="http://static.springsource.org/spring-ldap/docs/1.3.x/reference/html/odm.html">Docs</a>)</li>
+  <li>Added an LDIF parsing library with an optional integration with Spring Batch. Thanks to Keith Barlow for this contribution. (<a href="http://static.springsource.org/spring-ldap/docs/1.3.x/reference/html/ldif-parsing.html">Docs</a>)</li>
+  <li>Added an extension to ContextMapperCallbackHandler that can provide the
+  associated mapper with an indication that the response is different for
+  each search result. (<a href="http://opensource.atlassian.com/projects/spring/browse/LDAP-185">LDAP-185</a>)</li>
+  <li>DIGEST-MD5 SASL authentication mechanism is now supported.
+  Contributed by Marvin S. Addison. (<a href="http://opensource.atlassian.com/projects/spring/browse/LDAP-173">LDAP-173</a>)</li>
+  <li>AbstractTlsDirContextAuthenticationStrategy now provides a setter for
+  customizing SSLSocketFactory used for TLS negotiation. (<a href="http://opensource.atlassian.com/projects/spring/browse/LDAP-180">LDAP-180</a>)</li>
+  <li>Added authentication methods that provide a possible authentication
+  exception through an AuthenticationErrorCallback. (<a href="http://opensource.atlassian.com/projects/spring/browse/LDAP-192">LDAP-192</a>)</li>
+</ul>
+
+<h2>Get the latest Spring LDAP releases here</h2>
+<ul>
+<!-- enable hen there is a snapshot released
+  <li>Spring LDAP <strong>1.3.2.RC1</strong> is the latest snapshot release:</li>
+  <ul>
+    <li><a target="_self" href="http://dist.springframework.org/milestone/LDAP/spring-ldap-1.3.0.RC1.zip">Download</a> | <a target="_self" href="http://dist.springframework.org/milestone/LDAP/spring-ldap-1.3.0.RC1-with-dependencies.zip">Download (with dependencies)</a> | <a href="http://static.springframework.org/spring-ldap/docs/1.3.x/changelog.txt" target="_self">Changelog</a>
+| <a href="http://static.springframework.org/spring-ldap/docs/1.3.x/reference/html/spring-ldap-reference.html" target="_self">Documentation (HTML)</a>&nbsp; | <a href="http://static.springframework.org/spring-ldap/docs/1.3.x/reference/pdf/spring-ldap-reference.pdf" target="_self">Documentation (PDF)</a>&nbsp; | <a href="http://static.springframework.org/spring-ldap/docs/1.3.x/apidocs/" target="_self">API</a>
+    </li>
+  </ul>
+-->
+  <li>Spring LDAP <strong>1.3.1.RELEASE</strong> is the current production release:</li>
+  <ul>
+    <li><a target="_self" href="http://www.springsource.com/download/community?project=Spring%20LDAP">Download</a> | <a href="http://static.springframework.org/spring-ldap/docs/1.3.x/changelog.txt" target="_self">Changelog</a>
+| <a href="http://static.springframework.org/spring-ldap/docs/1.3.x/reference/html/" target="_self">Documentation (HTML)</a>&nbsp; | <a href="http://static.springframework.org/spring-ldap/docs/1.3.x/reference/pdf/spring-ldap-reference.pdf" target="_self">Documentation (PDF)</a>&nbsp; | <a href="http://static.springframework.org/spring-ldap/docs/1.3.x/apidocs/" target="_self">API</a>
+    </li>
+  </ul>
+  <li>Spring LDAP <strong>1.3.x nightly snapshots</strong> are available for testing and development purposes:</li>
+  <ul>
+    <li><strong><a href="http://static.springframework.org/spring-ldap/downloads/1.3-snapshot-download.php" target="_self">Download</a></strong></li>
+  </ul>
+</ul>
+
+<p>
+Ulrik Sandberg and Mattias Hellborg-Arthursson, <a href="http://www.jayway.com">Jayway</a><br>
+Spring LDAP Team
+</p>
+  </div>
+
+      <div class="links">
+      <ul class="links inline"><li class="comment_forbidden first"></li>
+<li class="node_read_more last"><a href="/node/2961" title="Read the rest of Spring LDAP 1.3.1 released.">Read more</a></li>
+</ul>    </div>
+  
+</div></div> <!-- /node-inner, /node -->
+<div class="node " id="node-2959"><div class="node-inner">
+
+      <h2 class="title">
+      <a href="/node/2959">vFabric Cloud Application Platform Update</a>
+    </h2>
+  
+  
+  
+      <div class="submitted">
+      Submitted by Adam Fitzgerald on Tue, 2010-11-30 10:18    </div>
+  
+      <div class="taxonomy"> in <ul class="links inline"><li class="taxonomy_term_4 first last"><a href="/taxonomy/term/4" rel="tag" title="News and announcements
+">News and Announcements</a></li>
+</ul></div>
+  
+  <div class="content">
+    <p> 
+<div style="float: right; width:306px; padding: 10px">
+<a href="http://www.springsource.com/products"><img height="230" alt="vFabric Cloud Application Platform" width="306" border="0" src="http://blog.springsource.com/wp-content/uploads/2010/11/vFabricDiagram.png" /></a>
+</div>
+SpringSource has recently released updates for several components of the <a href="http://www.springsource.com/products">vFabric Cloud Application Platform</a>. As <a href="http://blog.springsource.com/author/rodj/">Rod Johnson</a> mentioned in the <a href="http://blog.springsource.com/2010/08/31/cloud-platform/">original announcement</a>, vFabric is designed for fast delivery of next-generation applications that are instantly scalable and cloud-portable. There are three main components in this <a href="http://blog.springsource.com/2010/11/30/vfabric-cloud-application-platform-update/">vFabric update</a>:
+</p>
+
+<p>
+<ul>
+  <li><strong>tc Server 2.1</strong> adds a new update to <a href="http://www.springsource.org/insight/">Spring Insight</a> for real-time visibility into application behavior and performance for Spring applications during development and pre-production. Also included are enhanced templates for the new GemFire features.</li>
+  <li><strong>GemFire 6.5</strong> now provides a HTTP Session Management Module that offloads and manages HTTP session state for tc Server or Tomcat servers effectively providing cloud ready session replication. GemFire also provides fast, scalable, distributed L2 caching for Hibernate. Jags Ramnarayan goes into great detail in his <a href="http://jagslog.blogspot.com/2010/11/announcing-vfabric-gemfire-http-session.html">latest blog post</a>.</li>
+  <li><strong>Hyperic 4.5</strong> has been <a href="http://blog.springsource.com/2010/11/10/hyperic-4-5-released/">migrated</a> to Spring web application running on Tomcat and it includes two new plugins for monitoring <a href="http://www.rabbitmq.com/">RabbitMQ</a> and <a href="http://www.springsource.com/products/data-management">GemFire</a>.</li>
+</ul>
+<p>
+
+<p>The vFabric Cloud Application Platform provides a clear and innovative path to cloud computing architectures, powered by a modern programming model paired with next-generation platform services. With these new updates, now is great time to try out vFabric <a href="http://www.springsource.com/landing/tc-server-spring-trial">tc Server</a>, <a href="http://www.springsource.com/products/gemfire-evaluation-download">GemFire</a> and <a href="http://www.springsource.com/landing/hyperic-open-source-download">Hyperic</a>. </p>  </div>
+
+      <div class="links">
+      <ul class="links inline"><li class="comment_forbidden first last"></li>
+</ul>    </div>
+  
+</div></div> <!-- /node-inner, /node -->
+<div class="node " id="node-2947"><div class="node-inner">
+
+      <h2 class="title">
+      <a href="/node/2947">Last Chance for December Spring Classes - 25% Off</a>
+    </h2>
+  
+  
+  
+      <div class="submitted">
+      Submitted by Evy Schwartz on Mon, 2010-11-29 13:49    </div>
+  
+      <div class="taxonomy"> in <ul class="links inline"><li class="taxonomy_term_4 first last"><a href="/taxonomy/term/4" rel="tag" title="News and announcements
+">News and Announcements</a></li>
+</ul></div>
+  
+  <div class="content">
+    <div style="float: right; width:249px; padding: 10px"> <img src="/files/springsourceulogosmall.png" width="249" height="79"> </div>
+
+<br />Need to take a Spring class?  There's still time to register for these upcoming December classes with a 25% off discount:<br />
+<br />
+<span style="font-weight: bold;">Core Spring:</span><br />
+<a href="http://www.springsource.com/training/class?classID=76325" target="_self" title="Core Spring Helsinki">Helsinki</a> | <a href="http://www.springsource.com/training/class?classID=76327" target="_self" title="Core Spring Manchester">Manchester, UK</a> | <a href="http://www.springsource.com/training/class?classID=80753" target="_self" title="New York Core Spring">New York</a> | <a href="http://www.springsource.com/training/class?classID=76631" target="_self" title="Core Spring Omaha">Omaha</a> | <a href="http://www.springsource.com/training/class?classID=80385" target="_self" title="Core Spring Ottawa">Ottawa</a> | <a href="http://www.springsource.com/training/class?classID=78921" target="_self" title="Core Spring Paris">Paris</a> | <a href="http://www.springsource.com/training/class?classID=80779" target="_self" title="Core Spring Rio">Rio de Janeiro</a> | <a href="http://www.springsource.com/training/class?classID=74230" target="_self" title="Core Spring Singapore">Singapore</a> | <a href="http://www.springsource.com/training/class?classID=76334" target="_self" title="Core Spring Zurich">Zürich</a><br />
+<br />
+<span style="font-weight: bold;">Core Spring.NET (Taught by Mark Pollack!):</span><br />
+<a href="http://www.springsource.com/training/class?classID=78796" target="_self" title="Core Spring.NET London">London</a><br />
+<br />
+<span style="font-weight: bold;">Enterprise Integration with Spring:</span><br />
+<a href="http://www.springsource.com/training/class?classID=76377" target="_self" title="Enterprise Integration chicago">Chicago</a> | <a href="http://www.springsource.com/training/class?classID=70112" target="_self" title="Enterprise Integration Copenhagen">Copenhagen</a> | <a href="http://www.springsource.com/training/class?classID=74900" target="_self" title="Enterprise Integration Melbourne">Melbourne</a> | <a href="http:///www.springsource.com/training/class?classID=80681" target="_self" title="Enterprise Integration Philly">Philadelphia</a><br />
+<br />
+<span style="font-weight: bold;">Rich Web Applications with Spring:</span><br />
+<a href="http://www.springsource.com/training/class?classID=76629" target="_self" title="Rich Web Burlington">Burlington, MA</a> | <a href="http://www.springsource.com/training/class?classID=80682" target="_self" title="Rich Web Philly">Philadelphia</a><br />
+<br />
+To get your 25% off any of the above classes, use the promo code <span style="font-weight: bold;">core25</span>.<br /><br /><br />  </div>
+
+      <div class="links">
+      <ul class="links inline"><li class="comment_forbidden first"></li>
+<li class="upload_attachments last"><a href="/node/2947#attachments" title="Read full article to view attachments.">1 attachment</a></li>
+</ul>    </div>
+  
+</div></div> <!-- /node-inner, /node -->
+<div class="node " id="node-2946"><div class="node-inner">
+
+      <h2 class="title">
+      <a href="/node/2946">Spring Integration 2.0 GA Released</a>
+    </h2>
+  
+  
+  
+      <div class="submitted">
+      Submitted by Adam Fitzgerald on Sun, 2010-11-28 17:25    </div>
+  
+      <div class="taxonomy"> in <ul class="links inline"><li class="taxonomy_term_4 first last"><a href="/taxonomy/term/4" rel="tag" title="News and announcements
+">News and Announcements</a></li>
+</ul></div>
+  
+  <div class="content">
+    <p>Just in case you missed it, last week <a href="http://blog.springsource.com/author/markf/">Mark Fisher</a> announced that <a href="http://blog.springsource.com/2010/11/23/spring-integration-2-0-ga-released/">Spring Integration 2.0 is now GA</a>. There is a <a href="http://static.springsource.org/spring-integration/docs/2.0.0.RELEASE/reference/htmlsingle/#whats-new-in-2-part">"What's new in Spring Integration 2.0?"</a> section in the reference manual that serves as a great starting point for existing 1.0 users and provides several links to the relevant sections within the manual where the new features are explained in detail. Mark's blog also covers the appropriate Maven POM entries and a <a href="https://github.com/markfisher/twitter-search-sample">sample application</a> for the community to try.</p>
+<p>There is also a recent webinar entitled <a href="http://www.springsource.com/webinar/message-driven-architecture-spring">Message-Driven Architecture with Spring</a> that includes a fairly broad overview of Spring's support for ApplicationEvents, JMS, AMQP, Task Execution, and Scheduling. Also covered is a demo showing many adapters: REST, SOAP, email, XMPP, and Twitter. The webinar is highly recommended for anyone who wants to learn as much as they can, in just one hour, about Spring Integration and how it fits within the Spring platform.</p>
+<p><a href="http://www.springsource.com/download/community?project=Spring%20Integration">Download</a> | <a href="http://static.springsource.org/spring-integration/docs/2.0.0.RELEASE/reference/html/">Reference Manual</a> | <a href="http://www.springsource.com/webinar/message-driven-architecture-spring">Webinar</a> | <a href="http://forum.springsource.org/forumdisplay.php?f=42">Forum</a> | <a href="http://jira.springsource.org/browse/INT">Issue Tracker</a></p>
+  </div>
+
+      <div class="links">
+      <ul class="links inline"><li class="comment_forbidden first last"></li>
+</ul>    </div>
+  
+</div></div> <!-- /node-inner, /node -->
+<div class="node " id="node-2911"><div class="node-inner">
+
+      <h2 class="title">
+      <a href="/spring-android/news/1.0.0.m1-released">Spring Android 1.0.0.M1 Released</a>
+    </h2>
+  
+  
+  
+  
+  
+  <div class="content">
+    <p>Dear Spring Community,</p>
+
+<p>We are pleased to announce that the first milestone release of the <a href="http://www.springsource.org/spring-android">Spring Android</a> project is now available!</p>
+
+<p>Spring Android supports usage of the Spring Framework in a Android environment.  The defining feature of the 1.0.0.M1 release is RestTemplate support that provides a robust REST client to use in native Android applications.
+</p>
+
+<p>To get you started, Keith has posted a <a target="_blank" href="http://blog.springsource.com/2010/11/19/spring-into-mobile-application-development/">Spring into Mobile Application Development</a> blog, which provides insight into the project.</p> 
+
+<p>This milestone is the first in an exciting road ahead. If you're building native Android applications that communicate with Spring web apps, we invite you to join us in the development of the Spring Android project!</p>  </div>
+
+  
+</div></div> <!-- /node-inner, /node -->
+<div class="node " id="node-2910"><div class="node-inner">
+
+      <h2 class="title">
+      <a href="/spring-mobile/news/1.0.0.m1-released">Spring Mobile 1.0.0.M1 Released</a>
+    </h2>
+  
+  
+  
+      <div class="submitted">
+      Submitted by Roy Clarkson on Fri, 2010-11-19 13:39    </div>
+  
+      <div class="taxonomy"> in <ul class="links inline"><li class="taxonomy_term_4 first last"><a href="/taxonomy/term/4" rel="tag" title="News and announcements
+">News and Announcements</a></li>
+</ul></div>
+  
+  <div class="content">
+    <p>Dear Spring Community,</p>
+
+<p>We are pleased to announce that the first milestone release of the <a href="http://www.springsource.org/spring-mobile">Spring Mobile</a> project is now available!</p>
+
+<p>Spring Mobile provides extensions to Spring MVC that aid in the development of cross-platform mobile web applications.  The defining feature of the 1.0.0.M1 release is support for server-side device detection.
+</p>
+
+<p>To get you started, Keith has posted a <a target="_blank" href="http://blog.springsource.com/2010/11/19/spring-into-mobile-application-development">Spring into Mobile Application Development</a> blog, which provides insight into the project.</p> 
+
+<p>This milestone is the first in an exciting road ahead. We invite you to get involved in Spring Mobile development and look forward to your feedback!</p>  </div>
+
+      <div class="links">
+      <ul class="links inline"><li class="comment_forbidden first last"></li>
+</ul>    </div>
+  
+</div></div> <!-- /node-inner, /node -->
+<div class="node " id="node-2907"><div class="node-inner">
+
+      <h2 class="title">
+      <a href="/node/2907">Developing for the Cloud and Tomcat Administration Classes in New York!</a>
+    </h2>
+  
+  
+  
+      <div class="submitted">
+      Submitted by Evy Schwartz on Fri, 2010-11-19 07:41    </div>
+  
+      <div class="taxonomy"> in <ul class="links inline"><li class="taxonomy_term_4 first last"><a href="/taxonomy/term/4" rel="tag" title="News and announcements
+">News and Announcements</a></li>
+</ul></div>
+  
+  <div class="content">
+    <p>We've been getting a lot of requests for our popular Developing for the Cloud workshop and Tomcat Administration classes.  So if you're interested in either we'll be offering these classes in New York.</p>
+<ul>
+<li><a href="http://www.springsource.com/training/class?classID=82368" target="_blank" title="Developing for the Cloud Worksop">Developing for the Cloud Workshop</a> - January 10
+    </li>
+<li><a href="http://www.springsource.com/training/class?classID=84167" target="_blank" title="Tomcat Administration Fundamentals">Tomcat Administration Fundamentals</a> - January 18-19</li>
+<li><a href="http://www.springsource.com/training/class?classID=84168" target="_blank" title="Advanced Tomcat Administration">Advanced Tomcat Administration</a> - January 20-21</li>
+</ul>
+<p>The Tomcat classes are brand new. We just finished reworking them so you'll get the latest information.</p>
+<p>  If you're interested on other classes, see our <a href="http://www.springsource.com/training/findacourse" target="_blank" title="SpringSource classes">full class schedule</a>.</p>
+  </div>
+
+      <div class="links">
+      <ul class="links inline"><li class="comment_forbidden first last"></li>
+</ul>    </div>
+  
+</div></div> <!-- /node-inner, /node -->
+<div class="node " id="node-2905"><div class="node-inner">
+
+      <h2 class="title">
+      <a href="/node/2905">Spring Security 3.0.5 Released</a>
+    </h2>
+  
+  
+  
+      <div class="submitted">
+      Submitted by Luke Taylor on Thu, 2010-11-18 09:00    </div>
+  
+      <div class="taxonomy"> in <ul class="links inline"><li class="taxonomy_term_4 first last"><a href="/taxonomy/term/4" rel="tag" title="News and announcements
+">News and Announcements</a></li>
+</ul></div>
+  
+  <div class="content">
+    <p>We're pleased to an announce the release of Spring Security 3.0.5.</p>
+<p>This release fixes a few bugs which were causing problems with 3.0.4. Please see the <a href="http://static.springsource.org/spring-security/site/changelog.html">changelog</a> for a full list of issues which have been addressed.</p>
+<p>The release is available from the <a href="http://www.springsource.com/download/community?project=Spring%20Security">Spring Community Downloads area</a> and should be available from the Maven Central repository soon.</p>
+<p><a href="http://www.springsource.com/download/community?project=Spring%20Security&amp;version=3.0.5.RELEASE">Download</a> | <a href="http://static.springsource.org/spring-security/site/changelog.html">Changelog</a> | <a href="http://static.springsource.org/spring-security/site/docs/3.0.x/reference/springsecurity.html">Reference Manual</a> | <a href="http://static.springsource.org/spring-security/site/faq.html">FAQ</a></p>
+  </div>
+
+      <div class="links">
+      <ul class="links inline"><li class="comment_forbidden first last"></li>
+</ul>    </div>
+  
+</div></div> <!-- /node-inner, /node -->
+<div class="node " id="node-2904"><div class="node-inner">
+
+      <h2 class="title">
+      <a href="/node/2904">SpringSource at Devoxx 2010</a>
+    </h2>
+  
+  
+  
+      <div class="submitted">
+      Submitted by Adam Fitzgerald on Thu, 2010-11-18 06:30    </div>
+  
+      <div class="taxonomy"> in <ul class="links inline"><li class="taxonomy_term_4 first last"><a href="/taxonomy/term/4" rel="tag" title="News and announcements
+">News and Announcements</a></li>
+</ul></div>
+  
+  <div class="content">
+    <p> 
+<div style="float: right; width:280px; padding: 10px">
+<a href="http://www.springsource.com"><img height="165" alt="SpringSource at Devoxx 2010" width="280" border="0" src="/files/Devoxx2010.jpg" /></a>
+</div>
+SpringSource returned to <a href="http://www.devoxx.com/display/Devoxx2K10/Home">Devoxx 2010</a> to join in the active discussion about the future of enterprise Java with over 3000 European developers. Fueled by an ample supply of Belgian fries, waffles and beers, the discussions expanded from the sessions, hallways and SpringSource booth into the trams and restaurants after the show. </p>
+
+<p>The SpringSource team had lots of great presentations covering what is new in Spring 3.1, <a href="http://www.grails.org">Grails 1.3</a>, <a href="/roo">Spring Roo</a> and <a href="http://www.springsource.com/code2cloud">Code2Cloud</a>. There was lots of excitement in these sessions and tons of questions in the booth. Thank you to everyone that stopped by to talk Spring and show their support. </p>
+
+<p>The Devoxx conference sessions were recorded and will be post on the <a href="http://www.parleys.com/">Parleys</a> video website in the coming weeks so be sure to check out the Spring and Grails talks when they go up.</p> 
+  </div>
+
+      <div class="links">
+      <ul class="links inline"><li class="comment_forbidden first last"></li>
+</ul>    </div>
+  
+</div></div> <!-- /node-inner, /node -->
+<div class="node " id="node-2901"><div class="node-inner">
+
+      <h2 class="title">
+      <a href="/node/2901">Webinar: Message-Driven Architecture with Spring</a>
+    </h2>
+  
+  
+  
+      <div class="submitted">
+      Submitted by Adam Fitzgerald on Wed, 2010-11-17 03:39    </div>
+  
+      <div class="taxonomy"> in <ul class="links inline"><li class="taxonomy_term_4 first last"><a href="/taxonomy/term/4" rel="tag" title="News and announcements
+">News and Announcements</a></li>
+</ul></div>
+  
+  <div class="content">
+    <p>This is the last chance to register for tomorrow's webinar: <a href="http://www.springsource.com/newsevents/webinars">Message-Driven Architecture with Spring</a>. Spring Integration lead, <a href="http://blog.springsource.com/author/markf/">Mark Fisher</a> will provide an overview of Spring's support for scheduling, messaging, and enterprise integration. You will learn how these features provide a platform for message-driven architecture. You will also learn about Spring's support for Hohpe and Woolf's Enterprise Integration Patterns--this will include demos of several basic patterns such a Message Channel, Message Transformer, and Message Router, as well as composite patterns such as Scatter/Gather using a Splitter and Aggregator. The webinar is available at two different times.</p>
+<ul>
+<li><strong>Europe</strong>: <a href="https://vmwareevents.webex.com/vmwareevents/onstage/g.php?t=a&amp;d=668166021">November 18, 3:00pm GMT / 4:00pm CET</a></li>
+<li><strong>North America</strong>: <a href="https://vmwareevents.webex.com/vmwareevents/onstage/g.php?t=a&amp;d=664861218">November 18, 10:00am PST / 1:00pm EST</a></li>
+</ul>
+  </div>
+
+      <div class="links">
+      <ul class="links inline"><li class="comment_forbidden first last"></li>
+</ul>    </div>
+  
+</div></div> <!-- /node-inner, /node -->
+<div class="item-list"><ul class="pager"><li class="pager-current first">1</li>
+<li class="pager-item"><a href="/node?page=1" title="Go to page 2" class="active">2</a></li>
+<li class="pager-item"><a href="/node?page=2" title="Go to page 3" class="active">3</a></li>
+<li class="pager-item"><a href="/node?page=3" title="Go to page 4" class="active">4</a></li>
+<li class="pager-item"><a href="/node?page=4" title="Go to page 5" class="active">5</a></li>
+<li class="pager-item"><a href="/node?page=5" title="Go to page 6" class="active">6</a></li>
+<li class="pager-item"><a href="/node?page=6" title="Go to page 7" class="active">7</a></li>
+<li class="pager-item"><a href="/node?page=7" title="Go to page 8" class="active">8</a></li>
+<li class="pager-item"><a href="/node?page=8" title="Go to page 9" class="active">9</a></li>
+<li class="pager-ellipsis">…</li>
+<li class="pager-next"><a href="/node?page=1" title="Go to next page" class="active">next ›</a></li>
+<li class="pager-last last"><a href="/node?page=86" title="Go to last page" class="active">last »</a></li>
+</ul></div>            </div>
+            
+                        
+            </div></div> <!-- /#contentInner, /#contentOuter -->
+      
+          <div class="contentBottom">
+              <div class="contentBottomLeft">
+                <div class="contentBottomRight"> </div>
+              </div>
+            </div>                                              
+          
+          </div></div> <!-- /#content-inner, /#content -->        
+
+					            <div id="sidebar-left"><div id="sidebar-left-inner"><div id="left">
+              <div id="block-block-15" class="block "><div class="block-inner">
+
+  
+  <div class="content">
+    <a target="_blank" href="http://mylearn.vmware.com/mgrreg/courses.cfm?ui=S2&pID=springsource&a=sort&deliveryType=16"><img class="sidebar-no-border" alt="" src="/files/online-spring-training.png" /></a>  </div>
+
+  
+</div></div> <!-- /block-inner, /block --><div id="block-block-3" class="block "><div class="block-inner">
+
+  <div class = "sidebarBox">
+              <h2>Upcoming Trainings</h2>
+          
+      <div class="content">
+        <p><strong><a href="http://www.springsource.com/training/course?courseID=17750">Core Spring Framework</a></strong></p><p>12/07 - 12/10:
+        <a href="http://www.springsource.com/training/class?classID=80753">New York</a><br/>12/13 - 12/16:
+        <a href="http://www.springsource.com/training/class?classID=74230">Singapore</a><br/>12/14 - 12/17:
+        <a href="http://www.springsource.com/training/class?classID=76327">Manchester</a><br/>12/14 - 12/17:
+        <a href="http://www.springsource.com/training/class?classID=76334">Zürich/Thalwil</a><br/>12/14 - 12/17:
+        <a href="http://www.springsource.com/training/class?classID=76379">Kirkland</a><br/>12/14 - 12/17:
+        <a href="http://www.springsource.com/training/class?classID=76631">Omaha</a><br/></p><p><a href="http://http://www.springsource.com/training/course?courseID=17834"><strong>Rich Web Applications with Spring</strong></a></p><p>12/14 - 12/17:
+        <a href="http://www.springsource.com/training/class?classID=76629">Burlington  </a><br/>12/14 - 12/17:
+        <a href="http://www.springsource.com/training/class?classID=80682">Philadelphia</a><br/>01/11 - 01/14:
+        <a href="http://www.springsource.com/training/class?classID=84908">Live Online</a><br/></p><p><a href="http://www.springsource.com/training/course?courseID=17833"><strong>Enterprise Integration with Spring </strong></a></p><p>12/14 - 12/17:
+        <a href="http://www.springsource.com/training/class?classID=74900">Melbourne</a><br/>12/14 - 12/17:
+        <a href="http://www.springsource.com/training/class?classID=76377">Chicago</a><br/>12/27 - 12/30:
+        <a href="http://www.springsource.com/training/class?classID=78389">Bangalore</a><br/>
+<p><strong>Plus:</strong> 
+<a href="http://www.springsource.com/training/course?courseID=18355"><strong>Hibernate with Spring</strong></a>, 
+<a href="http://www.springsource.com/training/course?courseID=18339"><strong>Core Spring.NET</strong></a>,
+<a href="http://www.springsource.com/training/course?courseID=18353"><strong>Groovy & Grails</strong></a></p>
+<p> <a href="http://www.springsource.com/training/findacourse">and more...</a></p>      </div>
+    
+            
+  </div>
+ 
+</div></div> <!-- /block-inner, /block -->
+<div id="block-block-17" class="block "><div class="block-inner">
+
+  
+  <div class="content">
+    <div class="sidebarBox">
+<h2>Related Links</h2>
+<div class="content">
+<p><strong><a href="http://www.springsource.com/products" target="_blank" title="Cloud Application Platform">Cloud Application Platform</a></strong></p>
+<p><strong><a href="http://www.springsource.com/products/tcserver" target="_blank" title="Enterprise Tomcat">Enterprise Tomcat</a></strong></p>
+<p><strong><a href="http://www.springsource.com/products/systems-management" target="_blank" title="Systems Management">Systems Management</a></strong></p>
+<p><strong><a href="http://www.springsource.com/products/apache-web-server" target="_blank" title="Enterprise Apache HTTPD">Enterprise Apache HTTPD</a></strong></p>
+<p><strong><a href="http://www.springsource.com/products/data-management" target="_blank" title="Enterprise Data Management">Enterprise Data Management</a></strong></p>
+<p><strong><a href="http://www.springsource.com/products/messaging" target="_blank" title="Cloud Messaging">Cloud Messaging</a></strong></p>
+</div>
+</div>
+  </div>
+
+  
+</div></div> <!-- /block-inner, /block --><div id="block-user-1" class="block "><div class="block-inner">
+
+  <div class = "sidebarBox">
+              <h2>Navigation</h2>
+          
+      <div class="content">
+        <ul class="menu"><li class="leaf first last"><a href="/tracker">Recent posts</a></li>
+</ul>      </div>
+    
+            
+  </div>
+ 
+</div></div> <!-- /block-inner, /block -->
+<div id="block-user-0" class="block "><div class="block-inner">
+
+  <div class = "sidebarBox">
+              <h2>User login</h2>
+          
+      <div class="content">
+        <form action="/node?destination=node"  accept-charset="UTF-8" method="post" id="user-login-form">
+<div><div class="form-item" id="edit-name-wrapper">
+ <label for="edit-name">Username: <span class="form-required" title="This field is required.">*</span></label>
+ <input type="text" maxlength="60" name="name" id="edit-name" size="15" value="" class="form-text required" />
+</div>
+<div class="form-item" id="edit-pass-wrapper">
+ <label for="edit-pass">Password: <span class="form-required" title="This field is required.">*</span></label>
+ <input type="password" name="pass" id="edit-pass"  maxlength="60"  size="15"  class="form-text required" />
+</div>
+<input type="submit" name="op" id="edit-submit" value="Log in"  class="form-submit" />
+<div class="item-list"><ul><li class="first"><a href="/user/register" title="Create a new user account.">Create new account</a></li>
+<li class="last"><a href="/user/password" title="Request new password via e-mail.">Request new password</a></li>
+</ul></div><input type="hidden" name="form_build_id" id="form-3e719d3e5ad6fa5545323413e152b0b8" value="form-3e719d3e5ad6fa5545323413e152b0b8"  />
+<input type="hidden" name="form_id" id="edit-user-login-block" value="user_login_block"  />
+
+</div></form>
+      </div>
+    
+            
+  </div>
+ 
+</div></div> <!-- /block-inner, /block -->
+            </div></div></div> <!-- /#sidebar-left-inner, /#sidebar-left -->
+                                      
+
+					            <div id="sidebar-right"><div id="sidebar-right-inner"><div id="right">
+              <div id="block-block-14" class="block "><div class="block-inner">
+
+  
+  <div class="content">
+    <p><a target="_blank" href="http://www.springsource.com/landing/best-development-tool-enterprise-java?cid=70170000000XBq5"><img  class="sidebar-no-border" alt="" src="/files/download-sts.png"></a></p>  </div>
+
+  
+</div></div> <!-- /block-inner, /block --><div id="block-event-1" class="block "><div class="block-inner">
+
+  <div class = "sidebarBox">
+  	<div class = "noBullet">
+              <h2>Upcoming events</h2>
+          
+      <div class="content">
+        <div class="item-list"><ul><li class="first"><a href="/node/2895" title="YOW! 2010 - Melbourne">YOW! 2010 - Melbourne</a><span class="event-nodetype">(Event)</span><span class="event-timeleft">(1 day)</span></li>
+<li><a href="/node/2896" title="YOW! 2010 - Brisbane">YOW! 2010 - Brisbane</a><span class="event-nodetype">(Event)</span><span class="event-timeleft">(5 days)</span></li>
+<li><a href="/node/2889" title="Cloudstock: the Woodstock for Cloud Developers">Cloudstock: the Woodstock for Cloud Developers</a><span class="event-nodetype">(Event)</span><span class="event-timeleft">(5 days)</span></li>
+<li><a href="/node/2890" title="Dreamforce 2010">Dreamforce 2010</a><span class="event-nodetype">(Event)</span><span class="event-timeleft">(5 days)</span></li>
+<li class="last"><a href="/node/2900" title="Spring.NET Training by Mark Pollack - London, UK">Spring.NET Training by Mark Pollack - London, UK</a><span class="event-nodetype">(Event)</span><span class="event-timeleft">(13 days)</span></li>
+</ul></div><div class="ical-link"><a href="http://www.springsource.org/event/ical" title="Add this calendar to your iCalendar"><img src="/sites/all/modules/event/images/ical16x16.gif" alt="Add to iCalendar" /></a></div><div class="more-link"><a href="/event" title="More events.">more</a></div>      </div>
+    
+          </div>
+  </div>
+
+</div></div> <!-- /block-inner, /block -->
+<div id="block-block-2" class="block "><div class="block-inner">
+
+  <div class="ruleBoxOuter">
+    <div class="ruleBoxInner">
+    
+          
+      <div class="content">
+        <div class="sponsors">
+<a href="http://www.contegix.com/" target="_blank"><img border="0" alt="Contegix Managed Hosting and Colocation" src="http://static.springframework.org/buttons/contegix_spring2.jpg" /><br>
+  <br />
+</a><a href="http://www.atlassian.com/software/jira/" target="_blank"><img border="0" alt="Atlassian JIRA Issue Tracking" src="http://static.springframework.org/buttons/jira.png" /></a> <br />
+<br />
+<a href="http://www.yourkit.com/" target="_blank"><img border="0" alt="Yourkit Java Profiler" src="http://static.springframework.org/buttons/yourkit.gif" /></a> <br />
+<br />
+<a href="http://www.cenqua.com/clover" target="_blank"><img border="0" alt="Clover Code Coverage Tool" src="http://static.springframework.org/buttons/clovered1.gif" /></a> <br />
+<br />
+<a href="http://www.hello2morrow.com/en/sonarj/sonarj.php" target="_blank"><img border="0" alt="Architecture management for Java projects" src="http://static.springframework.org/buttons/sonarj-150px-transp.gif" /></a> <br />
+<a href="http://www.aquafold.com">
+<img src="http://www.aquafold.com/images/s_aquadatastudio_130x34.gif" alt="Aqua Data Studio" width="130" height="34" border="0">
+</a><br />
+<a href="http://petition.eurolinux.org/"><br />
+</a></div> 
+      </div>
+    
+            
+    </div> 
+  </div>
+  
+</div></div> <!-- /block-inner, /block -->
+            </div></div></div> <!-- /#sidebar-right-inner, /#sidebar-right -->
+                         
+    
+        </div></div> <!-- /#main-inner, /#main -->       
+    
+    <div id="footer"><div id="footer-inner">
+      <div id="footer-message"><p>Copyright 2010,<a href="http://www.springsource.org">www.springsource.org</a>&nbsp;&nbsp;-&nbsp; <a href="/node/feed">RSS</a> - Managed Hosting by <a target="_blank" href="http://www.contegix.com">Contegix</a> - Site maintained by <a href="http://www.springsource.com">SpringSource</a>.<br />
+<a href="http://sourceforge.net/projects/hyperic-hq" target="_blank"><img src="http://sflogo.sourceforge.net/sflogo.php?group_id=172556&amp;type=11" alt="SourceForge" border="0" /></a>
+</p>
+
+
+    
+
+
+
+
+mktoMunchkin("649-KCC-493");
+</div>
+    </div></div> <!-- /#footer-inner, /#footer -->
+
+    
+    <script type="text/javascript" src="/files/js/js_13a084e4c1b0c67d26c6dfc52e5de02b.js"></script>
+<script type="text/javascript">
+<!--//--><![CDATA[//><!--
+jQuery.extend(Drupal.settings, { "googleCSE": { "language": "en" } });
+//--><!]]>
+</script>
+
+  </div></div> <!-- /#page -->
+
+	<script type="text/javascript">
+  <!--
+  $(document).ready(
+      function() {
+          var isInternal = new RegExp("^(https?):\/\/www.springsource", "i");
+          var isDownload = new RegExp("\\.(tgz|jar|html|7z|aac|avi|csv|doc|exe|flv|gif|gz|jpe?g|js|mp(3|4|e?g)|mov|pdf|phps|png|ppt|rar|sit|tar|torrent|txt|wma|wmv|xls|xml|zip)\\??.*$", "i");
+  
+  //        pageTracker._setDomainName("none");
+  //        pageTracker._setAllowLinker(true);
+  
+          $('a').each(function() {
+              try {
+  
+                  if (isDownload.test(this.href)) {
+                      if (isInternal.test(this.href)) {
+                          $(this).click(function() {
+                              var sendToGA = this.href.replace(/^(https?):\/\//, '');
+                              pageTracker._trackPageview('/internalDownload/'+sendToGA.replace(/\?.+$/, ''));
+                          });
+                      } else if(this.href.length > 0) {
+                          $(this).click(function() {
+                              var sendToGA = this.href.replace(/^(https?):\/\//, '');
+                              pageTracker._trackPageview('/externalDownload/'+sendToGA.replace(/\?.+$/, ''));
+                              setTimeout("document.location.href='"+this.href+"'", 200);
+                              return false;
+                          });
+                      } 
+                  }
+  
+                  if (this.href.match("springsource.com")) {
+                      $(this).click(function() {
+                          if ($(this).attr('target') == "_blank") {
+                              window.open(pageTracker._getLinkerUrl(this.href));
+                          } else {
+                              pageTracker._link(this.href);
+                          }
+                          return false;
+                      });
+                  }
+              } catch(e) {  }
+          });
+      }
+  );
+  -->
+  </script>
+
+</body>
+</html>

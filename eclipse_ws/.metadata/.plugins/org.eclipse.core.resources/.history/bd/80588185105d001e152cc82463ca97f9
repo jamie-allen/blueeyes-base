@@ -1,0 +1,103 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import com.ccadllc.commons.util.EventListenerList;
+import com.ccadllc.firebird.dss.server.common.MBeanServerUtility;
+import com.ccadllc.firebird.dss.server.common.RouteJmxUtility;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+
+import com.google.common.base.Preconditions;
+
+import java.io.IOException;
+
+public abstract class AbstractRouteController
+{
+    protected static final String ROUTE_SNAPSHOT_PARAMETER = "route snapshot";
+    private static final String PID_TO_STREAM_MAPPINGS_PARAMETER = "pid to stream mappings";
+    private static final String STREAM_IDS_PARAMETER = "stream Ids";
+
+    private final String objectName;
+    private final int port;
+    private final RouteSnapshot route;
+
+    /** List of <code>TcpRouteEventListener</code>s. */
+    private final EventListenerList<TcpRouteEventListener, TcpRouteEvent> tcpRouteEventListenerList = new EventListenerList<TcpRouteEventListener, TcpRouteEvent>();
+
+    public AbstractRouteController(final RouteSnapshot route, final JmxRouteNotificationManager jmxRouteNotificationManager)
+    {
+        Preconditions.checkNotNull(route, ROUTE_SNAPSHOT_PARAMETER);
+
+        switch (route.getDataType())
+        {
+            case MPEG_PACKETS:
+                Preconditions.checkNotNull(route.getPidMappings(), PID_TO_STREAM_MAPPINGS_PARAMETER);
+                Preconditions.checkNotNull(route.getPidMappings().values(), STREAM_IDS_PARAMETER);
+                break;
+            case BLOCKS:
+                Preconditions.checkNotNull(route.getStreamIds());
+                break;
+            default:
+                throw new IllegalArgumentException("Invalid data type.");
+        }
+
+        objectName = RouteJmxUtility.createRouteMxBeanName(route, RouteJmxUtility.ROUTE_INFORMATION_JMX_BEAN_TYPE);
+        MBeanServerUtility.register(new RouteInstrumentation(route), objectName);
+        port = route.getPort();
+        this.route = route;
+    }
+
+    public abstract void update(final RouteSnapshot route, final StreamManager streamManager,
+        final JmxRouteNotificationManager jmxRouteNotificationManager);
+
+    protected void handleUpdate(final RouteSnapshot route)
+    {
+        Preconditions.checkNotNull(route, ROUTE_SNAPSHOT_PARAMETER);
+        MBeanServerUtility.register(new RouteInstrumentation(route), objectName);
+    }
+
+    public void closedSession()
+    {
+        fireTcpSessionClosed();
+    }
+
+    public abstract void shutdown();
+
+    protected abstract void unbindPort() throws IOException;
+
+    protected void cleanUp()
+    {
+        MBeanServerUtility.unregister(objectName);
+    }
+
+    protected int getPort()
+    {
+        return port;
+    }
+
+    /**
+     * @return copy of route snapshots
+     */
+    protected RouteSnapshot getRouteSnapshot()
+    {
+        return route;
+    }
+
+    public void addRouteEventListener(final TcpRouteEventListener tcpRouteEventListener)
+    {
+        Preconditions.checkNotNull(tcpRouteEventListener, "TcpRouteEventListener cannot be null");
+        tcpRouteEventListenerList.addListener(tcpRouteEventListener);
+    }
+
+    public void removeRouteEventListener(final TcpRouteEventListener tcpRouteEventListener)
+    {
+        Preconditions.checkNotNull(tcpRouteEventListener, "TcpRouteEventListener cannot be null");
+        tcpRouteEventListenerList.removeListener(tcpRouteEventListener);
+    }
+
+    private void fireTcpSessionClosed()
+    {
+        final TcpRouteEvent tcpRouteEvent = new TcpRouteEvent(getPort());
+        tcpRouteEventListenerList.fireEvent(tcpRouteEvent, TcpRouteControllerHandlerEventDispatcher.instance());
+    }
+}

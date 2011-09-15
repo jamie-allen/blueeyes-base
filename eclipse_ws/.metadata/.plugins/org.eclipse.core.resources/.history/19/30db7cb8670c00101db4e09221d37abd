@@ -1,0 +1,201 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.common;
+
+import java.lang.management.ManagementFactory;
+
+import javax.management.Attribute;
+import javax.management.AttributeNotFoundException;
+import javax.management.InstanceAlreadyExistsException;
+import javax.management.InstanceNotFoundException;
+import javax.management.InvalidAttributeValueException;
+import javax.management.MBeanException;
+import javax.management.MBeanRegistrationException;
+import javax.management.MBeanServer;
+import javax.management.MalformedObjectNameException;
+import javax.management.NotCompliantMBeanException;
+import javax.management.ObjectName;
+import javax.management.ReflectionException;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/** Utility methods for working the MBean server. */
+public final class MBeanServerUtility
+{
+    private static final ThreadLocal<MBeanServer> MBEAN_SERVER = new ThreadLocal<MBeanServer>()
+    {
+        @Override
+        protected MBeanServer initialValue()
+        {
+            return ManagementFactory.getPlatformMBeanServer();
+        }
+    };
+
+    private static final Logger logger = LoggerFactory.getLogger(MBeanServerUtility.class);
+
+    /** Private constructor to prevent instantiation. */
+    private MBeanServerUtility()
+    {
+    }
+
+    public static void register(final Object object, final String objectName)
+    {
+        try
+        {
+            final ObjectName objName = new ObjectName(objectName);
+            if (MBEAN_SERVER.get().isRegistered(objName))
+            {
+                try
+                {
+                    logger.debug("Unregistering mbean before re-registration: {} ", objName);
+                    MBEAN_SERVER.get().unregisterMBean(objName);
+                }
+                catch (final InstanceNotFoundException infe)
+                {
+                    throw new RuntimeException(String.format("InstanceNotFoundException occurred registering JMX MXBean: %s", objectName.toString()), infe);
+                }
+            }
+            MBEAN_SERVER.get().registerMBean(object, objName);
+            logger.debug("Registering mbean: {} ", objName);
+        }
+        catch (final MalformedObjectNameException mone)
+        {
+            throw new RuntimeException(String.format("MalformedObjectNameException occurred registering JMX MXBean: %s", objectName.toString()), mone);
+        }
+        catch (final MBeanRegistrationException mbre)
+        {
+            throw new RuntimeException(String.format("MBeanRegistrationException occurred registering JMX MXBean: %s", objectName.toString()), mbre);
+        }
+        catch (final InstanceAlreadyExistsException iaee)
+        {
+            throw new RuntimeException(String.format("InstanceAlreadyExistsException occurred registering JMX MXBean: %s", objectName.toString()), iaee);
+        }
+        catch (final NotCompliantMBeanException ncmbe)
+        {
+            throw new RuntimeException(String.format("NotCompliantMBeanException occurred registering JMX MXBean: %s", objectName.toString()), ncmbe);
+        }
+    }
+
+    public static void unregister(final String objectName)
+    {
+        try
+        {
+            final ObjectName objName = new ObjectName(objectName);
+            if (MBEAN_SERVER.get().isRegistered(objName))
+            {
+                logger.debug("Unregistering mbean: {} ", objName);
+                MBEAN_SERVER.get().unregisterMBean(objName);
+            }
+        }
+        catch (final MalformedObjectNameException mone)
+        {
+            logger.debug("Problem occurred with unregistering mbean: {} ", objectName, mone);
+        }
+        catch (final InstanceNotFoundException infe)
+        {
+            logger.debug("Problem occurred with unregistering mbean: {} ", objectName, infe);
+        }
+        catch (final MBeanRegistrationException mbre)
+        {
+            logger.debug("Problem occurred with unregistering mbean: {} ", objectName, mbre);
+        }
+    }
+
+    public static void setAttribute(final String objectName, final Attribute attribute)
+    {
+        try
+        {
+            MBEAN_SERVER.get().setAttribute(new ObjectName(objectName), attribute);
+        }
+        catch (final InstanceNotFoundException infe)
+        {
+            logger.debug("Problem occurred with setting attribute {} for the mbean: {} ", attribute.getName(), infe);
+        }
+        catch (final MalformedObjectNameException mone)
+        {
+            logger.debug("Problem occurred with setting attribute {} for the mbean: {} ", attribute.getName(), mone);
+        }
+        catch (final MBeanException mbe)
+        {
+            logger.debug("Problem occurred with setting attribute {} for the mbean: {} ", attribute.getName(), mbe);
+        }
+        catch (final ReflectionException re)
+        {
+            logger.debug("Problem occurred with setting attribute {} for the mbean: {} ", attribute.getName(), re);
+        }
+        catch (final NullPointerException npe)
+        {
+            logger.debug("Problem occurred with setting attribute {} for the mbean: {} ", attribute.getName(), npe);
+        }
+        catch (final AttributeNotFoundException anfe)
+        {
+            logger.debug("Problem occurred with setting attribute {} for the mbean: {} ", attribute.getName(), anfe);
+        }
+        catch (final InvalidAttributeValueException iave)
+        {
+            logger.debug("Problem occurred with setting attribute {} for the mbean: {} ", attribute.getName(), iave);
+        }
+    }
+
+    public static Object getAttribute(final String objectName, final String attribute)
+    {
+        try
+        {
+            return MBEAN_SERVER.get().getAttribute(new ObjectName(objectName), attribute);
+        }
+        catch (final InstanceNotFoundException infe)
+        {
+            logger.debug("Problem occurred with setting attribute {} for the mbean: {} ", attribute, infe);
+        }
+        catch (final MalformedObjectNameException mone)
+        {
+            logger.debug("Problem occurred with setting attribute {} for the mbean: {} ", attribute, mone);
+        }
+        catch (final MBeanException mbe)
+        {
+            logger.debug("Problem occurred with setting attribute {} for the mbean: {} ", attribute, mbe);
+        }
+        catch (final ReflectionException re)
+        {
+            logger.debug("Problem occurred with setting attribute {} for the mbean: {} ", attribute, re);
+        }
+        catch (final NullPointerException npe)
+        {
+            logger.debug("Problem occurred with setting attribute {} for the mbean: {} ", attribute, npe);
+        }
+        catch (final AttributeNotFoundException anfe)
+        {
+            logger.debug("Problem occurred with setting attribute {} for the mbean: {} ", attribute, anfe);
+        }
+
+        return null;
+    }
+
+    public static void invoke(final String objectName, final String methodName, final Object[] paramValues, final String[] paramTypes)
+    {
+        try
+        {
+            MBEAN_SERVER.get().invoke(new ObjectName(objectName), methodName, paramValues, paramTypes);
+        }
+        catch (final MalformedObjectNameException mone)
+        {
+            logger.debug("Problem occurred invoking operation {} for the mbean: {} ", methodName, mone);
+        }
+        catch (final NullPointerException npe)
+        {
+            logger.debug("Problem occurred invoking operation {} for the mbean: {} ", methodName, npe);
+        }
+        catch (final InstanceNotFoundException infe)
+        {
+            logger.debug("Problem occurred invoking operation {} for the mbean: {} ", methodName, infe);
+        }
+        catch (final MBeanException mbe)
+        {
+            logger.debug("Problem occurred invoking operation {} for the mbean: {} ", methodName, mbe);
+        }
+        catch (final ReflectionException re)
+        {
+            logger.debug("Problem occurred invoking operation {} for the mbean: {} ", methodName, re);
+        }
+    }
+}

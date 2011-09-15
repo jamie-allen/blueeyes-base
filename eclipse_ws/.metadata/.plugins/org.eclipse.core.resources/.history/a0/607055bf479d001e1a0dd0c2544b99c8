@@ -1,0 +1,12 @@
+package com.ccadllc.firebird.vms.dssrm.core;
+
+import java.util.UUID;
+
+import com.google.common.collect.ImmutableMap;
+
+public interface DssrmCoreDescription
+{
+    UUID getStreamId();
+    UUID getId();
+    ImmutableMap<String, String> getProperties();
+}

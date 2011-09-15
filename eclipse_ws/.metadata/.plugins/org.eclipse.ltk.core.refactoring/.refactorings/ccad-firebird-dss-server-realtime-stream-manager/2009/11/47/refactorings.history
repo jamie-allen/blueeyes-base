@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Copy 2 elements(s) to &apos;ccad-firebird-dss-server-standalone-stream-manager&apos;&#x0A;- Original project: &apos;ccad-firebird-dss-server-realtime-stream-manager&apos;&#x0A;- Destination element: &apos;ccad-firebird-dss-server-standalone-stream-manager&apos;&#x0A;- Original elements:&#x0A;     pom.xml&#x0A;     osgi.bnd" description="Copy files" element1="pom.xml" element2="osgi.bnd" files="2" flags="589830" folders="0" id="org.eclipse.jdt.ui.copy" policy="org.eclipse.jdt.ui.copyResources" stamp="1258726969184" target="/ccad-firebird-dss-server-standalone-stream-manager" units="0" version="1.0"/>
+</session>

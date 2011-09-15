@@ -1,0 +1,430 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:ui="http://java.sun.com/jsf/facelets" xmlns:h="http://java.sun.com/jsf/html" xmlns:f="http://java.sun.com/jsf/core" xmlns:c="http://java.sun.com/jstl/core" xmlns:t="http://myfaces.apache.org/tomahawk"
+    xmlns:ccad="http://ccad/webui/components" xmlns:dac="http://dac/webui/components"
+    xmlns:chart="http://sourceforge.net/projects/jsf-comp">
+    <body>
+        <ui:composition template="/WEB-INF/templates/main-layout.xhtml">
+            <ui:define name="title">#{messages.title}</ui:define>
+            <ui:define name="content">
+                <t:stylesheet path="/styles/home/performance/performance.css" />
+                <h:form id="statusForm">
+
+                    <ccad:tabbedPane binding="#{systemBean.tabbedPane}">
+
+                        <!-- APPLICATION STATUS TAB -->
+                        <ccad:tab id="applicationStatus" caption="#{messages.applicationStatusTabLabel}">
+                            <h:panelGroup style="width=100%">
+                            <fieldset>
+                                <legend>
+                                    #{messages.applicationFieldSet}
+                                </legend>
+                
+                                <h:panelGrid columns="4" cellpadding="5px" style="width=1000px">
+                                    <ccad:formField fieldName="sysOAMPIpAddress">
+                                        <h:outputLabel value="#{commonStatusBean.systemOAMPIpAddress}" />
+                                    </ccad:formField>
+    
+                                    <ccad:formField fieldName="sysOAMPMacAddress">
+                                        <h:outputLabel value="#{commonStatusBean.systemOAMPMacAddress}" />
+                                    </ccad:formField>
+
+                                    <ccad:formField fieldName="sysOAMPSubnet">
+                                        <h:outputLabel value="#{commonStatusBean.systemOAMPSubnet}" />
+                                    </ccad:formField>
+
+                                    <ccad:formField fieldName="sysOAMPHostDefaultGateway">
+                                        <h:outputLabel value="#{commonStatusBean.systemOAMPHostDefaultGateway}" />
+                                    </ccad:formField>
+                                </h:panelGrid>
+                            </fieldset>
+                            </h:panelGroup>
+        
+                            <t:div style="clear:both;">
+                            <h3>
+                            <h:outputText value="#{messages.subSystemStatusTable}" />
+                            </h3>
+                            <ccad:table delegate="#{commonStatusBean.subSystemStatusTable}" pageable="true" searchable="false" editable="false" addable="false" deleteable="false" inlineEditable="false">
+                                <ccad:column fieldName="subsystemName" fieldValue="subSystemName">
+                                    <h:outputText value="#{tableEntry.subSystemName}" />
+                                </ccad:column>
+
+                                <ccad:column fieldName="subsystemFunction" fieldValue="subSystemFunction">
+                                    <h:outputText value="#{messages[tableEntry.subSystemFunction.resourceKey]}" />
+                                </ccad:column>
+
+                                <ccad:column fieldName="subsystemVersion" fieldValue="subSystemVersion">
+                                    <h:outputText value="#{tableEntry.subSystemVersion}" />
+                                </ccad:column>
+
+                                <ccad:column fieldName="subsystemUpTime" fieldValue="subSystemUpTime">
+                                    <h:outputText value="#{tableEntry.subSystemUpTime}" />
+                                </ccad:column>
+
+                                <ccad:column fieldName="subsystemLastStatusChangeTime" fieldValue="subSystemLastStatusChangeTime">
+                                    <h:outputText value="#{tableEntry.subSystemLastStatusChangeTime}" />
+                                </ccad:column>
+
+                                <ccad:column fieldName="subsystemState" fieldValue="subSystemState">
+                                    <h:outputText value="#{messages[tableEntry.subSystemState.resourceKey]}" />
+                                </ccad:column>
+
+                                <ccad:column fieldName="subsystemAlarmStatus" fieldValue="subSystemAlarmStatus">
+                                    <h:outputText value="#{messages[tableEntry.subSystemAlarmStatus.resourceKey]}" />
+                                </ccad:column>
+                            </ccad:table>
+                            </t:div>
+                        </ccad:tab>
+
+                        <!-- DB STATUS TAB -->
+                        <ccad:tab id="databaseStatus" caption="#{messages.databaseStatusTabLabel}">
+
+                            <h:panelGrid columns="2" cellpadding="5px">
+
+
+                                <h:panelGroup />
+
+                                <h:panelGroup>
+                                    <h:outputLabel styleClass="tableTitle" value="#{messages.databaseStatus}" />
+                                    <ccad:table delegate="#{databaseStatusBean.databaseStatusTable}" pageable="true" searchable="false" editable="false" addable="false" deleteable="false" inlineEditable="false">
+                                        <ccad:column fieldName="id" fieldValue="wrappedObject.id">
+                                            <h:outputText value="#{tableEntry.wrappedObject.id}" />
+                                        </ccad:column>
+
+                                        <ccad:column fieldName="name" fieldValue="wrappedObject.name">
+                                            <h:outputText value="#{tableEntry.wrappedObject.name}" />
+                                        </ccad:column>
+
+                                        <ccad:column fieldName="state" fieldValue="wrappedObject.state">
+                                            <h:outputText value="#{messages[tableEntry.wrappedObject.state.resourceKey]}" />
+                                        </ccad:column>
+
+                                        <ccad:column fieldName="size" fieldValue="wrappedObject.size">
+                                            <h:outputText value="#{tableEntry.wrappedObject.size}" />
+                                        </ccad:column>
+
+                                        <ccad:column fieldName="freeSize" fieldValue="wrappedObject.freeSize">
+                                            <h:outputText value="#{tableEntry.wrappedObject.freeSize}" />
+                                        </ccad:column>
+
+                                        <ccad:column fieldName="logSize" fieldValue="wrappedObject.logSize">
+                                            <h:outputText value="#{tableEntry.wrappedObject.logSize}" />
+                                        </ccad:column>
+
+                                        <ccad:column fieldName="logFreeSize" fieldValue="wrappedObject.logFreeSize">
+                                            <h:outputText value="#{tableEntry.wrappedObject.logFreeSize}" />
+                                        </ccad:column>
+
+                                    </ccad:table>
+                                </h:panelGroup>
+
+                            </h:panelGrid>
+
+                        </ccad:tab>
+
+                        <!-- BILLING STATUS TAB -->
+                        <ccad:tab id="billingSystemStatus" caption="#{messages.businessSystemTabLabel}">
+                            <ccad:tabbedPane>
+                                <ccad:tab id="summary"
+                                    caption="#{messages.businessSystemSummaryTabLabel}">
+
+                                    <ui:decorate template="/pages/data/reports/graphLayout.xml">
+                                         <ui:param name="graphBean" value="#{bsiStatusBean.graph}"/>
+                                         <ui:param name="styleClass" value="horizontalScrollableChart"/>
+                                    </ui:decorate>
+
+                                </ccad:tab>
+
+                                <!-- STATUS TAB -->
+                                <ccad:tab id="businessSystemStatus"
+                                    caption="#{messages.businessSystemStatusTabLabel}">
+                                    <ccad:table
+                                        delegate="#{bsiStatusBean.commandStatusTable}"
+                                        filterable="false" pageable="true"
+                                        searchable="false" editable="false"
+                                        addable="false" deleteable="false"
+                                        inlineEditable="false">
+                                        <ccad:column fieldName="commandNumber"
+                                          styleClass="center"
+                                            clickToEdit="false"
+                                            fieldValue="commandNumber">
+                                            <h:outputText
+                                                value="#{tableEntry.commandNumber}">
+                                                <f:convertNumber type="number" pattern="000"/>
+                                            </h:outputText>
+                                        </ccad:column>
+                                        <ccad:column fieldName="operationCode"
+                                            styleClass="leftJustify"
+                                            clickToEdit="false"
+                                            fieldValue="operationCode">
+                                            <h:outputText
+                                                value="#{messages[tableEntry.operationCodeType.resourceKey]}" />
+                                        </ccad:column>
+                                        <ccad:column fieldName="commandTotal"
+                                          styleClass="rightJustify"
+                                            clickToEdit="false"
+                                            fieldValue="commandTotal">
+                                            <h:outputText
+                                                value="#{tableEntry.commandTotal}" />
+                                        </ccad:column>
+                                        <ccad:column fieldName="numberPassed"
+                                          styleClass="rightJustify"
+                                            clickToEdit="false"
+                                            fieldValue="numberPassed">
+                                            <h:outputText
+                                                value="#{tableEntry.numberPassed}" />
+                                        </ccad:column>
+
+                                        <ccad:column fieldName="passedAveraged"
+                                          styleClass="rightJustify"
+                                            clickToEdit="false" fieldValue="passAverage">
+                                            <h:outputText
+                                                value="#{tableEntry.passAverage}">
+                                                <f:convertNumber type="number" pattern="0.0"/>
+                                            </h:outputText>
+
+                                        </ccad:column>
+                                        <ccad:column fieldName="passedMaximum"
+                                          styleClass="rightJustify"
+                                            clickToEdit="false" fieldValue="passMax">
+                                            <h:outputText value="#{tableEntry.passMax}" />
+                                        </ccad:column>
+                                        <ccad:column fieldName="passedMinimum"
+                                          styleClass="rightJustify"
+                                            clickToEdit="false" fieldValue="passMin">
+                                            <h:outputText value="#{tableEntry.passMin}" />
+                                        </ccad:column>
+                                        <ccad:column fieldName="failureStatus"
+                                            styleClass="center"
+                                            clickToEdit="false"
+                                            fieldValue="failureStatus">
+                                            <h:outputText
+                                                value="#{messages[tableEntry.failureStatus.resourceKey]}" />
+                                        </ccad:column>
+                                        <ccad:column fieldName="throughputStatus"
+                                            styleClass="center"
+                                            clickToEdit="false"
+                                            fieldValue="commandThroughPutStatus">
+                                            <h:outputText
+                                                value="#{messages[tableEntry.commandThroughPutStatus.resourceKey]}" />
+                                        </ccad:column>
+                                    </ccad:table>
+                                </ccad:tab>
+
+                                <!--  FAILURES TAB -->
+                                <ccad:tab id="businessSystemFailures"
+                                    caption="#{messages.businessSystemFailureTabLabel}">
+                                    <ccad:table
+                                        delegate="#{bsiStatusBean.commandFailuresEntryTable}"
+                                        filterable="false" pageable="true"
+                                        searchable="false" editable="false"
+                                        addable="false" deleteable="false"
+                                        inlineEditable="false">
+                                        <ccad:column fieldName="commandNumber"
+                                          styleClass="center"
+                                            clickToEdit="false"
+                                            fieldValue="commandNumber">
+                                            <h:outputText
+                                                value="#{tableEntry.commandNumber}" >
+                                                <f:convertNumber type="number" pattern="000"/>
+                                            </h:outputText>
+                                        </ccad:column>
+                                        <ccad:column fieldName="operationCode"
+                                            styleClass="leftJustify"
+                                            clickToEdit="false"
+                                            fieldValue="operationCode">
+                                            <h:outputText
+                                                value="#{messages[tableEntry.operationCodeType.resourceKey]}" />
+                                        </ccad:column>
+
+                                        <ccad:column fieldName="commandTotal"
+                                          styleClass="rightJustify"
+                                            clickToEdit="false"
+                                            fieldValue="commandTotal">
+                                            <h:outputText
+                                                value="#{tableEntry.commandTotal}" />
+                                        </ccad:column>
+
+                                        <ccad:column fieldName="numberFailed"
+                                          styleClass="rightJustify"
+                                            clickToEdit="false"
+                                            fieldValue="numberFailed">
+                                            <h:outputText
+                                                value="#{tableEntry.numberFailed}" />
+                                        </ccad:column>
+
+                                        <ccad:column fieldName="failedAveraged"
+                                            styleClass="rightJustify"
+                                            clickToEdit="false"
+                                            fieldValue="failureAverage">
+                                            <h:outputText
+                                                value="#{tableEntry.failureAverage}">
+                                                <f:convertNumber type="number" pattern="0.0"/>
+                                             </h:outputText>
+                                        </ccad:column>
+                                        <ccad:column fieldName="failedMaximum"
+                                            styleClass="rightJustify"
+                                            clickToEdit="false" fieldValue="failureMax">
+                                            <h:outputText
+                                                value="#{tableEntry.failureMax}">
+                                                <f:convertNumber type="number" pattern="0.0"/>
+                                            </h:outputText>
+                                        </ccad:column>
+                                        <ccad:column fieldName="failedMinimum"
+                                            styleClass="rightJustify"
+                                            clickToEdit="false" fieldValue="failureMin">
+                                            <h:outputText
+                                                value="#{tableEntry.failureMin}" >
+                                                <f:convertNumber type="number" pattern="0.0"/>
+                                            </h:outputText>
+                                        </ccad:column>
+                                        <ccad:column fieldName="failureStatus"
+                                            styleClass="center"
+                                            clickToEdit="false"
+                                            fieldValue="failureStatus">
+                                            <h:outputText
+                                                value="#{messages[tableEntry.failureStatus.resourceKey]}" />
+                                        </ccad:column>
+                                        <ccad:column fieldName="throughputStatus"
+                                            styleClass="center"
+                                            clickToEdit="false"
+                                            fieldValue="commandThroughPutStatus">
+                                            <h:outputText
+                                                value="#{messages[tableEntry.commandThroughPutStatus.resourceKey]}" />
+                                        </ccad:column>
+                                    </ccad:table>
+
+                                </ccad:tab>
+
+                            </ccad:tabbedPane>
+
+                        </ccad:tab>
+
+                        <!--  MAINTENANCE STATUS TAB -->
+                        <ccad:tab id="maintenanceStatus" caption="#{messages.maintenanceStatusTabLabel}">
+                        <h:panelGrid columns="2" cellpadding="5px">
+
+                                <h:panelGroup>
+                                    <fieldset id="dataBackUpSet">
+                                        <legend>
+                                            #{messages.dataBackUpSet}
+                                        </legend>
+
+                                        <h:panelGrid columns="2" cellpadding="5px">
+                                            <c:set var="backupStartTime" value="#{operationStatusBean.dataBackupOperationData.lastStartTime}"/>
+                                            <c:set var="backupSuccessTime" value="#{operationStatusBean.dataBackupOperationData.lastSuccessTime}"/>
+                                            <ccad:formField fieldName="dataBackUpStartTime">
+                                                <h:outputText value="#{backupStartTime == null ? messages.neverStarted : backupStartTime}">
+                                                    <f:convertDateTime timeZone="#{serverInfo.defaultTimeZone}" pattern="#{messages.defaultDateTimePattern}" dateStyle="short" timeStyle="short" type="both"/>
+                                                </h:outputText>
+                                            </ccad:formField>
+
+                                            <ccad:formField fieldName="dataBackUpDuration">
+                                                <h:outputText value="#{operationStatusBean.dataBackupOperationDuration}">
+                                                    <f:converter converterId="com.ccadllc.dac.web.ui.model.home.system.OperationDurationConverter"/>
+                                                </h:outputText>
+                                            </ccad:formField>
+
+                                            <ccad:formField fieldName="dataBackUpSucceeded">
+                                                <h:outputLabel value="#{messages[operationStatusBean.dataBackupStatus.resourceKey]}" />
+                                            </ccad:formField>
+
+                                            <ccad:formField fieldName="dataBackUpLastSuccessTime">
+                                                <h:outputText value="#{backupSuccessTime == null ? messages.neverSuccessful : backupSuccessTime}">
+                                                    <f:convertDateTime timeZone="#{serverInfo.defaultTimeZone}" pattern="#{messages.defaultDateTimePattern}" dateStyle="short" timeStyle="short" type="both"/>
+                                                </h:outputText>
+                                            </ccad:formField>
+                                        </h:panelGrid>
+                                    </fieldset>
+                                </h:panelGroup>
+
+                                <h:panelGroup>
+                                    <fieldset id="maintenanceSet">
+                                        <legend>
+                                            #{messages.maintenanceSet}
+                                        </legend>
+                                        <h:panelGrid columns="2" cellpadding="5px">
+                                            <c:set var="maintenanceStartTime" value="#{operationStatusBean.dataMaintenanceOperationData.lastStartTime}"/>
+                                            <c:set var="maintenanceSuccessTime" value="#{operationStatusBean.dataMaintenanceOperationData.lastSuccessTime}"/>
+                                            <ccad:formField fieldName="maintenanceStartTime">
+                                                <h:outputText value="#{maintenanceStartTime == null ? messages.neverStarted : maintenanceStartTime}">
+                                                    <f:convertDateTime timeZone="#{serverInfo.defaultTimeZone}" pattern="#{messages.defaultDateTimePattern}" dateStyle="short" timeStyle="short" type="both"/>
+                                                </h:outputText>
+                                            </ccad:formField>
+
+                                            <ccad:formField fieldName="maintenanceDuration">
+                                                <h:outputLabel value="#{operationStatusBean.dataMaintenanceOperationDuration}">
+                                                    <f:converter converterId="com.ccadllc.dac.web.ui.model.home.system.OperationDurationConverter"/>
+                                                </h:outputLabel>
+                                            </ccad:formField>
+
+                                            <ccad:formField fieldName="maintenanceSucceeded">
+                                                <h:outputLabel value="#{messages[operationStatusBean.dataMaintenanceStatus.resourceKey]}" />
+                                            </ccad:formField>
+
+                                            <ccad:formField fieldName="maintenanceLastSuccessTime">
+                                                <h:outputText value="#{maintenanceSuccessTime == null ? messages.neverSuccessful : maintenanceSuccessTime}">
+                                                    <f:convertDateTime timeZone="#{serverInfo.defaultTimeZone}" pattern="#{messages.defaultDateTimePattern}" dateStyle="short" timeStyle="short" type="both"/>
+                                                </h:outputText>
+                                            </ccad:formField>
+                                        </h:panelGrid>
+
+                                    </fieldset>
+                                </h:panelGroup>
+
+                        </h:panelGrid>
+
+                        </ccad:tab>
+
+                        <!--  CONTROL STREAM TAB -->
+                        <ccad:tab id="controlStreamStatus" caption="#{messages.controlStreamStatusTabLabel}">
+                                                    <h3>
+                        <h:outputText value="#{messages.controlStreams}" />
+                        </h3>
+
+
+                            <ccad:table styleClass="controlStreamTable" delegate="#{operationStatusBean.controlStreamTable}" filterable="false" pageable="true" searchable="false" editable="false" addable="false" deleteable="false" inlineEditable="false">
+                                <ccad:column fieldName="deviceName" clickToEdit="false" fieldValue="destinationDeviceName">
+                                    <h:outputText value="#{tableEntry.destinationDeviceName}" />
+                                </ccad:column>
+
+                                <ccad:column fieldName="status" clickToEdit="false" fieldValue="status">
+                                    <h:outputText value="#{messages[tableEntry.status.resourceKey]}" />
+                                </ccad:column>
+                                <ccad:column fieldName="statusDate" clickToEdit="false" fieldValue="lastStatusDate">
+                                    <h:outputText value="#{tableEntry.lastStatusDate}" />
+                                </ccad:column>
+
+                                <ccad:column fieldName="terminalCount" clickToEdit="false" fieldValue="terminalCount">
+                                    <h:outputText value="#{tableEntry.terminalCount}" />
+                                </ccad:column>
+
+
+                            </ccad:table>
+
+
+                            <ui:decorate template="/pages/data/reports/graphLayout.xml">
+                                 <ui:param name="graphBean" value="#{operationStatusBean.operationStatusGraph}"/>
+                            </ui:decorate>
+
+
+                        </ccad:tab>
+                    </ccad:tabbedPane>
+
+
+                    <ccad:buttonSet>
+                        <h:commandButton value="#{messages.refreshButton}" action="refresh" styleClass="button">
+                        </h:commandButton>
+                    </ccad:buttonSet>
+
+
+                </h:form>
+
+            </ui:define>
+
+
+
+        </ui:composition>
+
+    </body>
+
+</html>

@@ -1,0 +1,511 @@
+/*
+ * Copyright 2008 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.timer.manager;
+
+import static com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager.PERIODIC_SNAPSHOT_ADDED_EVENT;
+import static com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager.PERIODIC_SNAPSHOT_DELETED_EVENT;
+import static com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager.SNAPSHOT_MANAGER_REFRESH_EVENT;
+import static com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager.STREAM_SNAPSHOT_DELETED_EVENT;
+
+import java.io.IOException;
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+
+import javax.management.Attribute;
+import javax.script.ScriptException;
+
+import com.ccadllc.commons.util.concurrent.CallbackSupportingScheduledExecutorService;
+import com.ccadllc.firebird.core.base.common.util.CallableStrategyUtility;
+import com.ccadllc.firebird.dss.server.common.MBeanServerUtility;
+import com.ccadllc.firebird.dss.server.common.OsgiEventPropertyKeys;
+import com.ccadllc.firebird.dss.server.common.PeriodicDataType;
+import com.ccadllc.firebird.dss.server.common.PeriodicSnapshot;
+import com.ccadllc.firebird.dss.server.common.StreamSnapshot;
+import com.ccadllc.firebird.dss.server.common.StreamedPeriodicData;
+import com.ccadllc.firebird.dss.server.configuration.blockset.domain.BlockSet;
+import com.ccadllc.firebird.dss.server.configuration.blockset.domain.BlockSetRepository;
+import com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+
+import net.jcip.annotations.Immutable;
+
+import org.osgi.service.event.Event;
+import org.osgi.service.event.EventHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Required;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
+import com.google.common.collect.MapMaker;
+
+/**
+ * Timer Manager handles firing of the periodics.
+ *
+ * <p>It collects the periodics from the repository and schedules them on an
+ * {@link java.util.concurrent.Executor}. It also maintains periodics and streams through an internal caching mechanism in order to
+ * avoid querying the repository each time it needs to get access to a periodic or a stream. It is subscribed to an OSGi event admin
+ * service to be notified for lifecycle events such as persist, update and delete in periodics and streams.</p>
+ *
+ * <p>This class is configured as a listener of the {@code BlockSetRepository}. It will be notified any them that service is either
+ * bound or unbound. When the {@code BlockSetRepository} is unbound, all the scheduled periodics associated with block sets
+ * are stopped. When the {@code BlockSetRepository} is bound, all periodics associated with block sets are scheduled.</p>
+ */
+public class TimerManager implements EventHandler
+{
+    public static final String MXBEAN_OBJECT_NAME = "DSS:type=Streams,id=%d,datatype=Periodics,periodicId=%d";
+    public static final String MXBEAN_LAST_INTERVAL_START_TIME_ATTRIBUTE_NAME = "LastIntervalStartTime";
+    public static final String MXBEAN_LAST_BLOCK_INSERTED_ATTRIBUTE_NAME = "LastBlockInserted";
+
+    public static final String[] EVENT_TOPICS = new String[] {PERIODIC_SNAPSHOT_ADDED_EVENT, PERIODIC_SNAPSHOT_DELETED_EVENT, STREAM_SNAPSHOT_DELETED_EVENT, SNAPSHOT_MANAGER_REFRESH_EVENT};
+
+    private final Logger logger = LoggerFactory.getLogger(TimerManager.class);
+
+    /** Callback scheduled executor. */
+    private final CallbackSupportingScheduledExecutorService executor;
+
+    /** Repository to access block sets. */
+    private BlockSetRepository blockSetRepository;
+
+    /** Router to which the periodic blocks and stream sent to. */
+    private StreamManager streamManager;
+
+    /** Map for maintaining a cache of periodics. */
+    private final Map<Long, PeriodicInfo> periodicCache = new MapMaker().makeMap();
+
+    /** Map for maintaining a cache of scheduled futures. */
+    private final Map<Long, BlockSetFutureComposite> scheduledFutureCache = new MapMaker().makeMap();
+
+    /** is blockSetrepository running. */
+    private boolean isBlockSetRepositoryActive;
+
+    /** reference to the realtime snapshot manager. */
+    private RealTimeSnapshotManager realtimeSnapshotManager;
+
+    private final Object initLock = new Object();
+
+    /**
+     * Constructor.
+     *
+     * @param executor callback executor for running scheduled tasks.
+     */
+    public TimerManager(final CallbackSupportingScheduledExecutorService executor)
+    {
+        Preconditions.checkNotNull(executor, "Executor cannot be null.");
+
+        this.executor = executor;
+    }
+
+    @Required
+    public void setRealtimeSnapshotManager(final RealTimeSnapshotManager realtimeSnapshotManager)
+    {
+        this.realtimeSnapshotManager = realtimeSnapshotManager;
+    }
+
+    @Required
+    public void setBlockSetRepository(final BlockSetRepository blockSetRepository)
+    {
+        this.blockSetRepository = blockSetRepository;
+    }
+
+    @Required
+    public void setStreamManager(final StreamManager streamManager)
+    {
+        this.streamManager = streamManager;
+    }
+
+    /** Initializes this object. */
+    public void init()
+    {
+        synchronized (initLock)
+        {
+            populateCachesAndSchedulePeriodics();
+        }
+    }
+
+    private void populatePeriodicCache()
+    {
+        periodicCache.clear();
+        final Map<Long, PeriodicSnapshot> periodics = getAllPeriodicSnapshots();
+        for (final Map.Entry<Long, PeriodicSnapshot> entry : periodics.entrySet())
+        {
+            periodicCache.put(entry.getKey(), new PeriodicInfo(entry.getValue(), PeriodicState.INACTIVE));
+        }
+    }
+
+    private Map<Long, PeriodicSnapshot> getAllPeriodicSnapshots()
+    {
+        return CallableStrategyUtility.executeUntilNoExceptionThrown(new Callable<Map<Long, PeriodicSnapshot>>() {
+            @Override
+            public Map<Long, PeriodicSnapshot> call() throws Exception
+            {
+                return realtimeSnapshotManager.getPeriodics();
+            }
+        });
+    }
+
+    private void schedulePeriodics()
+    {
+        for (final PeriodicInfo periodicInfo : periodicCache.values())
+        {
+            schedulePeriodic(periodicInfo);
+        }
+    }
+
+    private void schedulePeriodic(final PeriodicInfo periodicInfo)
+    {
+        final PeriodicSnapshot periodic = periodicInfo.getPeriodic();
+        if (isPeriodicExecutable(periodic))
+        {
+            if (!(periodic.getPeriodicDataType().equals(PeriodicDataType.STREAMED_BLOCK_SET)) || isBlockSetRepositoryActive)
+            {
+                final BlockSetFutureComposite scheduledFuture = new BlockSetFutureComposite(executor, periodic);
+                scheduledFutureCache.put(periodic.getId(), scheduledFuture);
+                periodicInfo.setState(PeriodicState.ACTIVE);
+            }
+        }
+        else
+        {
+            periodicCache.remove(periodic.getId());
+        }
+
+        addPeriodicMXBean(periodicInfo);
+    }
+
+    private long getInitialDelayInMilliSeconds(final Date startTime)
+    {
+        final long now = System.currentTimeMillis();
+        final long startTimeInMilliSeconds = startTime.getTime();
+        return (startTimeInMilliSeconds > now) ? (startTimeInMilliSeconds - now) : 0;
+    }
+
+    /**
+     * Gets called when an unbind event occurs on the <code>BlockSetRepository</code> service.
+     * It gets a list of <code>PeriodicInfo</code>'s for all streamed block periodics. For each periodic
+     * in the list the scheduled future is removed from the cache and the scheduled future is cancelled.
+     *
+     * @param service reference to the <code>BlockSetRepository</code> service
+     * @param properties properties associated with the service
+     */
+    public void onBlockSetRepositoryUnbind(final Object service, final Map<?, ?> properties)
+    {
+        final List<PeriodicInfo> streamedBlockPeriodicInfos = getSteamedBlockPeriodicInfos();
+        for (final PeriodicInfo periodicInfo : streamedBlockPeriodicInfos)
+        {
+            final Long periodicId = periodicInfo.getPeriodic().getId();
+            final BlockSetFutureComposite scheduledFutureInMap = scheduledFutureCache.remove(periodicId);
+            if (scheduledFutureInMap != null)
+            {
+                scheduledFutureInMap.cancel();
+            }
+            periodicInfo.setState(PeriodicState.STOPPED);
+        }
+        isBlockSetRepositoryActive = false;
+    }
+
+    private List<PeriodicInfo> getSteamedBlockPeriodicInfos()
+    {
+        final List<PeriodicInfo> periodicInfos = Lists.newArrayList();
+        for (final PeriodicInfo periodicInfo : periodicCache.values())
+        {
+            final PeriodicSnapshot periodic = periodicInfo.getPeriodic();
+            if (periodic.getPeriodicDataType().equals(PeriodicDataType.STREAMED_BLOCK_SET))
+            {
+                periodicInfos.add(periodicInfo);
+            }
+        }
+        return periodicInfos;
+    }
+
+    /**
+     * Gets called when a bind event occurs on the <code>BlockSetRepository</code> service.
+     * It gets a list of <code>PeriodicInfo</code>'s for all streamed block periodics. For each of the periodics
+     * in the list the scheduled future is removed from the cache and the scheduled future is cancelled.
+     *
+     * @param service reference to the <code>BlockSetRepository</code> service
+     * @param properties properties associated with the service
+     */
+    public void onBlockSetRepositoryBind(final Object service, final Map<?, ?> properties)
+    {
+        isBlockSetRepositoryActive = true;
+        final List<PeriodicInfo> streamedBlockPeriodicInfos = getSteamedBlockPeriodicInfos();
+        for (final PeriodicInfo periodicInfo : streamedBlockPeriodicInfos)
+        {
+            schedulePeriodic(periodicInfo);
+        }
+    }
+
+    /**
+     * Handle OSGI event for any periodic or stream change.
+     *
+     * @param event OSGI event
+     */
+    public void handleEvent(final Event event)
+    {
+        synchronized (initLock)
+        {
+            final String topic = event.getTopic();
+            logger.debug("Received event {}", topic);
+            if (topic.equals(PERIODIC_SNAPSHOT_ADDED_EVENT))
+            {
+                handleEventForPersistPeriodic((PeriodicSnapshot)event.getProperty(OsgiEventPropertyKeys.PERIODIC_SNAPSHOT_KEY));
+            }
+            else if (topic.equals(PERIODIC_SNAPSHOT_DELETED_EVENT))
+            {
+                handleEventForDeletePeriodic(((PeriodicSnapshot)event.getProperty(OsgiEventPropertyKeys.PERIODIC_SNAPSHOT_KEY)));
+            }
+            else if (topic.equals(STREAM_SNAPSHOT_DELETED_EVENT))
+            {
+                final StreamSnapshot stream = (StreamSnapshot) event.getProperty(OsgiEventPropertyKeys.STREAM_SNAPSHOT_KEY);
+                handleEventForDeleteStream(stream.getId());
+            }
+            else if (topic.equals(SNAPSHOT_MANAGER_REFRESH_EVENT))
+            {
+                handleRefreshEvent();
+            }
+            else
+            {
+                logger.error("Can not handle this unknown event type: {} ", topic);
+            }
+        }
+    }
+
+    private void handleEventForPersistPeriodic(final PeriodicSnapshot periodic)
+    {
+        final PeriodicInfo periodicInfo = new PeriodicInfo(periodic, PeriodicState.INACTIVE);
+        periodicCache.put(periodic.getId(), periodicInfo);
+        performCleanupInExecutor(periodic.getId());
+        schedulePeriodic(periodicInfo);
+    }
+
+    private void handleEventForDeletePeriodic(final PeriodicSnapshot periodic)
+    {
+        removePeriodicMXBean(new PeriodicInfo(periodic, PeriodicState.INACTIVE));
+
+        periodicCache.remove(periodic.getId());
+        performCleanupInExecutor(periodic.getId());
+    }
+
+    private void addPeriodicMXBean(final PeriodicInfo periodic)
+    {
+        MBeanServerUtility.register(new PeriodicInstrumentation(periodic), String.format(MXBEAN_OBJECT_NAME, periodic.getPeriodic().getStream().getId(), periodic.getPeriodic().getId()));
+    }
+
+    private void removePeriodicMXBean(final PeriodicInfo periodic)
+    {
+        MBeanServerUtility.unregister(String.format(MXBEAN_OBJECT_NAME, periodic.getPeriodic().getStream().getId(), periodic.getPeriodic().getId()));
+    }
+
+    /**
+     * Remove all periodics associated with the stream for the given stream id.
+     * @param streamId id of the stream to remove periodics for.
+     */
+    private void handleEventForDeleteStream(final long streamId)
+    {
+        final Set<Map.Entry<Long, PeriodicInfo>> entries = periodicCache.entrySet();
+        for (final Map.Entry<Long, PeriodicInfo> entry : entries)
+        {
+            final PeriodicSnapshot periodic = entry.getValue().getPeriodic();
+            if (periodic.getStream().getId() == streamId)
+            {
+                handleEventForDeletePeriodic(periodic);
+            }
+        }
+    }
+
+    /**
+     * Gets called when a <code>SnapshotManager</code> refresh event is received.
+     * It stops all running periodics and, reloads the stream and periodic caches then
+     * reschedules the periodics.
+     */
+    private void handleRefreshEvent()
+    {
+        for (final PeriodicInfo periodic : periodicCache.values())
+        {
+            removePeriodicMXBean(periodic);
+        }
+
+        for (final BlockSetFutureComposite scheduledFutureInMap : scheduledFutureCache.values())
+        {
+            scheduledFutureInMap.cancel();
+        }
+
+        periodicCache.clear();
+        scheduledFutureCache.clear();
+        populateCachesAndSchedulePeriodics();
+    }
+
+    private boolean isPeriodicExecutable(final PeriodicSnapshot periodic)
+    {
+        return (periodic.getStopTime() == null || periodic.getStopTime().getTime() > System.currentTimeMillis());
+    }
+
+    private void performCleanupInExecutor(final Long periodicId)
+    {
+        final BlockSetFutureComposite scheduledFutureInMap = scheduledFutureCache.remove(periodicId);
+        if (scheduledFutureInMap != null)
+        {
+            scheduledFutureInMap.cancel();
+        }
+    }
+
+    class PeriodicInfo
+    {
+        private final PeriodicSnapshot periodic;
+        private volatile PeriodicState state;
+
+        public PeriodicInfo(final PeriodicSnapshot periodic, final PeriodicState state)
+        {
+            this.periodic = periodic;
+            this.state = state;
+        }
+
+        public PeriodicState getState()
+        {
+            return state;
+        }
+
+        public void setState(final PeriodicState state)
+        {
+            this.state = state;
+        }
+
+        public PeriodicSnapshot getPeriodic()
+        {
+            return periodic;
+        }
+    }
+
+    @Immutable
+    class BlockSetFutureComposite
+    {
+        private final ScheduledFuture<?> future;
+        private final BlockSet blockSet;
+        private final InsertionFeatures insertionFeatures;
+
+        public BlockSetFutureComposite(final ScheduledExecutorService executor, final PeriodicSnapshot periodic)
+        {
+            if (periodic.getPeriodicDataType().equals(PeriodicDataType.STREAMED_BLOCK_SET))
+            {
+                try
+                {
+                    blockSet = blockSetRepository.getBlockSet(((StreamedPeriodicData)periodic.getData()).getData());
+                }
+                catch (final IOException ioe)
+                {
+                    throw new IllegalStateException("Block sets must exist for a periodic with streamed data.", ioe);
+                }
+            }
+            else
+            {
+                blockSet = null;
+            }
+
+            try
+            {
+                insertionFeatures = new InsertionFeatures(periodic, blockSet);
+            }
+            catch (final ScriptException scriptException)
+            {
+                throw new IllegalStateException("Script evaluation failed for periodic " + periodic.getId(), scriptException);
+            }
+            catch (final IllegalArgumentException iae)
+            {
+                throw new IllegalStateException("No data blocks found for periodic " + periodic.getId(), iae);
+            }
+            future = executor.scheduleWithFixedDelay(
+                new PeriodicBlockInserter(periodic.getId(), insertionFeatures),
+                    getInitialDelayInMilliSeconds(periodic.getStartTime()),
+                    insertionFeatures.getInsertionDelayInMilliSecond(),
+                    TimeUnit.MILLISECONDS);
+        }
+
+        public void cancel()
+        {
+            future.cancel(false);
+            if (blockSet != null)
+            {
+                try
+                {
+                    blockSet.close();
+                }
+                catch (final IOException ioe)
+                {
+                    throw new IllegalStateException("Block sets must exist for a periodic with streamed data.", ioe);
+                }
+            }
+        }
+    }
+
+    /**
+     * A helper class that lets the periodic blocks to be inserted to the stream manager.
+     */
+    class PeriodicBlockInserter implements Runnable
+    {
+        private final Long id;
+        private final InsertionFeatures insertionFeatures;
+
+        public PeriodicBlockInserter(final Long id, final InsertionFeatures insertionFeatures)
+        {
+            this.id = id;
+            this.insertionFeatures = insertionFeatures;
+        }
+
+        public void run()
+        {
+            // if it is not in the cache, then the periodic is removed from the repository.
+            final PeriodicSnapshot periodic = periodicCache.get(id).getPeriodic();
+            if (periodic != null && isPeriodicExecutable(periodic))
+            {
+                executeTask(periodic, insertionFeatures);
+            }
+            else if (!isPeriodicExecutable(periodic))
+            {
+                performCleanupInExecutor(periodic.getId());
+            }
+        }
+
+        private void executeTask(final PeriodicSnapshot periodic, final InsertionFeatures insertionFeatures)
+        {
+            final StreamSnapshot stream = periodic.getStream();
+            final int numberOfBlocksToInsert = insertionFeatures.getNumberOfBlocksToInsert();
+            try
+            {
+                for (int k = 0; k < numberOfBlocksToInsert; k++)
+                {
+                    final byte[] blockData = insertionFeatures.getNextBlockToInsert();
+                    if (blockData != null)
+                    {
+                        if (k == 0)
+                        {
+                            MBeanServerUtility.setAttribute(String.format(MXBEAN_OBJECT_NAME, periodic.getStream().getId(), periodic.getId()), new Attribute(MXBEAN_LAST_INTERVAL_START_TIME_ATTRIBUTE_NAME, new Date()));
+                        }
+                        streamManager.insert(blockData, stream.getId(), stream.getTransmissionType());
+                        MBeanServerUtility.setAttribute(String.format(MXBEAN_OBJECT_NAME, periodic.getStream().getId(), periodic.getId()), new Attribute(MXBEAN_LAST_BLOCK_INSERTED_ATTRIBUTE_NAME, k + 1));
+                    }
+                }
+            }
+            catch (final IOException ioe)
+            {
+                logger.error("Encountered I/O error handling block set " + " for periodic " + periodic.getId(), ioe);
+            }
+            catch (final ScriptException scriptException)
+            {
+                logger.error("Script evaluation failed for periodic " + periodic.getId(), scriptException);
+            }
+        }
+    }
+
+    private void populateCachesAndSchedulePeriodics()
+    {
+        populatePeriodicCache();
+        schedulePeriodics();
+    }
+}

@@ -1,0 +1,33 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.management;
+
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter.BlockStatisticsCollector;
+
+import net.jcip.annotations.ThreadSafe;
+
+/**
+ * JMX Bean instrumenting information about blocks inserted from the referenced packet filter.
+ */
+@ThreadSafe
+public final class BlockStatistics implements BlockStatisticsMXBean
+{
+    private final BlockStatisticsCollector collector;
+
+    public BlockStatistics(final BlockStatisticsCollector collector)
+    {
+        this.collector = collector;
+        collector.resetCounters();
+    }
+
+    @Override
+    public Long getBlocksInserted()
+    {
+        return collector.getBlocksInserted();
+    }
+
+    @Override
+    public void resetCounters()
+    {
+        collector.resetCounters();
+    }
+}

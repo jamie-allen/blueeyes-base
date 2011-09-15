@@ -1,0 +1,899 @@
+/*
+ * Copyright 2007 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.dac.common;
+
+import java.util.Date;
+
+import com.ccadllc.commons.Resourceable;
+import com.ccadllc.commons.util.ResourceUtility;
+import com.ccadllc.dac.model.channel.lineup.ChannelType;
+import com.ccadllc.dac.model.channel.lineup.DeliveryType;
+import com.ccadllc.dac.model.consumer.purchases.PurchaseDateType;
+import com.ccadllc.dac.model.consumer.purchases.PurchaseDeviceType;
+import com.ccadllc.dac.model.consumer.purchases.PurchaseStatus;
+import com.ccadllc.dac.model.consumer.terminals.PodHostOverrideType;
+import com.ccadllc.dac.model.consumer.terminals.ResponseStatus;
+import com.ccadllc.dac.model.consumer.terminals.ResponseStatusResult;
+import com.ccadllc.dac.model.consumer.terminals.ReturnPathType;
+import com.ccadllc.dac.model.consumer.terminals.TerminalObjectStatus;
+import com.ccadllc.dac.model.consumer.terminals.TerminalValidationStatus;
+import com.ccadllc.dac.model.content.pkg.ComponentType;
+import com.ccadllc.dac.model.content.pkg.PackageType;
+import com.ccadllc.dac.model.content.service.CciLevel;
+import com.ccadllc.dac.model.content.service.EncryptionMode;
+import com.ccadllc.dac.model.content.service.MacrovisionConstrain;
+import com.ccadllc.dac.model.content.service.QueuingState;
+import com.ccadllc.dac.model.content.service.ServiceType;
+import com.ccadllc.dac.model.content.source.SourceType;
+import com.ccadllc.dac.model.download.assignment.HighLevelAssignmentType;
+import com.ccadllc.dac.model.download.assignment.LowLevelAssignmentType;
+import com.ccadllc.dac.model.notification.Severity;
+import com.ccadllc.dac.model.system.operation.ControlStreamStatusState;
+import com.ccadllc.dac.model.system.operation.PurchaseAuthenticationStatus;
+import com.ccadllc.dac.model.topology.downstreamplant.DownstreamPlantType;
+import com.ccadllc.dac.model.topology.headenddevice.DeviceType;
+import com.ccadllc.dac.model.topology.headenddevice.ModulationMode;
+import com.ccadllc.dac.model.topology.upconverter.VideoStandard;
+import com.ccadllc.dac.model.topology.upstreamplant.UpstreamPlantType;
+
+/**
+ * Enumeration of report fields.
+ */
+public enum FieldType implements Resourceable
+{
+    /** Terminal ID. */
+    TERMINAL_ID (Integer.class),
+
+    /** Serial number. */
+    SERIAL_NUMBER (String.class),
+
+    /** Host ID. */
+    HOST_ID (Integer.class),
+
+    /** POD ID. */
+    POD_ID (Integer.class),
+
+    /** POD Host Data. */
+    POD_HOST_DATA (String.class),
+
+    /** Validation time. */
+    VALIDATION_TIME (Date.class),
+
+    /** POD Host Override. */
+    POD_HOST_OVERRIDE (PodHostOverrideType.class),
+
+    /** Host on CRL. */
+    HOST_ON_CRL (Boolean.class),
+
+    /** POD on CRL. */
+    POD_ON_CRL (Boolean.class),
+
+    /** Validation status. */
+    VALIDATION_STATUS (TerminalValidationStatus.class),
+
+    /** Return path type. */
+    RETURN_PATH_TYPE (ReturnPathType.class),
+
+    /** Upstream plant type. */
+    UPSTREAM_PLANT_TYPE (UpstreamPlantType.class),
+
+    /** Terminal type name. */
+    TERMINAL_TYPE (String.class),
+
+    /** Upstream plant name. */
+    UPSTREAM_PLANT_NAME (String.class),
+
+    /** Upstream plant handle. */
+    UPSTREAM_PLANT_HANDLE (Integer.class),
+
+    /** Upstream frequency. */
+    UPSTREAM_FREQUENCY (Boolean.class),
+
+    /** Headend Name. */
+    HEADEND_NAME (String.class),
+
+    /** Headend Handle. */
+    HEADEND_HANDLE (Integer.class),
+
+    /** PCM Name. */
+    PCM_NAME (String.class),
+
+    /** Default Headend. */
+    DEFAULT_HEADEND (String.class),
+
+    /** Phone number. */
+    PHONE_NUMBER (String.class),
+
+    /** IP Address. */
+    IP_ADDRESS (String.class),
+
+    /** starting IP Address. */
+    STARTING_IP_ADDRESS (String.class),
+
+    /** ending IP Address. */
+    ENDING_IP_ADDRESS (String.class),
+
+    /** Unit Address. */
+    UNIT_ADDRESS (String.class),
+
+    /** Downstream plant name. */
+    DOWNSTREAM_PLANT_NAME (String.class),
+
+    /** Downstream plant type. */
+    DOWNSTREAM_PLANT_TYPE (DownstreamPlantType.class),
+
+    /** RADD Name. */
+    RADD_NAME (String.class),
+
+    /** Operational State. */
+    OPERATIONAL_STATE (String.class),
+
+    /** Business system name. */
+    BUSINESS_SYSTEM_NAME (String.class),
+
+    /** DSG Plant name. */
+    DSG_PLANT_NAME (String.class),
+
+    /** DSP Handle. */
+    DOWNSTREAM_PLANT_HANDLE (Integer.class),
+
+    /** Default DSP name. */
+    DEFAULT_DOWNSTREAM_PLANT (String.class),
+
+    /** Stream Type. */
+    STREAM_TYPE (String.class),
+
+    /** Address 1. */
+    ADDRESS_1 (String.class),
+
+    /** Address 2. */
+    ADDRESS_2 (String.class),
+
+    /** Address 3. */
+    ADDRESS_3 (String.class),
+
+    /** Address 4. */
+    ADDRESS_4 (String.class),
+
+    /** Multicast 16 Set Name. */
+    MULTICAST_16_SET_NAME (String.class),
+
+    /** Last failure date. */
+    LAST_FAILURE_DATE (Date.class),
+
+    /** Number of failures. */
+    NUMBER_OF_FAILURES (Integer.class),
+
+    /** Last responded. */
+    LAST_RESPONDED (Date.class),
+
+    /** Last response date. */
+    LAST_RESPONSE_DAYS (Integer.class),
+
+    /** Powerlevel attempts. */
+    POWERLEVEL_ATTEMPTS (Integer.class),
+
+    /** RPD name. */
+    RPD_NAME (String.class),
+
+    /** RPD name. */
+    RPD_DEVICE_NAME (String.class),
+
+    /** RPD Demod number. */
+    RPD_DEMOD_NUMBER(Integer.class),
+
+    /** On plant. */
+    ON_PLANT (Boolean.class),
+
+    /** off plant. */
+    OFF_PLANT (Boolean.class),
+
+    /** Household id. */
+    HOUSEHOLD_ID (Integer.class),
+
+    /** CMTS name. */
+    CMTS_NAME (String.class),
+
+    /** alias CMTS name. */
+    CMTS_DEVICE_NAME (String.class),
+
+    /** Router name. */
+    ROUTER_NAME (String.class),
+
+    /** alias Router name. */
+    ROUTER_DEVICE_NAME (String.class),
+
+    /** DSG stream name. */
+    DSG_STREAM_NAME (String.class),
+
+    /** Success poll counts. */
+    SUCCESS_POLL_COUNTS (Integer.class),
+
+    /** Counts. */
+    TERMINAL_COUNTS(Long.class),
+
+    /** Ippv Enabled. */
+    IPPV_ENABLED (Boolean.class),
+
+    /** Auto discovery. */
+    AUTO_DISCOVERY (Boolean.class),
+
+    /** Package name. */
+    PACKAGE_NAME (String.class),
+
+    /** Package provider name. */
+    PACKAGE_PROVIDER_NAME (String.class),
+
+    /** Virtual channel map name. */
+    VIRTUAL_CHANNEL_MAP_NAME (String.class),
+
+    /** Is non responder. */
+    IS_NON_RESPONDER (Boolean.class),
+
+    /** Is chronic non-responder. */
+    IS_CHRONIC_NON_RESPONDER (Boolean.class),
+
+    /** OM Name. */
+    OM_NAME (String.class),
+
+    /** Package Type. */
+    PACKAGE_TYPE (PackageType.class),
+
+    /** Package Handle. */
+    PACKAGE_HANDLE (Integer.class),
+
+    /** Package Tier. */
+    PACKAGE_TIER (Integer.class),
+
+    /** Install date. */
+    INSTALL_DATE (Date.class),
+
+    /** Downstream plant id. */
+    DOWNSTREAM_PLANT_ID (Integer.class),
+
+    /** Upstream plant id. */
+    UPSTREAM_PLANT_ID (Integer.class),
+
+    /** Source name. */
+    SOURCE_NAME (String.class),
+
+    /** Service provider name. */
+    SERVICE_PROVIDER_NAME (String.class),
+
+    /** Service provider id. */
+    SERVICE_PROVIDER_ID (Integer.class),
+
+    /** External package handle. */
+    EXTERNAL_PACKAGE_HANDLE (Integer.class),
+
+    /** Terminal type id. */
+    TERMINAL_TYPE_ID (Integer.class),
+
+    /** Package ID. */
+    PACKAGE_ID (Integer.class),
+
+    /** Business system ID. */
+    BUSINESS_SYSTEM_ID (Integer.class),
+
+     /** Category. */
+    CATEGORY (String.class),
+
+    /** Failre threshold. */
+    FAILURE_THRESHOLD (String.class),
+
+    /** Pass average. */
+    PASS_AVG (Double.class),
+
+    /** Pass minumum. */
+    PASS_MIN (Double.class),
+
+    /** Pass maximum. */
+    PASS_MAX (Double.class),
+
+    /** Lineup Name. */
+    LINEUP_NAME (String.class),
+
+    /** VirtualChannelNumber. */
+    VIRTUAL_CHANNEL_NUMBER (Integer.class),
+
+    /** channelType. */
+    CHANNEL_TYPE (ChannelType.class),
+
+    /** sourceExternalId. */
+    SOURCE_ID (Integer.class),
+
+    /** sourceType. */
+    SOURCE_TYPE (SourceType.class),
+
+    /** deliveryType. */
+    DELIVERY_TYPE (DeliveryType.class),
+
+    /** logicalChannelMapName. */
+    LOGICAL_CHANNEL_MAP_NAME(String.class),
+
+    /** logical Channel Map ID. */
+    LOGICAL_CHANNEL_MAP_ID(Integer.class),
+
+    /** externalHandle. */
+    EXTERNAL_HANDLE (Integer.class),
+
+    /** deviceName. */
+    DEVICE_NAME(String.class),
+
+    /** device Port Name. */
+    DEVICE_PORT_NAME(String.class),
+
+    /** ProviderName. */
+    PROVIDER_NAME(String.class),
+
+    /** Service type. */
+    SERVICE_TYPE (ServiceType.class),
+
+    /** Service Type Id. */
+    SERVICE_TYPE_ID (Integer.class),
+
+    /** Program provision. */
+    PROGRAM_PROVISION(Integer.class),
+
+    /** cciLevel. */
+    CCI_LEVEL(CciLevel.class),
+
+    /** Languange. */
+    LANGUAGE(Integer.class),
+
+    /** BSGHandle. */
+    BSG_HANDLE(Integer.class),
+
+    /** serviceQueuings. */
+    SERVICE_QUEUINGS(Integer.class),
+
+    /** serviceQueuing. */
+    SERVICE_QUEUING(Integer.class),
+
+    /** LocationName. */
+    LOCATION_NAME(String.class),
+
+    /** Time Source. */
+    TIME_SOURCE(String.class),
+
+    /** Input Port Name. */
+    INPUT_PORT_NAME(String.class),
+
+    /** IRT name. */
+    IRT_NAME(String.class),
+
+    /** Modulation Mode. */
+    MODULATION_MODE (ModulationMode.class),
+
+    /** Modem Bank Name. */
+    MODEM_BANK_NAME(String.class),
+
+    /** Alias Modem Bank Name. */
+    MODEM_BANK_DEVICE_NAME(String.class),
+
+    /** device Type. */
+    DEVICE_TYPE (DeviceType.class),
+
+    /** Tuned Channel. */
+    TUNNED_CHANNEL(Integer.class),
+
+    /** video standard. */
+    VIDEO_STANDARD (VideoStandard.class),
+
+    /** Card Number. */
+    CARD_NUMBER(Integer.class),
+
+    /** Frequency. */
+    FREQUENCY(Integer.class),
+
+    /** Interactive Return Path Id.*/
+    INTERACTIVE_RETURN_PATH_ID(Integer.class),
+
+    /** Interaction downstream path id. */
+    INTERACTIVE_DOWNSTREAM_PATH_ID(Integer.class),
+
+    /** Online. */
+    ONLINE(Boolean.class),
+
+    /** Poll Retry. */
+    POLL_RETRY(Integer.class),
+
+    /** Poll Timeout. */
+    POLL_TIMEOUT(Integer.class),
+
+    /** Shared Return Path. */
+    SHARED_RETURN_PATH(Boolean.class),
+
+    /** Intercell Timeout. */
+    INTERCELL_TIMEOUT(Integer.class),
+
+    /** InsertionBandwidth. */
+    INSERTION_BANDWIDTH(Integer.class),
+
+    /** Min Amplitude. */
+    MIN_AMPLITUDE(Integer.class),
+
+    /** MPS. */
+    MPS_NAME(String.class),
+
+    /** SEM. */
+    SEM_NAME(String.class),
+
+    /** default upstreamplant. */
+    DEFAULT_UPSTREAMPLANT(Integer.class),
+
+    /**
+     * DSG ip address mode.
+     */
+    DSG_IP_ADDRESS_MODE(Integer.class),
+
+    /**
+     * dsg ip address.
+     */
+    DSG_IP_ADDRESS(String.class),
+
+    /**
+     * DSG radd name.
+     */
+    DSG_RADD_NAME(String.class),
+
+    /**
+     * DSG radd data rate.
+     */
+    DSG_RADD_DATA_RATE(Integer.class),
+
+    /**
+     * DSG description.
+     */
+    DSG_DESCRIPTION(String.class),
+
+    /** Max Amplitude. */
+    MAX_AMPLITUDE(Integer.class),
+
+    /** Amplitude Step Size. */
+    AMPLITUDE_STEP_SIZE(Integer.class),
+
+    /** Amplitude level. */
+    AMPLITUDE_LEVEL(Integer.class),
+
+    /** Upconverter Name. */
+    UPCONVERTER_NAME(String.class),
+
+    /** RPD Id. */
+    RPD_ID(Integer.class),
+
+    /** Decoder Conditional Name. */
+    DECODER_CONDITIONAL_NAME(String.class),
+
+    /** Deconder Conditional Value. */
+    DECODER_CONDITIONAL_VALUE(Integer.class),
+
+    /** Output MPEG Service Number. */
+    OUTPUT_MPEG_SERVICE_NUMBER(Integer.class),
+
+    /** Queuing Device Name. */
+    QUEUING_DEVICE_NAME(String.class),
+
+    /** Output Port Name. */
+    OUTPUT_PORT_NAME(String.class),
+
+    /** Input Service Number. */
+    INPUT_SERVICE_NUMBER(Integer.class),
+
+    /** Input Mpeg Service Number. */
+    INPUT_MPEG_SERVICE_NUMBER(Integer.class),
+
+    /** Queuing State. */
+    QUEUING_STATE (QueuingState.class),
+
+    /** Encryption Mode. */
+    ENCRYPTION_MODE (EncryptionMode.class),
+
+    /** Analog Device Name. */
+    ANALOG_DEVICE_NAME(String.class),
+
+    /** Macrovision Constrain Image. */
+    MACROVISION_CONSTRAIN_IMAGE(MacrovisionConstrain.class),
+
+    /** External Encryption Mode. */
+    EXTERNAL_ENCRYPTION_MODE(Integer.class),
+
+    /** Service Code. */
+    SERVICE_CODE(Integer.class),
+
+    /** Resource Name. */
+    RESOURCE_NAME(String.class),
+
+    /** Service Handle. */
+    SERVICE_HANDLE(Integer.class),
+
+    /** Availability. */
+    AVAILABILITY(Integer.class),
+
+    /** BSI Command Number. */
+    BSI_COMMAND_NUMBER(Integer.class),
+
+    /** BSI Command time slot in minutes. */
+    BSI_COMMAND_TIME_SLOT (Integer.class),
+
+    /** BSI Operation code. */
+    BSI_OPERATION_CODE(Integer.class),
+
+    /** BSI Command time slot start time. */
+    BSI_COMMAND_TIME_SLOT_BEGIN (Date.class),
+
+    /** BSI Command time slot end time.*/
+    BSI_COMMAND_TIME_SLOT_END (Date.class),
+
+    /** BSI Command total. */
+    BSI_COMMAND_TOTAL(Integer.class),
+
+    /** BSI Commands passed. */
+    BSI_COMMANDS_PASSED(Integer.class),
+
+    /** BSI Commands failed. */
+    BSI_COMMANDS_FAILED(Integer.class),
+
+    /** BSI Command pass average. */
+    BSI_COMMAND_PASS_AVERAGE(Double.class),
+
+    /** BSI Command pass max. */
+    BSI_COMMAND_PASS_MAXIMUM(Double.class),
+
+    /** BSI Command pass minimum. */
+    BSI_COMMAND_PASS_MINIMUM(Double.class),
+
+    /** BSI Command fail average. */
+    BSI_COMMAND_FAIL_AVERAGE(Integer.class),
+
+    /** BSI Command fail max. */
+    BSI_COMMAND_FAIL_MAXIMUM(Integer.class),
+
+    /** BSI Command fail min. */
+    BSI_COMMAND_FAIL_MINIMUM(Integer.class),
+
+    /** Out of band mopdulator Id. **/
+    OM_ID(Integer.class),
+
+    /** alias for OM/IPM/DSG downstream. **/
+    CONTROL_STREAM_DEVICE_ID(Integer.class),
+
+    /** Count of responding terminals. */
+    RESPONDING_COUNT(Integer.class),
+
+    /** Count of non-responding terminals. */
+    NON_RESPONDING_COUNT(Integer.class),
+
+    /*** RADD id. ***/
+    RADD_ID(Integer.class),
+
+    /** BSI Index.         */
+    BSI_INDEX(Integer.class),
+
+    /** Device Index. */
+    DEVICE_ID(Integer.class),
+
+    /** CMTS Index. */
+    CMTS_ID(Integer.class),
+
+    /** Terminal IP Address. */
+    TERMINAL_IP_ADDRESS(String.class),
+
+    /** Terminal IP Address. */
+    UNKNOWN_TERMINAL_IP_ADDRESS(String.class),
+
+    /** Response Status. */
+    RESPONSE_STATUS (ResponseStatus.class),
+
+    /** DSG Stream. */
+    DSG_STREAM(String.class),
+
+    /** Aliased radd device name. */
+    RADD_DEV_NAME(String.class),
+
+    /** Aliased includes OM/IPM/DSG device name. */
+    CONTROL_STREAM_DEVICE_NAME(String.class),
+
+    /** Epoch start. */
+    EPOCH_START(Date.class),
+
+    /**
+     * Epoch End.
+     */
+    EPOCH_END(Date.class),
+
+    /** Failed purchase authorization. */
+    FAILED_PURCHASE_AUTHORIZATION(Integer.class),
+
+    /** Program handle. */
+    PROGRAM_HANDLE(Integer.class),
+
+    /** Purchase source. */
+    PURCHASE_SOURCE(Integer.class),
+
+    /** Poll date. */
+    POLL_DATE(Date.class),
+
+    /** BSI Uploaded. */
+    BSI_UPLOADED(Boolean.class),
+
+    /** Program name. */
+    PROGRAM_NAME(String.class),
+
+    /** Purchase authentication status. */
+    PURCHASE_AUTHENTICATION_STATUS (PurchaseAuthenticationStatus.class),
+
+    /** Number of days. */
+    NUMBER_OF_DAYS(Integer.class),
+
+    /** Start Date and Time. */
+    START_DATE_AND_TIME(Date.class),
+
+    /** Number of success or failure reponses. */
+    RESPONSE_COUNT(Integer.class),
+
+    /** Package start.    */
+    PACKAGE_START(Date.class),
+
+    /** Package end.    */
+    PACKAGE_END(Date.class),
+
+    /** package period.   */
+    PACKAGE_PERIOD(Integer.class),
+
+    /** COMPONENT_TYPE.    */
+    COMPONENT_TYPE(ComponentType.class),
+
+    /** Calculated Field - Software Object Name. */
+    CALCULATED_SOFTWARE_OBJECT_NAME(String.class),
+
+    /** Calculated Field - Software Object Version. */
+    CALCULATED_SOFTWARE_OBJECT_VERSION(String.class),
+
+    /** Calculated Field - Software Object Status. */
+    CALCULATED_SOFTWARE_OBJECT_STATUS(TerminalObjectStatus.class),
+
+    /** code download software object name.     */
+    CODE_DOWNLOAD_SOFTWARE_OBJECT_NAME,
+
+    /** code download software object name.     */
+    CODE_DOWNLOAD_SOFTWARE_OBJECT_VERSION,
+
+    /** code download software object group.    */
+    CODE_DOWNLOAD_SOFTWARE_OBJECT_GROUP,
+
+    /** Last N Days. */
+    LAST_N_DAYS(Integer.class),
+
+    /** Filtered By Code Objects. */
+    FILTERED_BY_CODE_OBJECTS(Boolean.class),
+
+    /** Assigned Code Objects. */
+    ASSIGNED_CODE_OBJECTS(Boolean.class),
+
+    /** Code Object Id. */
+    OBJECT_ID(Integer.class),
+
+    /** service authorization tier. */
+    SERVICE_TIER (Integer.class),
+
+    /** service id. */
+    SERVICE_ID (Integer.class),
+
+    /** Autodiscovery Count. */
+    AUTO_DISCOVERY_COUNT (Integer.class),
+
+    /** NonAutodiscovery Count. */
+    NON_AUTO_DISCOVERY_COUNT (Integer.class),
+
+    /** Program interstitial. */
+    PROGRAM_INTERSTITIAL_PERIOD,
+
+    /** Program ID. */
+    PROGRAM_ID (Integer.class),
+
+    /** Success poll counts. */
+    QUEUE_DEPTH_COUNT(Integer.class),
+
+    /** Control Steam State. */
+    CONTROL_STREAM_STATE(ControlStreamStatusState.class),
+
+    /** Multiplex source ID. */
+    MULTIPLEX_SOURCE_ID (Integer.class),
+
+    /** Multiplex source name. */
+    MULTIPLEX_SOURCE_NAME (String.class),
+
+    /** MPEG Service number. */
+    MPEG_SERVICE_NUMBER (Integer.class),
+
+    /** Filtered By Source. */
+    FILTERED_BY_SOURCE(Boolean.class),
+
+    /** Terminal active or inactive. */
+    TERMINAL_ACTIVE (Boolean.class),
+
+    /** Assignment type. */
+    HIGH_LEVEL_ASSIGNMENT_TYPE(HighLevelAssignmentType.class),
+
+    /** Description.   */
+    DESCRIPTION(String.class),
+
+    /** Object Name.    */
+    OBJECT_NAME,
+
+    /** ADDRESS_TYPE. */
+    ADDRESS_TYPE,
+
+    /** Assignemnt Start Date. */
+    ASSIGNMENT_START_DATE,
+
+    /** Assignment Stop Date. */
+    ASSIGNMENT_STOP_DATE,
+
+    /** Operation type.    */
+    OPERATION_TYPE,
+
+    /*** operation name.   */
+    OPERATION_NAME,
+
+    /** operation status.     */
+    OPERATION_STATUS,
+
+    /** inseration rate.   */
+    INSERTION_RATE,
+
+    /** object version. */
+    OBJECT_VERSION,
+
+    /** Upstream path index. */
+    UPSTREAM_PATH_INDEX(Integer.class),
+
+    /** Calculated Max Response Amplitude. */
+    CALC_MAX_RESPONSE_AMPLITUDE(Integer.class),
+
+    /** Calculated Max Response Amplitude. */
+    CALC_MIN_RESPONSE_AMPLITUDE(Integer.class),
+
+    /** Calculated Avg Response Amplitude. */
+    CALC_AVG_RESPONSE_AMPLITUDE(Double.class),
+
+    /** OBJECT_STATUS. */
+    OBJECT_STATUS,
+
+    /** conditional expression. */
+    CONDITIONAL_EXPRESSION,
+
+    /** destination. */
+    DESTINATION_TYPE,
+
+    /** TYPE_DETAIL. */
+    TYPE_DETAIL(LowLevelAssignmentType.class),
+
+    /** ON_PLANT_COUNT. */
+    ON_PLANT_COUNT,
+
+    /** OFF_PLANT_COUNT. */
+    OFF_PLANT_COUNT,
+
+    /** IP Start Address. */
+    IP_START_ADDRESS,
+
+    /** IP End Address. */
+    IP_END_ADDRESS,
+
+    /** Poll Start. */
+    POLL_START(Date.class),
+
+    /** Poll End. */
+    POLL_END(Date.class),
+
+    /** Poll Name. */
+    POLL_NAME(String.class),
+
+    /** Purchase Date. */
+    PURCHASE_DATE(Date.class),
+
+    /** Purchase Start. */
+    PURCHASE_START(Date.class),
+
+    /** Purchase End. */
+    PURCHASE_END(Date.class),
+
+    /** Number Polled. */
+    NUM_POLLED(Integer.class),
+
+    /** Number responded. */
+    NUM_RESPONDED(Integer.class),
+
+    /** Purchase count. */
+    PURCHASE_COUNT(Integer.class),
+
+    /** Purchase date type. */
+    PURCHASE_DATE_TYPE(PurchaseDateType.class),
+
+    /** Purchase device type. */
+    PURCHASE_DEVICE_TYPE(PurchaseDeviceType.class),
+
+    /** Response Status. */
+    PURCHASE_STATUS(PurchaseStatus.class),
+
+    /** Purchase Status Cleared. */
+    PURCHASE_STATUS_UPLOADED(String.class),
+
+    /** Purchase Status Cleared. */
+    PURCHASE_STATUS_CLEARED(String.class),
+
+    /** Purchase Status Cleared. */
+    PURCHASE_STATUS_NOT_UPLOADED(String.class),
+
+    /** Purchase Status Cleared. */
+    PURCHASE_STATUS_FAILED(String.class),
+
+    /** Service Number. */
+    SERVICE_NUMBER(Integer.class),
+
+    /** Routed. */
+    ROUTED,
+
+    /** Program Start Time. */
+    PROGRAM_START_TIME(Date.class),
+
+    /** Program End Time. */
+    PROGRAM_END_TIME(Date.class),
+
+    /** queue depth by source.     */
+    SERVICE_QUEUE_LAST_STATUS_CHANGE_DATE(Date.class),
+
+    /** queue depth by source. */
+    SERVICE_QUEUE_SEVERITY(Severity.class),
+
+    /** calculated poll response status Success/Fail/Not applicable. */
+    CALCULATED_POLL_RESPONSE_STATUS_RESULT(ResponseStatusResult.class),
+
+    /** Channel Number. */
+    CHANNEL_NUMBER(Integer.class),
+
+    /**
+     * Service / Provider Name.
+     */
+    SERVICE_NAME(String.class);
+
+    /**
+     * Resource used by the field, if any.
+     */
+    private Class dataType;
+
+    /**
+     * Default constructor.
+     */
+    private FieldType()
+    {
+    }
+
+    /**
+     * Constructor to set data type.
+     * @param dataType data type associated with this field.
+     */
+    private FieldType(final Class dataType)
+    {
+        this.dataType = dataType;
+    }
+
+    /**
+     * @return data type associated with this field.
+     */
+    public Class getDataType()
+    {
+        return dataType;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public String getResourceKey()
+    {
+        return ResourceUtility.toResourceKey(this);
+    }
+}

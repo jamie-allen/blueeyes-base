@@ -1,0 +1,6 @@
+package com.ccadllc.firebird.vms.dssrm.routes;
+
+public interface MulticastInputStreamManager
+{
+
+}

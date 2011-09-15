@@ -1,0 +1,663 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dac.synchronization.impl;
+
+import static com.ccadllc.commons.util.Option.none;
+import static com.ccadllc.commons.util.Option.some;
+import static com.ccadllc.firebird.vms.common.digicipher.topology.Constants.NETWORK_STREAM_INPUT_PID_PROPERTY_KEY;
+import static com.ccadllc.firebird.vms.common.digicipher.topology.Constants.STREAM_TYPES_CONTROL;
+import static com.ccadllc.firebird.vms.common.digicipher.topology.Constants.STREAM_TYPES_NETWORK;
+import static com.ccadllc.firebird.vms.dac.domain.DacManagedPredicates.hasDacManagedId;
+import static com.ccadllc.firebird.vms.dac.synchronization.SynchronizationService.DAC_BANDWIDTH_ALLOCATION_PERCENTAGE_PROPERTY;
+import static com.ccadllc.firebird.vms.dac.synchronization.SynchronizationService.DSS_RADD_ID_PROPERTY;
+import static com.ccadllc.firebird.vms.dac.synchronization.impl.SynchronizationPredicates.extractBandwidth;
+import static com.ccadllc.firebird.vms.dac.synchronization.impl.SynchronizationPredicates.hasRemoteDss;
+import static com.ccadllc.firebird.vms.dac.synchronization.impl.SynchronizationPredicates.minimum;
+import static com.ccadllc.firebird.vms.topology.core.TopologyPredicates.isType;
+import static com.ccadllc.firebird.vms.topology.core.TopologyPredicates.isTypeId;
+import static com.google.common.collect.Iterables.toArray;
+import static org.apache.commons.lang.StringUtils.join;
+
+import java.util.Collection;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
+import com.ccadllc.commons.net.UnresolvedInetAddress;
+import com.ccadllc.commons.security.SecurityUtils;
+import com.ccadllc.commons.util.FunctionalIterable;
+import com.ccadllc.commons.util.FunctionalIterables;
+import com.ccadllc.commons.util.MapUtility;
+import com.ccadllc.commons.util.Option;
+import com.ccadllc.commons.util.Procedure;
+import com.ccadllc.commons.util.concurrent.Callback;
+import com.ccadllc.firebird.core.event.base.EventLogger;
+import com.ccadllc.firebird.dss.client.topology.Dss;
+import com.ccadllc.firebird.vms.common.units.TrafficShapingProfile;
+import com.ccadllc.firebird.vms.dac.cdis.CdisException;
+import com.ccadllc.firebird.vms.dac.cdis.DssMode;
+import com.ccadllc.firebird.vms.dac.cdis.OmDescription;
+import com.ccadllc.firebird.vms.dac.cdis.OmReference;
+import com.ccadllc.firebird.vms.dac.cdis.RaddDescription;
+import com.ccadllc.firebird.vms.dac.cdis.RaddReference;
+import com.ccadllc.firebird.vms.dac.domain.Dac;
+import com.ccadllc.firebird.vms.dac.domain.Om;
+import com.ccadllc.firebird.vms.dac.domain.Om.Builder;
+import com.ccadllc.firebird.vms.dac.events.ControlStreamEventType;
+import com.ccadllc.firebird.vms.dac.events.NetworkStreamEventType;
+import com.ccadllc.firebird.vms.dac.events.OmEventType;
+import com.ccadllc.firebird.vms.dac.synchronization.RaddifyCapabilityStatus;
+import com.ccadllc.firebird.vms.dac.synchronization.SynchronizationException;
+import com.ccadllc.firebird.vms.dac.synchronization.RaddifyCapabilityStatus.RaddifyActionType;
+import com.ccadllc.firebird.vms.dac.synchronization.RaddifyCapabilityStatus.RaddifyIncapabilityDeterminant;
+import com.ccadllc.firebird.vms.dac.webservice.DacWebService;
+import com.ccadllc.firebird.vms.topology.core.Device;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStreamType;
+import com.ccadllc.firebird.vms.topology.core.PacketizedElementaryStreamDescription;
+import com.ccadllc.firebird.vms.topology.core.ServingLocationQName;
+import com.ccadllc.firebird.vms.topology.core.StreamTypeCatalog;
+import com.ccadllc.firebird.vms.topology.core.TopologyModel;
+import com.ccadllc.firebird.vms.topology.core.TransportStream;
+import com.ccadllc.firebird.vms.topology.core.TransportStreamDescription;
+import com.ccadllc.firebird.vms.topology.core.TransportStreamType;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableTopologyModel;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableTopologyModelPurpose;
+import com.ccadllc.firebird.vms.topology.simpledevices.SynchronizationConfigProcessor;
+import com.ccadllc.firebird.vms.topology.simpledevices.SynchronizationStatus;
+import com.ccadllc.firebird.vms.topology.spi.Constants;
+
+import net.jcip.annotations.Immutable;
+
+import org.apache.commons.lang.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
+
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
+
+public final class DssRaddSynchronization
+{
+    private static final int INITIAL_MAX_LATENCY_IN_SECONDS = 10;
+    private static final int MAX_BURSTS_SECOND = 50;
+    private static final int BYTES_PER_KILOBIT = 128;
+
+    private final Logger logger = LoggerFactory.getLogger(DssRaddSynchronization.class);
+    private final DacWebService dacWebService;
+    private final SynchronizationConfigProcessor<Om> omConfigurationProcessor;
+    private final int omPrimaryInterfacePort;
+
+    public DssRaddSynchronization(final DacWebService dacWebService, @Qualifier("omSynchronizationConfigProcessor") final SynchronizationConfigProcessor<Om> omConfigurationProcessor, final int omPrimaryInterfacePort)
+    {
+        this.dacWebService = dacWebService;
+        this.omConfigurationProcessor = omConfigurationProcessor;
+        this.omPrimaryInterfacePort = omPrimaryInterfacePort;
+    }
+
+    public void raddify(final ServingLocationQName dssLocation, final MutableTopologyModel model)
+    {
+        logger.debug("Raddifying serving location {}.", dssLocation);
+        final Option<Dss> dssOption = model.getElementsAt(dssLocation).narrow(Dss.class).find(hasRemoteDss());
+        if (dssOption.isEmpty())
+        {
+            throw new IllegalArgumentException("No remote DSS was found at location " + dssLocation.getQualifiedName() + ".");
+        }
+        final Dss dss = dssOption.get();
+        final RaddifyCapabilityStatus raddifyCapabilityStatus = getRaddifyCapabilityStatus(dss.getId(), model);
+        if (raddifyCapabilityStatus.getValidAction().equals(RaddifyActionType.NONE))
+        {
+            throw new IllegalArgumentException(raddifyCapabilityStatus.getDeterminant().getHumanized());
+        }
+        final Dac dac = raddifyCapabilityStatus.getDac();
+        final RaddDescription raddDescription = raddifyCapabilityStatus.getRadd();
+        final FunctionalIterable<OmDescription> allOmDescriptions = getOmDescriptionsFromDac(dac, raddDescription);
+        if (allOmDescriptions.isEmpty())
+        {
+            throw new IllegalArgumentException(String.format("RADD [%s] has no OMs.", raddDescription.getName()));
+        }
+
+        addTransportControlStream(dss, raddDescription, allOmDescriptions, model);
+        for (final OmDescription omDescription : allOmDescriptions)
+        {
+            addOm(omDescription, dac, dss, model);
+        }
+
+        final Dss mutableDss = (Dss) model.checkout(dss);
+        mutableDss.addProperty(DSS_RADD_ID_PROPERTY, Long.toString(raddDescription.getId()));
+        mutableDss.addProperty(Constants.BELONGS_TO, dac.getId().toString());
+
+        // Dac manages DSS
+        logger.info("DSS {} is now operating in Combined DSS/RADD mode (pending notification to RADD to enable DSS mode).", dss.getName());
+    }
+
+    public void synchronize(final Dss dss, final MutableTopologyModel model)
+    {
+        logger.debug("Synchronizing DSS {}.", dss.getName());
+        doSynchronization(dss.getLocation(), model, new Callback<SynchElements>()
+        {
+            @Override
+            public void completed(final SynchElements synchElements)
+            {
+                final RaddDescription radd = synchElements.getRadd();
+                final Dac dac = synchElements.getDac();
+                final Dss dss = synchElements.getDss();
+                final Set<Long> updatedOmIds = Sets.newHashSet();
+                getOmDescriptionsFromDac(dac, radd).foreach(new Procedure<OmDescription>()
+                {
+                    @Override
+                    public void apply(final OmDescription omDescription)
+                    {
+                        final Option<Om> matchingOm = model.getElementsBelow(dss.getLocation()).narrow(Om.class).find(hasDacManagedId(dac.getId(), omDescription.getId()));
+                        if (matchingOm.isEmpty())
+                        {
+                            // Add new OM
+                            addOm(omDescription, dac, dss, model);
+                        }
+                        else
+                        {
+                            refreshOm(matchingOm.get(), omDescription, model);
+                        }
+                        updatedOmIds.add(omDescription.getId());
+                    }
+                });
+
+                // Remove non-existent OMs
+                model.getElementsBelow(dss.getLocation()).narrow(Om.class).foreach(new Procedure<Om>()
+                {
+                    @Override
+                    public void apply(final Om om)
+                    {
+                        if (!updatedOmIds.contains(om.getDacManagedId()))
+                        {
+                            removeOm(om, model);
+                        }
+                    }
+                });
+            }
+
+            @Override
+            public void failed(final Throwable t)
+            {
+                logger.error("DSS synchronization failed.", t);
+            }
+        });
+    }
+
+    public void synchronize(final Om om, final MutableTopologyModel model)
+    {
+        logger.debug("Synchronizing OM {}.", om.getName());
+        final Option<Dss> dssDevice = model.getElementsAbove(om.getLocation()).narrow(Dss.class).findOnly(hasRemoteDss());
+        if (dssDevice.isDefined())
+        {
+            doSynchronization(dssDevice.get().getLocation(), model, new Callback<SynchElements>()
+            {
+                @Override
+                public void completed(final SynchElements synchElements)
+                {
+                    final OmDescription omDescription = getOmDescription(synchElements.getDac(), OmReference.create(synchElements.getDac().getId(), om.getDacManagedId()));
+                    if (omDescription == null)
+                    {
+                        logger.info("OM {} no longer exists per the DAC; removing OM and OM Network Stream.", om);
+                        removeOm(om, model);
+                    }
+                    else
+                    {
+                        refreshOm(om, omDescription, model);
+                    }
+                }
+
+                @Override
+                public void failed(final Throwable t)
+                {
+                    logger.error("OM synchronization failed.", t);
+                    throw new IllegalArgumentException(t);
+                }
+            });
+        }
+    }
+
+    public SynchronizationStatus getOmSynchronizationStatus(final Om om)
+    {
+        return omConfigurationProcessor.getStatus(om);
+    }
+
+    private void refreshOm(final Om om, final OmDescription omDescription, final MutableTopologyModel model)
+    {
+        logger.trace("Refreshing OM {}.", om.getName());
+        if (!om.getManagedAddress().equals(omDescription.getAddress()))
+        {
+            omConfigurationProcessor.evict(om);
+            updateFromDac(om, model);
+            final Om omCopy = (Om) om.thawedCopy();
+            omCopy.setManagedAddress(omDescription.getAddress());
+            omConfigurationProcessor.cache(omCopy, model.getPurpose() == MutableTopologyModelPurpose.SPECULATIVE ? some(model) : none(MutableTopologyModel.class), model.getPurpose() != MutableTopologyModelPurpose.SPECULATIVE);
+        }
+        else
+        {
+            omConfigurationProcessor.refresh(om, model.getPurpose() == MutableTopologyModelPurpose.SPECULATIVE ? some(model) : none(MutableTopologyModel.class));
+        }
+    }
+
+    public void unraddify(final ServingLocationQName dssLocation, final MutableTopologyModel model)
+    {
+        logger.debug("Unraddifying serving location {}.", dssLocation);
+        final Option<Dss> dssOption = model.getElementsAt(dssLocation).narrow(Dss.class).find(hasRemoteDss());
+        if (dssOption.isDefined())
+        {
+            final Dss dss = dssOption.get();
+            final Dss mutableDss = (Dss) model.checkout(dss);
+            mutableDss.removeProperty(DSS_RADD_ID_PROPERTY);
+        }
+
+        final FunctionalIterable<Om> omDevicesBelowDss = model.getElementsBelow(dssLocation).narrow(Om.class);
+        for (final Device om : omDevicesBelowDss)
+        {
+            removeOm(om, model);
+        }
+        removeControlStream(dssLocation, model);
+
+        logger.info("DSS at location {} is no longer operating in Combined DSS/RADD mode (pending notification to RADD to disable DSS mode).", dssLocation);
+
+    }
+
+    public RaddifyCapabilityStatus getRaddifyCapabilityStatus(final UUID dssId, final TopologyModel model)
+    {
+        final Option<Dss> dssDevice = model.getElementById(dssId).narrow(Dss.class).find(SynchronizationPredicates.hasRemoteDss());
+        if (dssDevice.isEmpty())
+        {
+            return RaddifyCapabilityStatus.none(RaddifyIncapabilityDeterminant.NO_REMOTE_DSS);
+        }
+        final Dss dss = dssDevice.get();
+        if (dss.getProperties().containsKey(DSS_RADD_ID_PROPERTY))
+        {
+            return RaddifyCapabilityStatus.unraddify();
+        }
+        final Option<Dac> dacDevice = model.getElementsAbove(dss.getLocation()).narrow(Dac.class).only();
+        if (dacDevice.isEmpty())
+        {
+            return RaddifyCapabilityStatus.none(RaddifyIncapabilityDeterminant.NO_DAC_IN_SCOPE);
+        }
+        final Dac dac = dacDevice.get();
+        if (!isCompatibleDacVersion(dac))
+        {
+            return RaddifyCapabilityStatus.none(RaddifyIncapabilityDeterminant.DAC_VERSION_INCOMPATIBLE);
+        }
+        final RaddDescription raddDescription = getRaddDescriptionFromDac(dac, dss.getAddress());
+        if (raddDescription == null)
+        {
+            return RaddifyCapabilityStatus.none(RaddifyIncapabilityDeterminant.NO_MATCHING_RADD);
+        }
+        if (raddDescription.isDsgType())
+        {
+            return RaddifyCapabilityStatus.none(RaddifyIncapabilityDeterminant.DSG_RADD);
+        }
+        if (raddDescription.getDssMode().equals(DssMode.VERSION_INCOMPATIBLE))
+        {
+            return RaddifyCapabilityStatus.none(RaddifyIncapabilityDeterminant.RADD_VERSION_INCOMPATIBLE);
+        }
+
+        return RaddifyCapabilityStatus.raddify(dac, dss, raddDescription);
+    }
+
+    private void doSynchronization(final ServingLocationQName dssLocation, final MutableTopologyModel model, final Callback<SynchElements> synchronizationCallback)
+    {
+        final Option<Dac> dacOption = model.getElementsAbove(dssLocation).narrow(Dac.class).headOption();
+        final Option<Dss> dssOption = model.getElementsAt(dssLocation).narrow(Dss.class).headOption();
+        if (dacOption.isDefined() && dssOption.isDefined() && dssOption.get().getProperties().containsKey(DSS_RADD_ID_PROPERTY))
+        {
+            final Dac dac = dacOption.get();
+            final Dss dss = dssOption.get();
+            final RaddDescription raddDescription = getRaddDescriptionFromDac(dac, dss.getAddress());
+            if (raddDescription == null || raddDescription.isDsgType())
+            {
+                logger.info("No compatible RADD exists at DSS location. Unraddifying DSS [{}].", dss);
+                unraddify(dss.getLocation(), model);
+            }
+            else
+            {
+                synchronizationCallback.completed(new SynchElements(dac, dss, raddDescription));
+            }
+        }
+        else
+        {
+            if (dssOption.isDefined() && !dssOption.get().getProperties().containsKey(DSS_RADD_ID_PROPERTY))
+            {
+                logger.trace("Skipping sync of DSS {} because it is not CSS enabled.", dssOption.get().getName());
+            }
+        }
+    }
+
+    private void addTransportControlStream(final Dss dss, final RaddDescription raddDescription, final FunctionalIterable<OmDescription> omDescriptions, final MutableTopologyModel model)
+    {
+        final int minimumOmBandwithKbps = omDescriptions.map(extractBandwidth()).reduceLeft(minimum()).intValue();
+        final int minimumOmBandwithBps = minimumOmBandwithKbps * BYTES_PER_KILOBIT;
+        final int initialTransportStreamBandwidthBps = minimumOmBandwithBps - AbstractDacCommunication.NETWORK_STREAM_MAX_AVE_RATE_IN_BYTES;
+        final int maxAverageBurstRate = (int)Math.ceil((double) initialTransportStreamBandwidthBps / MAX_BURSTS_SECOND);
+        final TrafficShapingProfile trafficShapingProfile = new TrafficShapingProfile(initialTransportStreamBandwidthBps, maxAverageBurstRate, INITIAL_MAX_LATENCY_IN_SECONDS);
+
+        final Map<String, String> controlStreamProperties = MapUtility.toMap(DAC_BANDWIDTH_ALLOCATION_PERCENTAGE_PROPERTY, Integer.toString(100),
+                                                                             Constants.BELONGS_TO, dss.getId().toString());
+        final StreamTypeCatalog streamTypeCatalog = model.getStreamTypeCatalog();
+        final TransportStreamType dc2TransportStreamType = streamTypeCatalog.getStreamTypeById(STREAM_TYPES_CONTROL).narrow(TransportStreamType.class).get();
+        final UUID transportControlStreamId = dss.getProperties().containsKey("transportControlStreamId") ? UUID.fromString(dss.getProperties().remove("transportControlStreamId")) : UUID.randomUUID();
+        final TransportStreamDescription transportControlStreamDescription = TransportStreamDescription.builder().fromType(dc2TransportStreamType)
+            .id(transportControlStreamId)
+            .name(String.format("Unnamed %s", transportControlStreamId))
+            .location(dss.getLocation())
+            .trafficShapingProfile(trafficShapingProfile)
+            .properties(controlStreamProperties)
+            .build();
+
+        logger.trace("Adding DCII transport control stream to DSS location: {}", transportControlStreamDescription);
+        model.addStream(transportControlStreamDescription);
+
+        if (model.getPurpose() == MutableTopologyModelPurpose.COMMIT_CHANGES)
+        {
+            EventLogger.log(ControlStreamEventType.CONTROL_STREAM_ADDED, transportControlStreamDescription.getName(), SecurityUtils.getCurrentUsernameHumanized());
+        }
+    }
+
+    private void removeOm(final Device om, final MutableTopologyModel model)
+    {
+        logger.trace("Removing OM {}.", om.getName());
+        model.deleteDevice(om.getId());
+        if (model.getPurpose() == MutableTopologyModelPurpose.COMMIT_CHANGES)
+        {
+            EventLogger.log(OmEventType.OM_DELETED, om.getName(), SecurityUtils.getCurrentUsernameHumanized());
+        }
+    }
+
+    private void removeControlStream(final ServingLocationQName location, final MutableTopologyModel model)
+    {
+        final Option<TransportStream> controlStream = model.getElementsAt(location).narrow(TransportStream.class).findOnly(isTypeId(STREAM_TYPES_CONTROL));
+        if (controlStream.isDefined())
+        {
+            logger.trace("Removing control stream {}.", controlStream.get().getName());
+            model.deleteStream(controlStream.get().getId());
+            if (model.getPurpose() == MutableTopologyModelPurpose.COMMIT_CHANGES)
+            {
+                EventLogger.log(ControlStreamEventType.CONTROL_STREAM_DELETED, controlStream.get().getName(), SecurityUtils.getCurrentUsernameHumanized());
+            }
+        }
+    }
+
+    private Builder createOm(final OmDescription omDescription, final ServingLocationQName servingLocation, final Dac dac)
+    {
+        return Om.builder(omDescription.getName(), omDescription.getAddress(), dac.getId(), omDescription.getId()).location(servingLocation)
+                 .managedPort(omPrimaryInterfacePort)
+                 .dacName(dac.getName());
+    }
+
+    private void addOm(final OmDescription omDescription, final Dac dac, final Dss dss, final MutableTopologyModel model)
+    {
+        final ServingLocationQName newOmServingLocation = getNextServingLocationBelow(dss.getLocation(), 1, model);
+        logger.trace("Adding serving location to model: {}.", newOmServingLocation);
+        model.addServingLocation(newOmServingLocation);
+
+        final Builder builder = createOm(omDescription, newOmServingLocation, dac);
+        builder.properties(MapUtility.<String, String>toMap(Constants.BELONGS_TO, dss.getId().toString()));
+        final Om om = builder.build();
+
+        logger.trace("Adding OM to model: {}.", om);
+        model.addDevice(om);
+        if (model.getPurpose() == MutableTopologyModelPurpose.COMMIT_CHANGES)
+        {
+            EventLogger.log(OmEventType.OM_ADDED, om.getName(), SecurityUtils.getCurrentUsernameHumanized());
+        }
+
+        final ElementaryStreamType networkStreamType = model.getStreamTypeCatalog().getStreamTypeById(STREAM_TYPES_NETWORK).narrow(ElementaryStreamType.class).get();
+        final Map<String, String> networkPidProperty = MapUtility.toMap(NETWORK_STREAM_INPUT_PID_PROPERTY_KEY, Long.toString(omDescription.getNetworkPid()),
+                                                                        Constants.BELONGS_TO, dss.getId().toString());
+
+        final String networkStreamIdProp = dss.getProperties().remove(String.format("networkStreamId-%s", om.getName()));
+        final UUID networkStreamId = networkStreamIdProp != null ? UUID.fromString(networkStreamIdProp) : UUID.randomUUID();
+        final PacketizedElementaryStreamDescription packetizedElementaryStreamDescription = PacketizedElementaryStreamDescription
+                                                                                                .builder().fromType(networkStreamType)
+                                                                                                .id(networkStreamId)
+                                                                                                .name(String.format("Unnamed %s", networkStreamId))
+                                                                                                .location(newOmServingLocation)
+                                                                                                .properties(networkPidProperty)
+                                                                                                .build();
+        logger.trace("Adding elementary network stream to model: {}.", packetizedElementaryStreamDescription);
+        model.addStream(packetizedElementaryStreamDescription);
+        if (model.getPurpose() == MutableTopologyModelPurpose.COMMIT_CHANGES)
+        {
+            EventLogger.log(NetworkStreamEventType.NETWORK_STREAM_ADDED, packetizedElementaryStreamDescription.getName(), SecurityUtils.getCurrentUsernameHumanized());
+        }
+
+        omConfigurationProcessor.cache(om, model.getPurpose() == MutableTopologyModelPurpose.SPECULATIVE ? some(model) : none(MutableTopologyModel.class), model.getPurpose() != MutableTopologyModelPurpose.SPECULATIVE);
+    }
+
+    private void updateFromDac(final Om om, final MutableTopologyModel model)
+    {
+        model.getElementById(om.getId()).narrow(Om.class).foreach(new Procedure<Om>()
+        {
+            @Override
+            public void apply(final Om omDevice)
+            {
+                final Om mutableOm = (Om) model.checkout(omDevice);
+                model.getElementById(mutableOm.getDacId()).narrow(Dac.class).foreach(new Procedure<Dac>()
+                {
+                    public void apply(final Dac dac)
+                    {
+                        final OmDescription omDescription = dacWebService.getOmDescription(dac, OmReference.create(dac.getId(), mutableOm.getDacManagedId()));
+                        if (omDescription != null)
+                        {
+                            updateFromDescription(mutableOm, omDescription);
+                            updateNetworkStream(omDescription, mutableOm.getLocation(), model);
+                            logger.info("OM {} has been updated with the latest data that the DAC has for the OM.", mutableOm);
+                        }
+                        else
+                        {
+                            throw new IllegalArgumentException(String.format("OM %s does not exist per the DAC.", mutableOm));
+                        }
+                    }
+                });
+
+            }
+        });
+    }
+
+    /**
+     * Updates the network stream in the model at the location of the OM.
+     *
+     * @param omDescription om description
+     * @param location location of the network stream to update
+     * @param model model
+     */
+    private void updateNetworkStream(final OmDescription omDescription, final ServingLocationQName location, final MutableTopologyModel model)
+    {
+        final ElementaryStreamType networkStreamType = model.getStreamTypeCatalog().getStreamTypeById(STREAM_TYPES_NETWORK).narrow(ElementaryStreamType.class).get();
+        final Option<ElementaryStream> networkStream = model.getElementsAt(location).narrow(ElementaryStream.class).findOnly(isType(networkStreamType));
+        final MutableElementaryStream mutableNetworkStream = model.checkout(networkStream.get());
+        mutableNetworkStream.addProperty(NETWORK_STREAM_INPUT_PID_PROPERTY_KEY, Long.toString(omDescription.getNetworkPid()));
+        logger.trace("Network stream {} property value updated: {}={}.", new Object[] {NETWORK_STREAM_INPUT_PID_PROPERTY_KEY, mutableNetworkStream.getProperties().get(NETWORK_STREAM_INPUT_PID_PROPERTY_KEY) });
+    }
+
+    /**
+     * Updates the OM with relevant fields from <b>omDescription</b>.
+     *
+     * @param om om
+     * @param omDescription om description
+     * @param model model
+     */
+    private void updateFromDescription(final Om om, final OmDescription omDescription)
+    {
+        if (omDescription != null)
+        {
+            om.setName(omDescription.getName());
+            if (!om.getManagedAddress().equals(omDescription.getAddress()))
+            {
+                om.setManagedAddress(omDescription.getAddress());
+            }
+        }
+    }
+
+
+    /**
+     * Gets a description of a RADD with a given address from the DAC.
+     * @param dac dac
+     * @param address address of the dss/radd
+     *
+     * @return radd description; non-null
+     * @throws IllegalArgumentException if no radd was found with the given address
+     * @throws SynchronizationException if a communication error occurred
+     */
+    private RaddDescription getRaddDescriptionFromDac(final Dac dac, final UnresolvedInetAddress address)
+    {
+        logger.trace("Getting radd description from dac that matches address {} ", address);
+        for (final RaddReference raddReference : getAllRaddReferences(dac))
+        {
+            final RaddDescription raddDescription = getRaddDescription(dac, raddReference);
+            logger.trace("Does radd description {} have address? --> {}", raddDescription, raddDescription != null && raddDescription.getAddress().equals(address));
+
+            if (raddDescription != null && raddDescription.getAddress().equals(address))
+            {
+                return raddDescription;
+            }
+        }
+        return null;
+    }
+
+    private FunctionalIterable<OmDescription> getOmDescriptionsFromDac(final Dac dac, final RaddDescription raddDescription)
+    {
+        final Collection<OmDescription> omDescriptions = Lists.newArrayList();
+        getAllOmReferences(dac).foreach(new Procedure<OmReference>()
+        {
+            @Override
+            public void apply(final OmReference omReference)
+            {
+                final OmDescription omDescription = getOmDescription(dac, omReference);
+                if (omDescription != null && omDescription.getRaddId() == raddDescription.getId())
+                {
+                    omDescriptions.add(omDescription);
+                }
+            }
+        });
+        return FunctionalIterables.of(omDescriptions);
+    }
+
+    private FunctionalIterable<RaddReference> getAllRaddReferences(final Dac dac)
+    {
+        try
+        {
+            final Iterable<RaddReference> allRaddReferences = dacWebService.getAllRaddReferences(dac);
+            if (logger.isTraceEnabled())
+            {
+                logger.trace("Retrieved all RADD references from DAC: " + join(toArray(allRaddReferences, RaddReference.class), ","));
+            }
+            return FunctionalIterables.of(allRaddReferences);
+        }
+        catch (final CdisException e)
+        {
+            throw new SynchronizationException(String.format("Unable to retrieve RADDs from DAC %s.", dac.getName()), e);
+        }
+    }
+
+    private RaddDescription getRaddDescription(final Dac dac, final RaddReference raddReference)
+    {
+        try
+        {
+            final RaddDescription raddDescription = dacWebService.getRaddDescription(dac, raddReference);
+            logger.trace("Retrieved RADD description: {}.", raddDescription);
+            return raddDescription;
+        }
+        catch (final CdisException e)
+        {
+            throw new SynchronizationException(String.format("Unable to retrieve RADD [%s] from DAC %s.", raddReference.getLink(), dac.getName()), e);
+        }
+    }
+
+    private FunctionalIterable<OmReference> getAllOmReferences(final Dac dac)
+    {
+        try
+        {
+            final FunctionalIterable<OmReference> allOmReferences = dacWebService.getAllOmReferences(dac);
+            if (logger.isTraceEnabled())
+            {
+                logger.trace("Retrieved all OM references from DAC: " + join(toArray(allOmReferences, OmReference.class), ","));
+            }
+            return allOmReferences;
+        }
+        catch (final CdisException e)
+        {
+            throw new SynchronizationException(String.format("Unable to retrieve OMs from DAC %s.", dac.getName()), e);
+        }
+    }
+
+    private OmDescription getOmDescription(final Dac dac, final OmReference omReference)
+    {
+        try
+        {
+            final OmDescription omDescription = dacWebService.getOmDescription(dac, omReference);
+            logger.trace("Retrieved OM description: {}.", omDescription);
+            return omDescription;
+        }
+        catch (final CdisException e)
+        {
+            throw new SynchronizationException(String.format("Unable to retrieve OM [%s] from DAC %s.", omReference.getLink(), dac.getName()), e);
+        }
+    }
+
+    private static ServingLocationQName getNextServingLocationBelow(final ServingLocationQName parent, final int number, final MutableTopologyModel model)
+    {
+        final ServingLocationQName newLocation = ServingLocationQName.newAbsolute(parent, String.format("Unnamed %d", number));
+        if (model.getServingLocation(newLocation).isEmpty())
+        {
+            return newLocation;
+        }
+        return getNextServingLocationBelow(parent, number + 1, model);
+    }
+
+    private static boolean isCompatibleDacVersion(final Dac dac)
+    {
+        final String softwareVersion = dac.getSoftwareVersion();
+        if (StringUtils.isEmpty(softwareVersion))
+        {
+            return false;
+        }
+
+        final int underscoreIndex = softwareVersion.indexOf("_");
+        final int dotIndex = softwareVersion.indexOf(".");
+        final int nextDotIndex = softwareVersion.indexOf(".", dotIndex + 1);
+
+        if (underscoreIndex < 0 || dotIndex < 0)
+        {
+            return false;
+        }
+
+        final int delim = nextDotIndex > -1 && nextDotIndex < underscoreIndex ? nextDotIndex : underscoreIndex;
+        return Double.parseDouble(softwareVersion.substring(1, delim)) > 4.1;
+    }
+
+    @Immutable
+    private final class SynchElements
+    {
+        private final Dac dac;
+        private final Dss dss;
+        private final RaddDescription radd;
+
+        public SynchElements(final Dac dac, final Dss dss, final RaddDescription raddDescription)
+        {
+            this.dac = dac;
+            this.dss = dss;
+            radd = raddDescription;
+        }
+
+        public Dac getDac()
+        {
+            return dac;
+        }
+
+        public Dss getDss()
+        {
+            return dss;
+        }
+
+        public RaddDescription getRadd()
+        {
+            return radd;
+        }
+    }
+}

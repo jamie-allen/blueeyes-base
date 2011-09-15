@@ -1,0 +1,130 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.stream.manager.impl;
+
+import java.util.Map;
+
+import com.ccadllc.firebird.dss.server.common.PacketFilterChainController;
+import com.ccadllc.firebird.dss.server.common.StreamSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.transport.manager.TransportManager;
+import com.ccadllc.firebird.vms.common.packetfiltering.AbstractPacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.CompositePacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.ManagedPacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilterFactory;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Maps;
+
+/**
+ * Filter chain controller for IP Direct streams.
+ */
+public class IpDirectChainController extends AbstractPacketFilter implements PacketFilterChainController<StreamSnapshot>
+{
+
+    private static PacketFilterFactory factory;
+    private final CompositePacketFilter chain;
+    private final ManagedPacketFilter shaperChain;
+    private final TransportSender transportSender;
+    private final StreamSnapshot stream;
+    private volatile boolean disposed;
+
+    private final Logger logger = LoggerFactory.getLogger(IpDirectChainController.class);
+
+    public IpDirectChainController(
+            final TransportManager transportManager,
+            final StreamSnapshot stream,
+            final PacketFilterFactory factory)
+    {
+        final TransportSender transportSender = new TransportSender(transportManager, stream);
+        final ManagedPacketFilter shaperChain = createShaperChain(transportSender, stream, factory);
+
+        chain = new CompositePacketFilter(ImmutableList.of(shaperChain, transportSender));
+        IpDirectChainController.factory = factory;
+        this.shaperChain = shaperChain;
+        this.transportSender = transportSender;
+        this.stream = stream;
+    }
+
+    /**
+     * <p>
+     * Create a chain of packet filters to perform the statistics gathering, traffic shaping and sending.
+     * </p>
+     *
+     * @param sink through which to pass the insert
+     * @param stream for which the filter chain is being created
+     * @param factory which will be used to create the filter chain
+     * @return a ManagedPacketFilter instance that will start the process of sending the data
+     */
+    private ManagedPacketFilter createShaperChain(final PacketFilter sink, final StreamSnapshot stream, final PacketFilterFactory factory)
+    {
+        // Creation of shaper chain inside a stream handler...
+        return factory.newPolicingShaper(getManagementProperties(stream), stream.getMaxAverageRate(),
+            stream.getMaxBurstSize(), stream.getMaxShapingLatency(), sink);
+    }
+
+    private Map<String, String> getManagementProperties(final StreamSnapshot stream)
+    {
+        final Map<String, String> managementProperties = Maps.newLinkedHashMap();
+        managementProperties.put("type", "Streams");
+        managementProperties.put("id", Long.toString(stream.getId()));
+        managementProperties.put("datatype", "Shaper");
+        return managementProperties;
+    }
+
+    @Override
+    public boolean insert(final byte[] packet)
+    {
+        ensureNotDisposed();
+        if (stream.getMaxBurstSize() < packet.length)
+        {
+            logger.error("IP Direct data packet size of {} exceeds maxumum burst size of {}", packet.length, stream.getMaxBurstSize());
+        }
+        return chain.insert(packet);
+    }
+
+    @Override
+    public void dispose()
+    {
+        chain.dispose();
+        disposed = true;
+    }
+
+    @Override
+    public void describeTo(final StringBuilder builder, final boolean detailed)
+    {
+        super.describeTo(builder, detailed);
+        chain.describeTo(builder, detailed);
+    }
+
+    /**
+     * Update the relevant filter chain components when a stream is updated.
+     *
+     * @param stream from which the updated values are retrieved
+     */
+    public void update(final StreamSnapshot stream)
+    {
+        ensureNotDisposed();
+        // Update the packet shaping chain through the factory.
+        factory.updatePolicingShaper(shaperChain, stream.getMaxAverageRate(), stream.getMaxBurstSize(), stream.getMaxShapingLatency());
+
+        // Update the destinations.
+        transportSender.setDestinations(stream.getDestinations());
+    }
+
+    @Override
+    public String toString(final boolean detailed)
+    {
+        return chain.toString(true);
+    }
+
+    private void ensureNotDisposed()
+    {
+        if (disposed)
+        {
+            throw new IllegalStateException("Object has been disposed.");
+        }
+    }
+}

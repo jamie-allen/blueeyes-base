@@ -1,0 +1,588 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteNotificationHelper.JMX_ROUTE_NOTIFICATION_MANAGER;
+import static com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager.SNAPSHOT_MANAGER_REFRESH_EVENT;
+import static com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_ESTABLISH_EVENT;
+import static com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_REMOVE_EVENT;
+import static com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_UPDATE_EVENT;
+
+import java.io.IOException;
+import java.util.Collection;
+import java.util.List;
+import java.util.Set;
+import java.util.SortedSet;
+import java.util.concurrent.ConcurrentMap;
+
+import javax.annotation.PreDestroy;
+
+import com.ccadllc.firebird.dss.common.datatypes.RouteDataType;
+import com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType;
+import com.ccadllc.firebird.dss.server.common.DefaultRouteSnapshot;
+import com.ccadllc.firebird.dss.server.common.OsgiEventPropertyKeys;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.common.StreamSnapshot;
+import com.ccadllc.firebird.dss.server.configuration.stream.domain.Stream;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.management.JmxRouteNotificationManager;
+import com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+
+import net.jcip.annotations.GuardedBy;
+import net.jcip.annotations.ThreadSafe;
+
+import org.osgi.service.event.Event;
+import org.osgi.service.event.EventHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Sets;
+
+/**
+ * Default implementation of a <code>ExternalRouteManager</code> responsible for handling snapshot manager events.
+ */
+@ThreadSafe
+public final class ExternalRouteManager implements EventHandler, RouteCache
+{
+    public static final String[] EVENT_TOPICS = new String[] {SNAPSHOT_MANAGER_REFRESH_EVENT, UDP_ROUTE_SNAPSHOT_ESTABLISH_EVENT,
+        UDP_ROUTE_SNAPSHOT_UPDATE_EVENT, UDP_ROUTE_SNAPSHOT_REMOVE_EVENT, Stream.STREAM_UPDATED_EVENT, Stream.STREAM_DELETED_EVENT};
+
+    private static final String REALTIME_SNAPSHOT_MANAGER_PARAMETER = "realtimeSnapshotManager";
+    private static final String STREAM_MANAGER_PARAMETER = "streamManager";
+    private static final int LEGAL_PORT_MIN_RANGE = 1025;
+    private static final int LEGAL_PORT_MAX_RANGE = 65535;
+
+    private final Logger logger = LoggerFactory.getLogger(ExternalRouteManager.class);
+    private final RealTimeSnapshotManager realtimeSnapshotManager;
+    private final StreamManager streamManager;
+    private final JmxRouteNotificationManager jmxRouteNotificationManager;
+
+//    private AtomicLong nextTcpRouteId = new AtomicLong(0);
+
+    /** keep track on TCP routes.  */
+    private final List<RouteSnapshot> tcpRoutes = Lists.newArrayList();
+
+    @GuardedBy("lock")
+    private final ConcurrentMap<Integer, AbstractRouteController> routeControllers = Maps.newConcurrentHashMap();
+
+    /** Lock used when manipulating any filter chain controller instances in the map. */
+    private final Object lock = new Object();
+
+    private final SortedSet<Integer> availablePorts = Sets.newTreeSet();
+    private int tcpMinPortRange;
+    private int tcpMaxPortRange;
+
+    public ExternalRouteManager(
+            final RealTimeSnapshotManager realtimeSnapshotManager,
+            final StreamManager streamManager,
+            final JmxRouteNotificationManager jmxRouteNotificationManager,
+            final int tcpMinPortRange,
+            final int tcpMaxPortRange)
+    {
+        Preconditions.checkNotNull(realtimeSnapshotManager, REALTIME_SNAPSHOT_MANAGER_PARAMETER);
+        Preconditions.checkNotNull(streamManager, STREAM_MANAGER_PARAMETER);
+        Preconditions.checkNotNull(jmxRouteNotificationManager, JMX_ROUTE_NOTIFICATION_MANAGER);
+
+        this.realtimeSnapshotManager = realtimeSnapshotManager;
+        this.streamManager = streamManager;
+        this.jmxRouteNotificationManager = jmxRouteNotificationManager;
+        initTcpPortPool(tcpMinPortRange, tcpMaxPortRange);
+    }
+
+    private void initTcpPortPool(
+            final int tcpMinPortRange,
+            final int tcpMaxPortRange)
+    {
+        Preconditions.checkArgument((tcpMinPortRange >= LEGAL_PORT_MIN_RANGE && tcpMaxPortRange <= LEGAL_PORT_MAX_RANGE),
+            "tcp range must be between %d and %d [inclusive]", tcpMinPortRange, tcpMaxPortRange);
+        this.tcpMinPortRange = tcpMinPortRange;
+        this.tcpMaxPortRange = tcpMaxPortRange;
+        for (int i = tcpMinPortRange; i <= tcpMaxPortRange; i++)
+        {
+            availablePorts.add(i);
+        }
+    }
+
+    /**
+     * Surrender the port back to the available ports. This is a thread safe method and needs to acquire a lock first to
+     * gain access.
+     *
+     * @param port port to surrender back
+     */
+    public synchronized void surrenderTcpPortBackToPool(final int port)
+    {
+        Preconditions.checkArgument((port >= tcpMinPortRange && port <= tcpMaxPortRange),
+            "Port must be between %d and %d [inclusive]", tcpMinPortRange, tcpMaxPortRange);
+        availablePorts.add(port);
+    }
+
+    public synchronized int establishTcpRoute(final Set<Long> streamIds) throws IOException
+    {
+        final int port = getNextAvailablePort();
+        if (port == 0)
+        {
+            throw new IOException(String.format("All ports in the range %d-%d are currently in use!", tcpMinPortRange,
+                tcpMaxPortRange));
+        }
+        final RouteSnapshot route = new DefaultRouteSnapshot(TransportProtocolType.TCP, 0, port, streamIds, null);
+        addTcpRoute(route);
+        return port;
+    }
+
+    private synchronized int getNextAvailablePort()
+    {
+        if (availablePorts.size() > 0)
+        {
+            for (final Integer nextPort : availablePorts)
+            {
+                if (routeControllers.get(nextPort) == null)
+                {
+                    availablePorts.remove(nextPort);
+                    return nextPort;
+                }
+            }
+        }
+        return 0;
+    }
+
+    public synchronized int establishTcpRoute(final Multimap<Integer, Long> pidMappings) throws IOException
+    {
+        final int port = getNextAvailablePort();
+        if (port == 0)
+        {
+            throw new IOException(String.format("All ports in the range %d-%d are currently in use!", tcpMinPortRange,
+                tcpMaxPortRange));
+        }
+        final RouteSnapshot route = new DefaultRouteSnapshot(TransportProtocolType.TCP, 0, port, pidMappings, null);
+        addTcpRoute(route);
+        return port;
+    }
+
+    public void init()
+    {
+        logger.debug("Initializing ExternalRouteManager.");
+        synchronized (lock)
+        {
+            for (final RouteSnapshot route : realtimeSnapshotManager.getRoutes().values())
+            {
+                try
+                {
+                    addRouteController(route);
+                }
+                catch (final IOException ioe)
+                {
+                    logger.warn("IOException on Initializing ExternalRouteManager.");
+                }
+            }
+        }
+    }
+
+
+    /**
+     * Creates a new route controller and adds it to the map.  Note that calls to this method should be synchronized.
+     * @param route routeSnaphot
+     * @throws IOException on route controller error
+     */
+    private void addRouteController(final RouteSnapshot route) throws IOException
+    {
+        final AbstractRouteController routeController =
+                RouteControllerFactory.getRouteController(route, streamManager, jmxRouteNotificationManager);
+
+        if (route.getTransportProtocolType() == TransportProtocolType.TCP)
+        {
+            routeController.addRouteEventListener(new TcpRouteEventListener()
+            {
+                public void tcpSessionClosed(final TcpRouteEvent tcpRouteEvent)
+                {
+                    logger.debug("TCP session closed for port {}", tcpRouteEvent.getPort());
+                    surrenderTcpPortBackToPool(tcpRouteEvent.getPort());
+                    handleTcpRouteSessionClosedEvent(tcpRouteEvent.getPort());
+                }
+            });
+        }
+        routeControllers.put(route.getPort(), routeController);
+    }
+
+    /**
+     * Handle OSGI event for which this class is registered.
+     *
+     * @param event OSGI event
+     */
+    public void handleEvent(final Event event)
+    {
+        synchronized (lock)
+        {
+            final String topic = event.getTopic();
+            logger.debug("Received event {}", topic);
+
+            if (topic.equals(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_ESTABLISH_EVENT))
+            {
+                try
+                {
+                    handleEstablishRouteEvent((RouteSnapshot)event.getProperty(OsgiEventPropertyKeys.ROUTE_SNAPSHOT_KEY));
+                }
+                catch (final IOException ioe)
+                {
+                    logger.warn("IOException on handleEstablishRouteEvent.");
+                }
+            }
+            else if (topic.equals(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_UPDATE_EVENT))
+            {
+                handleUpdateRouteEvent((RouteSnapshot)event.getProperty(OsgiEventPropertyKeys.ROUTE_SNAPSHOT_KEY));
+            }
+            else if (topic.equals(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_REMOVE_EVENT))
+            {
+                handleRemoveRouteEvent((RouteSnapshot)event.getProperty(OsgiEventPropertyKeys.ROUTE_SNAPSHOT_KEY));
+            }
+            else if (topic.equals(RealTimeSnapshotManager.SNAPSHOT_MANAGER_REFRESH_EVENT))
+            {
+                try
+                {
+                    handleSnapshotManagerRefreshEvent();
+                }
+                catch (final IOException ioe)
+                {
+                    logger.warn("IOException on handleSnapshotManagerRefreshEvent.");
+                }
+            }
+            else if (topic.equals(Stream.STREAM_UPDATED_EVENT))
+            {
+                handleStreamUpdatedEvent((StreamSnapshot)event.getProperty(OsgiEventPropertyKeys.STREAM_SNAPSHOT_KEY));
+            }
+            else if (topic.equals(Stream.STREAM_DELETED_EVENT))
+            {
+                handleStreamDeletedEvent((StreamSnapshot)event.getProperty(OsgiEventPropertyKeys.STREAM_SNAPSHOT_KEY));
+            }
+            else
+            {
+                // TODO: Notification?
+                logger.error("Can not handle this unknown event type: {} ", topic);
+            }
+        }
+    }
+
+    /**
+     * Perform tasks required when a TCP route is established.
+     *
+     * @param route the RouteSnapshot
+     *
+     * @throws IOException when route cannot be added.
+     */
+    private void addTcpRoute(final RouteSnapshot route) throws IOException
+    {
+        if (route.getTransportProtocolType() == TransportProtocolType.TCP)
+        {
+            addRouteController(route);
+            tcpRoutes.add(route);
+        }
+        else
+        {
+            logger.warn("Unsupported transport protocol type {} is contained in addTcpRoute request.", route.getTransportProtocolType());
+        }
+    }
+
+    /**
+     * Perform tasks required when an external route is established.
+     * @param route to handle
+     * @throws IOException on addRouteController
+     */
+    private void handleEstablishRouteEvent(final RouteSnapshot route) throws IOException
+    {
+        if (route.getTransportProtocolType() != TransportProtocolType.UDP)
+        {
+            // TODO: notification?
+            logger.error("Unsupported transport protocol type {} is contained in establish route event.", route.getTransportProtocolType());
+            return;
+        }
+        final AbstractRouteController routeController = routeControllers.get(route.getPort());
+        if (routeController == null)
+        {
+            addRouteController(route);
+        }
+        else
+        {
+            // TODO: Notification?
+            logger.error("Cannot add route for port {} as that port is already in use", route.getPort());
+        }
+    }
+
+    /**
+     * Perform tasks required when an UDP route is updated.
+     *
+     * @param route to handle
+     */
+    private void handleUpdateRouteEvent(final RouteSnapshot route)
+    {
+        final AbstractRouteController routeController = routeControllers.get(route.getPort());
+        if (routeController != null)
+        {
+            routeController.update(route, streamManager, jmxRouteNotificationManager);
+        }
+        else
+        {
+            // TODO: Notification?
+            logger.warn("Did not find route controller for port {} on update event.", route.getPort());
+        }
+    }
+
+    /**
+     * Perform tasks required when an UDP route is removed.
+     *
+     * @param route to handle
+     */
+    private void handleRemoveRouteEvent(final RouteSnapshot route)
+    {
+        final AbstractRouteController routeController = routeControllers.get(route.getPort());
+        if (routeController != null)
+        {
+            routeController.shutdown();
+            routeControllers.remove(route.getPort());
+        }
+        else
+        {
+            // TODO: Notification?
+            logger.warn("Did not find route controller for port {} on remove event.", route.getPort());
+        }
+    }
+
+    /**
+     * Handles a refresh event from the RealtimeSnapshotManager by first
+     * disposing all route controllers and then reloading them.
+     * @throws IOException on init
+     */
+    private void handleSnapshotManagerRefreshEvent() throws IOException
+    {
+        shutdownAll();
+        init();
+    }
+
+    /**
+     * Perform tasks required when a TCP route is changed due to changes in streamIds.
+     *
+     * @param route to handle
+     */
+    private void updateTcpRoute(final RouteSnapshot route)
+    {
+        final AbstractRouteController routeController = routeControllers.get(route.getPort());
+        if (routeController != null)
+        {
+            routeController.update(route, streamManager, jmxRouteNotificationManager);
+        }
+        else
+        {
+            // TODO: Notification?
+            logger.warn("Did not find route controller for port {} on update event.", route.getPort());
+        }
+    }
+
+    /**
+     * Handles stream updated event for TCP routes by first getting all TCP routes affected.
+     *
+     * @param streamSnapshot the streamSnapshot
+     */
+    private void handleStreamUpdatedEvent(final StreamSnapshot streamSnapshot)
+    {
+        for (final RouteSnapshot route : tcpRoutes)
+        {
+            if (route.getDataType() == RouteDataType.MPEG_PACKETS)
+            {
+                if (route.getPidMappings().containsValue(streamSnapshot.getId()))
+                {
+                    updateTcpRoute(route);
+                }
+            }
+            else if (route.getDataType() == RouteDataType.BLOCKS)
+            {
+                if (route.getStreamIds().contains(streamSnapshot.getId()))
+                {
+                    updateTcpRoute(route);
+                }
+            }
+            else
+            {
+                // TODO: Notification?
+                logger.warn("Unsupported route data type {} is found in tcp Routes.", route.getDataType());
+            }
+        }
+    }
+
+    /**
+    *
+    * @param streamSnapshot
+    */
+    private void handleStreamDeletedEvent(final StreamSnapshot streamSnapshot)
+    {
+        final long streamId = streamSnapshot.getId();
+        removeStreamFromAffectedTcpRoutes(streamId);
+    }
+
+    private void removeStreamFromAffectedTcpRoutes(final long streamId)
+    {
+        for (final RouteSnapshot route : Lists.newArrayList(tcpRoutes))
+        {
+            boolean isChanged = false;
+            RouteSnapshot newRoute = null;
+
+            if (route.getDataType() == RouteDataType.MPEG_PACKETS)
+            {
+                for (final Integer pid : route.getPidMappings().keySet())
+                {
+                    if ((route.getPidMappings().get(pid)).contains(streamId))
+                    {
+                        newRoute = deleteStreamIdFromRoutePidMapping(route, streamId);
+                        isChanged = true;
+                    }
+                }
+            }
+            else if (route.getDataType() == RouteDataType.BLOCKS)
+            {
+                if (route.getStreamIds().contains(streamId))
+                {
+                    newRoute = deleteStreamIdFromRoute(route, streamId);
+                    isChanged = true;
+                }
+            }
+            else
+            {
+                logger.warn("Unsupported route data type {} is found in tcp Routes.", route.getDataType());
+            }
+            if (isChanged)
+            {
+                if (newRoute == null)
+                {
+                    removeTcpRoute(route);
+                }
+                else
+                {
+                    tcpRoutes.remove(route);
+                    tcpRoutes.add(newRoute);
+                    updateTcpRoute(newRoute);
+                }
+            }
+        }
+    }
+
+    private RouteSnapshot deleteStreamIdFromRoutePidMapping(final RouteSnapshot origRoute, final long streamId)
+    {
+        final Multimap<Integer, Long> pidMappings = new HashMultimap<Integer, Long>();
+
+        for (final int pid : origRoute.getPidMappings().keySet())
+        {
+            final Collection<Long> streamIds = Lists.newArrayList(origRoute.getPidMappings().get(pid));
+            if (streamIds.contains(streamId))
+            {
+                streamIds.remove(streamId);
+            }
+            if (!streamIds.isEmpty())
+            {
+                pidMappings.putAll(pid, streamIds);
+            }
+        }
+        if (pidMappings.isEmpty())
+        {
+            return null;
+        }
+
+        return new DefaultRouteSnapshot(TransportProtocolType.TCP, 0, origRoute.getPort(), pidMappings, null);
+    }
+
+    private RouteSnapshot deleteStreamIdFromRoute(final RouteSnapshot origRoute, final long streamId)
+    {
+        final Set<Long> streamIds = Sets.newHashSet(origRoute.getStreamIds());
+
+        if (streamIds.contains(streamId))
+        {
+            streamIds.remove(streamId);
+        }
+        if (streamIds.isEmpty())
+        {
+            return null;
+        }
+
+        return new DefaultRouteSnapshot(TransportProtocolType.TCP, 0, origRoute.getPort(), streamIds, null);
+    }
+
+    private void removeTcpRoute(final RouteSnapshot route)
+    {
+        final AbstractRouteController routeController = routeControllers.get(route.getPort());
+        if (routeController != null)
+        {
+            routeController.shutdown();
+            routeControllers.remove(route.getPort());
+            tcpRoutes.remove(route);
+        }
+        else
+        {
+            logger.warn("Did not find route controller for port {} on remove event.", route.getPort());
+        }
+    }
+
+    /**
+     * Perform tasks required when a TCP route session is closed.
+     *
+     * @param  port of the route to handle
+     */
+    private void handleTcpRouteSessionClosedEvent(final int port)
+    {
+        final AbstractRouteController routeController = routeControllers.get(port);
+        if (routeController != null)
+        {
+            routeController.shutdown();
+        }
+        else
+        {
+            // TODO: Notification?
+            logger.warn("Route controller not found for tcp Route {}.", port);
+        }
+
+        routeControllers.remove(port);
+
+        for (final RouteSnapshot route : Lists.newArrayList(tcpRoutes))
+        {
+            if (route.getPort() == port)
+            {
+                tcpRoutes.remove(route);
+            }
+        }
+    }
+
+    public Iterable<RouteSnapshot> getTcpRoutes()
+    {
+        final Collection<RouteSnapshot> tcpRoutes = Sets.newHashSet();
+        synchronized (lock)
+        {
+            for (final AbstractRouteController routeController : routeControllers.values())
+            {
+                final RouteSnapshot route = routeController.getRouteSnapshot();
+                if (route.getTransportProtocolType() == TransportProtocolType.TCP)
+                {
+                    tcpRoutes.add(route);
+                }
+            }
+        }
+        return tcpRoutes;
+    }
+
+    /**
+     * Performs all shutdown and clean up for the bundle. Stops the executing thread and disposes of route controllers. Uses
+     * the PreDestroy annotation to allow the container to perform this task automatically when the OSGi bundle is stopped.
+     */
+    @PreDestroy
+    public void shutdownAll()
+    {
+        synchronized (lock)
+        {
+            for (final AbstractRouteController routeController : routeControllers.values())
+            {
+                routeController.shutdown();
+            }
+
+            routeControllers.clear();
+            tcpRoutes.clear();
+        }
+    }
+}

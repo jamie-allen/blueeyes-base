@@ -1,0 +1,150 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter;
+
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerUnitTestUtility.createUdpMpeg2RouteSnapshot;
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerUnitTestUtility.getStubbedNotifier;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+
+import java.lang.reflect.Field;
+import java.util.concurrent.ConcurrentHashMap;
+
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+
+import org.easymock.EasyMock;
+import org.springframework.util.ReflectionUtils;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.Multimap;
+
+@Test
+public class PidToStreamMapperTest
+{
+    private static final int PORT_NUMBER = 8150;
+
+    private StreamManager mockStreamManager;
+
+    private PidToStreamMapper pidToStreamMapper;
+
+    @BeforeMethod
+    public void setUp() throws Exception
+    {
+        mockStreamManager = EasyMock.createMock(StreamManager.class);
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testNullPidToStreamMap() throws Exception
+    {
+        new PidToStreamMapper(null, mockStreamManager, getStubbedNotifier(), "abc");
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testNullNotificationManager()
+    {
+        final Multimap<Integer, Long> pidToStreamMap = HashMultimap.create();
+        pidToStreamMap.put(1, 1L);
+        new PidToStreamMapper(createUdpMpeg2RouteSnapshot(1L, PORT_NUMBER, pidToStreamMap), mockStreamManager, null, "abc");
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testNullPrefix()
+    {
+        final Multimap<Integer, Long> pidToStreamMap = HashMultimap.create();
+        pidToStreamMap.put(1, 1L);
+        new PidToStreamMapper(createUdpMpeg2RouteSnapshot(1L, PORT_NUMBER, pidToStreamMap), mockStreamManager, getStubbedNotifier(), null);
+    }
+
+    public void testEmptyPidToStreamMap() throws Exception
+    {
+        new PidToStreamMapper(createUdpMpeg2RouteSnapshot(1L, PORT_NUMBER, HashMultimap.<Integer, Long>create()),
+            mockStreamManager, getStubbedNotifier(), "abc");
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testNullStreamMangager() throws Exception
+    {
+        new PidToStreamMapper(createUdpMpeg2RouteSnapshot(1L, PORT_NUMBER, HashMultimap.<Integer, Long>create()), null,
+            getStubbedNotifier(), "abc");
+    }
+
+    public void testVerifyPidToChainControllerAddedToMap() throws Exception
+    {
+        final Multimap<Integer, Long> pidToStreamMap = HashMultimap.create();
+        pidToStreamMap.put(1, 1L);
+        pidToStreamMapper = new PidToStreamMapper(createUdpMpeg2RouteSnapshot(1L, PORT_NUMBER, pidToStreamMap),
+            mockStreamManager, getStubbedNotifier(), "abc");
+
+        pidToStreamMap.put(2, 2L);
+        pidToStreamMapper.update(createUdpMpeg2RouteSnapshot(1L, PORT_NUMBER, pidToStreamMap), mockStreamManager,
+            getStubbedNotifier(), "abc");
+        assertThat(getPidToChainControllerMap().size(), is(2));
+    }
+
+    public void testVerifyPidToChainControllerUpdateToMap() throws Exception
+    {
+        final Multimap<Integer, Long> pidToStreamMap = HashMultimap.create();
+        pidToStreamMap.put(1, 1L);
+        pidToStreamMapper = new PidToStreamMapper(createUdpMpeg2RouteSnapshot(2L, PORT_NUMBER, pidToStreamMap),
+            mockStreamManager, getStubbedNotifier(), "abc");
+
+        pidToStreamMap.put(1, 2L);
+        pidToStreamMapper.update(createUdpMpeg2RouteSnapshot(2L, PORT_NUMBER, pidToStreamMap), mockStreamManager,
+            getStubbedNotifier(), "abc");
+        assertThat(getPidToChainControllerMap().size(), is(1));
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testVerifyPidToChainControllerUpdateToMapWithNullNotifier() throws Exception
+    {
+        final Multimap<Integer, Long> pidToStreamMap = HashMultimap.create();
+        pidToStreamMap.put(1, 1L);
+        pidToStreamMapper = new PidToStreamMapper(createUdpMpeg2RouteSnapshot(2L, PORT_NUMBER, pidToStreamMap),
+            mockStreamManager, getStubbedNotifier(), "abc");
+
+        pidToStreamMap.put(1, 2L);
+        pidToStreamMapper.update(createUdpMpeg2RouteSnapshot(2L, PORT_NUMBER, pidToStreamMap), mockStreamManager, null, "abc");
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testVerifyPidToChainControllerUpdateToMapWithNullPrefix() throws Exception
+    {
+        final Multimap<Integer, Long> pidToStreamMap = HashMultimap.create();
+        pidToStreamMap.put(1, 1L);
+        pidToStreamMapper = new PidToStreamMapper(createUdpMpeg2RouteSnapshot(2L, PORT_NUMBER, pidToStreamMap),
+            mockStreamManager, getStubbedNotifier(), "abc");
+
+        pidToStreamMap.put(1, 2L);
+        pidToStreamMapper.update(createUdpMpeg2RouteSnapshot(2L, PORT_NUMBER, pidToStreamMap), mockStreamManager,
+            getStubbedNotifier(), null);
+    }
+
+    public void testVerifyPidToChainControllerRemovedFromMap() throws Exception
+    {
+        final Multimap<Integer, Long> pidToStreamMap = HashMultimap.create();
+        pidToStreamMap.put(1, 1L);
+        pidToStreamMapper = new PidToStreamMapper(createUdpMpeg2RouteSnapshot(3L, PORT_NUMBER, pidToStreamMap),
+            mockStreamManager, getStubbedNotifier(), "abc");
+        assertThat(getPidToChainControllerMap().size(), is(1));
+
+        pidToStreamMap.clear();
+        pidToStreamMapper.update(createUdpMpeg2RouteSnapshot(3L, PORT_NUMBER, pidToStreamMap), mockStreamManager, getStubbedNotifier(), "abc");
+        assertThat(getPidToChainControllerMap().size(), is(0));
+    }
+
+    @SuppressWarnings("unchecked")
+    private ConcurrentHashMap<Integer, PidChainController> getPidToChainControllerMap()
+    {
+        final Field pidToChainControllersMapField = findFieldByReflection(PidToStreamMapper.class, "pidToChainControllerMap");
+        return (ConcurrentHashMap<Integer, PidChainController>)ReflectionUtils.getField(pidToChainControllersMapField,
+            pidToStreamMapper);
+    }
+
+    private Field findFieldByReflection(final Class<?> clazz, final String field)
+    {
+        final Field chainField = ReflectionUtils.findField(clazz, field);
+        ReflectionUtils.makeAccessible(chainField);
+        return chainField;
+    }
+}

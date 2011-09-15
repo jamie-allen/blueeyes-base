@@ -1,0 +1,48 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dssrm.provisioning;
+
+
+/**
+ * Repository for persistent <code>Route</code>s domain.
+ *
+ * <p>Route is the aggregate root and access to the other domain objects are only allowed through the aggregate root.</p>
+ */
+public interface RouteRepository
+{
+    /**
+     * @param id to get route for
+     * @return route for the corresponding id, <code>null</code> otherwise
+     */
+//    RouteEntity get(long id);
+
+    /**
+     * @return all routes available in the configuration portion of DSS
+     */
+//    List<RouteEntity> getAll();
+
+    /**
+     * @param route route to persist
+     */
+//    void persist(RouteEntity route);
+
+    /**
+     * @param route route to delete
+     */
+//    void delete(RouteEntity route);
+
+    /**
+     * @param streamId unique identifier of the stream to retrieve routes for
+     * @return routes containing pid mappings or stream mappings for the specified stream id
+     */
+//    Iterable<RouteEntity> getByAssociatedStreamId(long streamId);
+
+    /**
+     * Gets all routes by route properties.
+     *
+     * @param properties properties to query for
+     * @return routes that match the properties
+     */
+//    Iterable<RouteEntity> get(Map<String, String> properties);
+    
+    InetSocketAddress establishRoute()
+}

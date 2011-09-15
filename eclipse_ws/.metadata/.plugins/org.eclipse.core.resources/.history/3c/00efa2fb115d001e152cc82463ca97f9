@@ -1,0 +1,72 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.management;
+
+import java.util.concurrent.atomic.AtomicLong;
+
+import javax.management.AttributeChangeNotification;
+import javax.management.MBeanNotificationInfo;
+import javax.management.Notification;
+import javax.management.NotificationBroadcasterSupport;
+
+import com.ccadllc.commons.util.concurrent.CallbackSupportingScheduledExecutorService;
+import com.ccadllc.firebird.dss.server.common.MBeanServerUtility;
+import com.ccadllc.firebird.dss.server.common.RouteJmxUtility;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.jmx.export.annotation.ManagedOperation;
+import org.springframework.jmx.export.annotation.ManagedResource;
+
+/**
+ * JMX Bean providing common notification functionality.
+ */
+@ManagedResource(objectName = RouteJmxUtility.ROUTE_NOTIFICATIONS_MXBEAN_OBJECT_NAME)
+public final class JmxRouteNotificationManager extends NotificationBroadcasterSupport implements JmxRouteNotificationManagerMXBean
+{
+    private final Logger logger = LoggerFactory.getLogger(JmxRouteNotificationManager.class);
+
+    private final AtomicLong notificationSequenceNumber = new AtomicLong();
+    private final Object sequenceNumberLock = new Object();
+
+    public JmxRouteNotificationManager(final CallbackSupportingScheduledExecutorService executor)
+    {
+       super(executor);
+    }
+
+    public void setUp()
+    {
+        MBeanServerUtility.register(this, RouteJmxUtility.ROUTE_NOTIFICATIONS_MXBEAN_OBJECT_NAME);
+    }
+
+    public void tearDown()
+    {
+        MBeanServerUtility.unregister(RouteJmxUtility.ROUTE_NOTIFICATIONS_MXBEAN_OBJECT_NAME);
+    }
+
+    @Override
+    @ManagedOperation
+    public void sendNotification(final Notification notification)
+    {
+        logger.debug("Sending notification.");
+        synchronized (sequenceNumberLock)
+        {
+            notification.setSequenceNumber(notificationSequenceNumber.incrementAndGet());
+            super.sendNotification(notification);
+        }
+    }
+
+    @Override
+    @ManagedOperation
+    public MBeanNotificationInfo[] getNotificationInfo()
+    {
+        final String[] types = new String[] {
+            AttributeChangeNotification.ATTRIBUTE_CHANGE
+        };
+        final String name = AttributeChangeNotification.class.getName();
+        final String description = "An attribute of a subscribing MBean has changed";
+        final MBeanNotificationInfo info =
+             new MBeanNotificationInfo(types, name, description);
+        return new MBeanNotificationInfo[] {info};
+    }
+
+}

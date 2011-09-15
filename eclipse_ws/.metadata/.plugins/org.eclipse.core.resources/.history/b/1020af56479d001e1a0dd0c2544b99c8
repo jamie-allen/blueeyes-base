@@ -1,0 +1,9 @@
+package com.ccadllc.firebird.vms.dssrm.core;
+
+import java.util.UUID;
+
+public interface DssrmCoreDescription
+{
+    UUID getStreamId();
+    UUID getId();
+}

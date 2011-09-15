@@ -1,0 +1,355 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.topology.simpledevices;
+
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.replay;
+import static org.easymock.EasyMock.verify;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.allOf;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.hasProperty;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
+
+import java.util.List;
+import java.util.UUID;
+
+import com.ccadllc.firebird.core.base.common.UnresolvedInetAddress;
+import com.ccadllc.firebird.core.test.support.hamcrest.MoreHamcrest;
+import com.ccadllc.firebird.vms.common.units.Frequency;
+import com.ccadllc.firebird.vms.common.units.ModulationFormat;
+import com.ccadllc.firebird.vms.topology.core.DeviceInput;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStreamTransmissionDescriptor;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStreamTransmissionFormat;
+import com.ccadllc.firebird.vms.topology.core.EthernetPortDescription;
+import com.ccadllc.firebird.vms.topology.core.EthernetPortMatchers;
+import com.ccadllc.firebird.vms.topology.core.EthernetPortType;
+import com.ccadllc.firebird.vms.topology.core.ModulatedRFElementaryStreamTransmissionDescriptor;
+import com.ccadllc.firebird.vms.topology.core.ModulatorDescription;
+import com.ccadllc.firebird.vms.topology.core.PacketizedElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.PidRoute;
+import com.ccadllc.firebird.vms.topology.core.PidRouteDescription;
+import com.ccadllc.firebird.vms.topology.core.TrafficShapingProfile;
+import com.ccadllc.firebird.vms.topology.core.UDPElementaryStreamTransmissionDescriptor;
+import com.ccadllc.firebird.vms.topology.core.UpconverterDescription;
+
+import org.easymock.EasyMock;
+import org.hamcrest.Description;
+import org.hamcrest.Matcher;
+import org.hamcrest.Matchers;
+import org.hamcrest.TypeSafeMatcher;
+import org.hamcrest.collection.IsCollectionContaining;
+import org.hamcrest.collection.IsMapContaining;
+import org.testng.annotations.Test;
+
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
+
+/**
+ * Tests <code>SimpleEdgeDevice</code>.
+ */
+@Test
+public class SimpleEdgeDeviceTest
+{
+    private static final String NAME = "actualName";
+    private static final Frequency FREQUENCY = Frequency.fromKHz(581000);
+    private static final ModulationFormat MODULATION = ModulationFormat.QAM256;
+    private static final UnresolvedInetAddress UNICAST_ADDRESS = UnresolvedInetAddress.create("unicast");
+    private static final UnresolvedInetAddress MULTICAST_ADDRESS = UnresolvedInetAddress.create("mcast1");
+    private static final int PID = 8188;
+    private static final int UDP_PORT_LISTENER = 6001;
+
+    public void testToStringDoesNotCauseNullPointerException()
+    {
+        aBasicSed().toString();
+    }
+
+    public void testDescribeInput_UsingUnicastEthernetInputPort_DescribesMulticastInputOnly()
+    {
+        final SimpleEdgeDevice sed = aSedWithUnicastInputPidRoute();
+
+        final PacketizedElementaryStream stream = EasyMock.createMock(PacketizedElementaryStream.class);
+
+        expect(stream.getPid()).andStubReturn(PID);
+        expect(stream.getTrafficShapingProfile()).andStubReturn(new TrafficShapingProfile(100, 5, 5));
+
+        replay(stream);
+
+        final Iterable<UDPElementaryStreamTransmissionDescriptor> describeInputs = toUDPElementaryStreamTransmissionDescriptors(sed.describeInput(stream));
+
+        verify(stream);
+
+        assertThat(describeInputs, MoreHamcrest.hasSize(1));
+        assertThat(describeInputs, hasItem(Matchers.<UDPElementaryStreamTransmissionDescriptor>hasProperty("sinks", hasItem(hasProperty("name", is(sed.getName()))))));
+        assertThat(describeInputs, hasItem(Matchers.<UDPElementaryStreamTransmissionDescriptor>hasProperty("address", is(UNICAST_ADDRESS))));
+        assertThat(describeInputs, hasItem(Matchers.<UDPElementaryStreamTransmissionDescriptor>hasProperty("port", is(UDP_PORT_LISTENER))));
+    }
+
+    public void testDescribeInput_UsingUnicastEthernetInputPort_DescribesBothUnicastAndMulticastInputs()
+    {
+        final SimpleEdgeDevice sed = aSedWithUnicastInputPidRoute();
+
+        sed.addMulticastAddressToEthernetPort(MULTICAST_ADDRESS, Iterables.getOnlyElement(sed.getEthernetPorts()).getId());
+        sed.addListenerToMulticastAddressOnEthernetPort(UDP_PORT_LISTENER, Iterables.getOnlyElement(sed.getEthernetPorts()).getId(), MULTICAST_ADDRESS);
+
+        final PacketizedElementaryStream stream = EasyMock.createMock(PacketizedElementaryStream.class);
+
+        expect(stream.getPid()).andStubReturn(PID);
+        expect(stream.getTrafficShapingProfile()).andStubReturn(new TrafficShapingProfile(100, 5, 5));
+
+        replay(stream);
+
+        final List<UDPElementaryStreamTransmissionDescriptor> describeInputs = toUDPElementaryStreamTransmissionDescriptors(sed.describeInput(stream));
+
+        verify(stream);
+
+        assertThat(describeInputs, MoreHamcrest.hasSize(2));
+        assertThat(describeInputs, hasItem(Matchers.<UDPElementaryStreamTransmissionDescriptor>hasProperty("address", is(UNICAST_ADDRESS))));
+        assertThat(describeInputs, hasItem(Matchers.<UDPElementaryStreamTransmissionDescriptor>hasProperty("address", is(MULTICAST_ADDRESS))));
+        assertThat(describeInputs, hasItem(Matchers.<UDPElementaryStreamTransmissionDescriptor>hasProperty("port", is(UDP_PORT_LISTENER))));
+    }
+
+    public void testDescribeOutput()
+    {
+        final PacketizedElementaryStream stream = EasyMock.createMock(PacketizedElementaryStream.class);
+
+        expect(stream.getPid()).andStubReturn(PID);
+        expect(stream.getTrafficShapingProfile()).andStubReturn(new TrafficShapingProfile(100, 5, 5));
+
+        replay(stream);
+
+        final ElementaryStreamTransmissionDescriptor inputDescriptor = ElementaryStreamTransmissionDescriptor.builder()
+            .stream(stream).format(ElementaryStreamTransmissionFormat.MPEG2_PACKETIZED).pid(PID).build();
+
+        final SimpleEdgeDevice sed = aSedWithUnicastInputPidRoute();
+
+        final Iterable<ElementaryStreamTransmissionDescriptor> describeOutput = sed.describeOutput(inputDescriptor);
+
+        verify(stream);
+
+        assertThat(describeOutput, MoreHamcrest.hasSize(1));
+        assertThat(describeOutput, hasItem(Matchers.<ElementaryStreamTransmissionDescriptor>hasProperty("sources", hasItem(hasProperty("name", is(sed.getName()))))));
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testDescribeOutput_ResultsInOutputDescriptorAppropriateForGivenPidOnStream()
+    {
+        final PacketizedElementaryStream stream = EasyMock.createMock(PacketizedElementaryStream.class);
+
+        expect(stream.getPid()).andStubReturn(8189);
+        expect(stream.getTrafficShapingProfile()).andStubReturn(new TrafficShapingProfile(50000, 2444, 5));
+
+        replay(stream);
+
+        final ElementaryStreamTransmissionDescriptor inputDescriptor = ElementaryStreamTransmissionDescriptor.builder()
+            .stream(stream).format(ElementaryStreamTransmissionFormat.MPEG2_PACKETIZED).pid(8189).build();
+
+        // setup sem with same ports as failure
+        final SimpleEdgeDevice sed = aBasicSed();
+        final UUID ethernetPortId = sed.addEthernetPort(EthernetPortDescription.builder("input", EthernetPortType.GIGE, UNICAST_ADDRESS).build());
+        final UUID in6001 = sed.addListenerToUnicastAddressOnEthernetPort(6001, ethernetPortId);
+        final UUID in6002 = sed.addListenerToUnicastAddressOnEthernetPort(6002, ethernetPortId);
+        final UUID in6003 = sed.addListenerToUnicastAddressOnEthernetPort(6002, ethernetPortId);
+        final UUID modulatorId = sed.addModulator(ModulatorDescription.builder(MODULATION, 1).build());
+        final UUID upconverter4488 = sed.addUpconverterToModulator(UpconverterDescription.builder(Frequency.fromKHz(4488), 1).build(), modulatorId);
+        final UUID upconverter4536 = sed.addUpconverterToModulator(UpconverterDescription.builder(Frequency.fromKHz(4536), 2).build(), modulatorId);
+
+        final PidRouteDescription pidRoute4488_1 = PidRouteDescription.builder(in6002, upconverter4488, 1, 1).build();
+        final PidRouteDescription pidRoute4488_2 = PidRouteDescription.builder(in6002, upconverter4488, 8176, 8176).build();
+        final PidRouteDescription pidRoute4488_3 = PidRouteDescription.builder(in6001, upconverter4488, 8188, 8188).build();
+
+        final PidRouteDescription pidRoute4536_1 = PidRouteDescription.builder(in6001, upconverter4536, 8188, 8188).build();
+        final PidRouteDescription pidRoute4536_2 = PidRouteDescription.builder(in6002, upconverter4536, 1, 1).build();
+        final PidRouteDescription pidRoute4536_3 = PidRouteDescription.builder(in6003, upconverter4536, 8189, 8189).build();
+        final PidRouteDescription pidRoute4536_4 = PidRouteDescription.builder(in6002, upconverter4536, 8176, 8176).build();
+
+        sed.addPidRoute(pidRoute4488_1);
+        sed.addPidRoute(pidRoute4488_2);
+        sed.addPidRoute(pidRoute4488_3);
+        sed.addPidRoute(pidRoute4536_1);
+        sed.addPidRoute(pidRoute4536_2);
+        sed.addPidRoute(pidRoute4536_3);
+        sed.addPidRoute(pidRoute4536_4);
+
+        final Iterable<ModulatedRFElementaryStreamTransmissionDescriptor> describeOutput = toModulatedRFElementaryStreamTransmissionDescriptors(sed.describeOutput(inputDescriptor));
+
+        verify(stream);
+
+        assertThat(describeOutput, MoreHamcrest.hasSize(1));
+        assertThat(describeOutput, hasItem(Matchers.<ModulatedRFElementaryStreamTransmissionDescriptor>hasProperty("sources", hasItem(hasProperty("name", is(sed.getName()))))));
+        assertThat(describeOutput, hasItem(
+            allOf(
+                Matchers.<ModulatedRFElementaryStreamTransmissionDescriptor>hasProperty("frequency", isFrequency(4536)),
+                Matchers.<ModulatedRFElementaryStreamTransmissionDescriptor>hasProperty("modulation", is(MODULATION))
+            )));
+    }
+
+    public void testSedCanBeUnassigned() throws Exception
+    {
+        final SimpleEdgeDevice sed = SimpleEdgeDevice.builder("sed001", getClass().getName()).build();
+        sed.setLocation(null);
+
+        assertThat(sed.getLocation(), is(ServingLocationQName.of("")));
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testSemCopyOf()
+    {
+        final SimpleEdgeDevice sed = aBasicSed();
+        final UUID ethernetPortId = sed.addEthernetPort(EthernetPortDescription.builder("input", EthernetPortType.GIGE, UNICAST_ADDRESS).build());
+        final UUID listenerId = sed.addListenerToUnicastAddressOnEthernetPort(UDP_PORT_LISTENER, ethernetPortId);
+        sed.addMulticastAddressToEthernetPort(MULTICAST_ADDRESS, ethernetPortId);
+        sed.addListenerToMulticastAddressOnEthernetPort(UDP_PORT_LISTENER, ethernetPortId, MULTICAST_ADDRESS);
+        sed.addListenerToMulticastAddressOnEthernetPort(UDP_PORT_LISTENER + 1, ethernetPortId, MULTICAST_ADDRESS);
+        final UUID modulatorId = sed.addModulator(ModulatorDescription.builder(MODULATION, 1).build());
+        final UUID upconverterId = sed.addUpconverterToModulator(UpconverterDescription.builder(FREQUENCY, 1).build(), modulatorId);
+
+        sed.addPidRoute(PidRouteDescription.builder(listenerId, upconverterId, PID, PID).build());
+
+        final SimpleEdgeDevice copy = sed.copyOf();
+
+        assertThat(copy.getId(), is(sed.getId()));
+        assertThat(copy.getName(), is (sed.getName()));
+        assertThat(copy.getLocation(), is (sed.getLocation()));
+        assertThat(copy.getProperties(), is(sed.getProperties()));
+
+        assertThat(EthernetPortMatchers.getEthernetPort(copy.getEthernetPorts(), SedEthernetPortMatchers.hasMulticastAddress(SedEthernetPortMulticastAddressMatchers.hasAddress(MULTICAST_ADDRESS))), is(notNullValue()));
+
+        assertThat(Iterables.getOnlyElement(copy.getEthernetPorts()), allOf(
+            hasProperty("unicastAddress", is(UNICAST_ADDRESS)),
+            hasProperty("unicastListeners", hasItem(is(UDP_PORT_LISTENER))),
+            hasProperty("multicastAddresses", hasItem(is(MULTICAST_ADDRESS))),
+            hasProperty("multicastListeners", IsMapContaining.hasEntry(is(MULTICAST_ADDRESS), IsCollectionContaining.hasItem(UDP_PORT_LISTENER))),
+            hasProperty("multicastListeners", IsMapContaining.hasEntry(is(MULTICAST_ADDRESS), IsCollectionContaining.hasItem(UDP_PORT_LISTENER + 1)))
+
+        ));
+
+        assertThat(Iterables.getOnlyElement(copy.getModulators()), allOf(
+            hasProperty("modulation", is(MODULATION)),
+            hasProperty("upconverters", hasItem(hasProperty("frequency", isFrequency(FREQUENCY.getKHz()))))
+        ));
+
+        assertThat(copy.getPidRoutes().iterator().next(),
+            allOf(
+                Matchers.<PidRoute>hasProperty("input", is(Iterables.getOnlyElement(sed.getPidRoutes()).getInput())),
+                Matchers.<PidRoute>hasProperty("inputPid", is(Iterables.getOnlyElement(sed.getPidRoutes()).getInputPid())),
+                Matchers.<PidRoute>hasProperty("output", is(Iterables.getOnlyElement(sed.getPidRoutes()).getOutput()))
+                )
+            );
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testRemoveEthernetPort_RemovesAllPidRoutesThatReferredToEthernetPortUnicastListeners()
+    {
+        final SimpleEdgeDevice sed = aSedWithUnicastInputPidRoute();
+        final SedEthernetPort ethernetPort = (SedEthernetPort) Iterables.getOnlyElement(sed.getEthernetPorts());
+        final UUID inputId = Iterables.getOnlyElement(ethernetPort.getUnicastListenerEntities()).getId();
+
+        sed.removeEthernetPort(ethernetPort.getId());
+
+        assertThat((Iterable<PidRoute>)sed.getPidRoutes(), not(hasItem(Matchers.<PidRoute>hasProperty("input", is(inputId)))));
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testRemoveEthernetPort_RemovesAllPidRoutesThatReferredToEthernetPortMulticastListeners()
+    {
+        final SimpleEdgeDevice sed = aSedWithUnicastInputPidRoute();
+        final SedEthernetPort ethernetPort = (SedEthernetPort) Iterables.getOnlyElement(sed.getEthernetPorts());
+        sed.addMulticastAddressToEthernetPort(MULTICAST_ADDRESS, ethernetPort.getId());
+        final UUID inputId = sed.addListenerToMulticastAddressOnEthernetPort(UDP_PORT_LISTENER, ethernetPort.getId(), MULTICAST_ADDRESS);
+
+        sed.removeEthernetPort(ethernetPort.getId());
+
+        assertThat((Iterable<PidRoute>)sed.getPidRoutes(), not(hasItem(Matchers.<PidRoute>hasProperty("input", is(inputId)))));
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testRemoveModulator_RemovesAllPidRoutesThatReferredToModulatorUpconverters()
+    {
+        final SimpleEdgeDevice sed = aSedWithUnicastInputPidRoute();
+        final SedModulator modulator = (SedModulator) Iterables.getOnlyElement(sed.getModulators());
+        final UUID outputId = Iterables.getOnlyElement(modulator.getUpconverters()).getId();
+
+        sed.removeModulator(modulator.getId());
+
+        assertThat((Iterable<PidRoute>)sed.getPidRoutes(), not(hasItem(Matchers.<PidRoute>hasProperty("output", is(outputId)))));
+    }
+
+    public void testGetInputs_ReturnsViewOfAllUnicastAndMulticastListeners()
+    {
+        final SimpleEdgeDevice sed = aSedWithUnicastInputPidRoute();
+        final UUID ethernetPortId = Iterables.getOnlyElement(sed.getEthernetPorts()).getId();
+        final UUID unicastListenerId = Iterables.getOnlyElement(sed.getEthernetPorts()).getUnicastListenerId(UDP_PORT_LISTENER);
+        sed.addMulticastAddressToEthernetPort(MULTICAST_ADDRESS, ethernetPortId);
+        final UUID mcastListenerId = sed.addListenerToMulticastAddressOnEthernetPort(UDP_PORT_LISTENER + 1, ethernetPortId, MULTICAST_ADDRESS);
+
+        final Iterable<DeviceInput> inputs = sed.getInputs();
+        assertThat(inputs, hasItem(Matchers.<DeviceInput>hasProperty("id", is(unicastListenerId))));
+        assertThat(inputs, hasItem(Matchers.<DeviceInput>hasProperty("id", is(mcastListenerId))));
+    }
+
+    // Helpers
+
+    private SimpleEdgeDevice aBasicSed()
+    {
+        final SimpleEdgeDevice sed = SimpleEdgeDevice.builder(NAME, getClass().getName()).build();
+        return sed;
+    }
+
+    private SimpleEdgeDevice aSedWithUnicastInputPidRoute()
+    {
+        final SimpleEdgeDevice sed = aBasicSed();
+        final UUID ethernetPortId = sed.addEthernetPort(EthernetPortDescription.builder("input", EthernetPortType.GIGE, UNICAST_ADDRESS).build());
+        final UUID listenerId = sed.addListenerToUnicastAddressOnEthernetPort(UDP_PORT_LISTENER, ethernetPortId);
+        final UUID modulatorId = sed.addModulator(ModulatorDescription.builder(MODULATION, 1).build());
+        final UUID upconverterId = sed.addUpconverterToModulator(UpconverterDescription.builder(FREQUENCY, 1).build(), modulatorId);
+
+        sed.addPidRoute(PidRouteDescription.builder(listenerId, upconverterId, PID, PID).build());
+
+        return sed;
+    }
+
+    private static List<UDPElementaryStreamTransmissionDescriptor> toUDPElementaryStreamTransmissionDescriptors(
+        final Iterable<ElementaryStreamTransmissionDescriptor> descriptors)
+    {
+        final List<UDPElementaryStreamTransmissionDescriptor> describeInputs = Lists.newArrayList();
+        for (final ElementaryStreamTransmissionDescriptor descriptor : descriptors)
+        {
+            describeInputs.add((UDPElementaryStreamTransmissionDescriptor) descriptor);
+        }
+        return describeInputs;
+    }
+
+    private static List<ModulatedRFElementaryStreamTransmissionDescriptor> toModulatedRFElementaryStreamTransmissionDescriptors(
+        final Iterable<ElementaryStreamTransmissionDescriptor> descriptors)
+    {
+        final List<ModulatedRFElementaryStreamTransmissionDescriptor> describeInputs = Lists.newArrayList();
+        for (final ElementaryStreamTransmissionDescriptor descriptor : descriptors)
+        {
+            describeInputs.add((ModulatedRFElementaryStreamTransmissionDescriptor) descriptor);
+        }
+        return describeInputs;
+    }
+
+    private static Matcher<Frequency> isFrequency(final long value)
+    {
+        return new TypeSafeMatcher<Frequency>()
+        {
+
+            @Override
+            public void describeTo(final Description description)
+            {
+                description.appendText(" is " + value + "khz ");
+
+            }
+
+            @Override
+            public boolean matchesSafely(final Frequency item)
+            {
+                return item.getKHz() == value;
+            }
+        };
+    }
+}

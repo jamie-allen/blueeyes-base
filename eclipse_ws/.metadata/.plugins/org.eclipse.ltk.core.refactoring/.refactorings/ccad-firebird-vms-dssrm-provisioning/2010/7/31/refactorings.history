@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Rename type &apos;com.ccadllc.firebird.vms.dssrm.provisioning.impl.YakShaving&apos; to &apos;LockExecutor&apos;&#x0A;- Original project: &apos;ccad-firebird-vms-dssrm-provisioning&apos;&#x0A;- Original element: &apos;com.ccadllc.firebird.vms.dssrm.provisioning.impl.YakShaving&apos;&#x0A;- Renamed element: &apos;com.ccadllc.firebird.vms.dssrm.provisioning.impl.LockExecutor&apos;&#x0A;- Update references to refactored element&#x0A;- Update textual occurrences in comments and strings" description="Rename type &apos;YakShaving&apos;" flags="589830" id="org.eclipse.jdt.ui.rename.type" input="/src\/main\/java&lt;com.ccadllc.firebird.vms.dssrm.provisioning.impl{YakShaving.java[YakShaving" matchStrategy="1" name="LockExecutor" qualified="false" references="true" similarDeclarations="false" stamp="1280526985072" textual="false" version="1.0"/>
+</session>

@@ -1,0 +1,10 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+/**
+ * Implementation of Route Management packet filters.
+ *
+ * <p>This package provides the implementation of various packet filters used as components in a 
+ * {@link com.ccadllc.firebird.vms.common.packetfilteringCompositePacketFilter} to handle incoming
+ * route data.  These packet filter chains are assembled by various RouteController types based on
+ * the protocol upon which they are received and the type of data they represent.</p>
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter;

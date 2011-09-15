@@ -1,0 +1,9 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+/**
+ * Implementation of Route Management.
+ *
+ * <p>This package provides the implementation of Routes for the DSS.  This package is primarily
+ * concerned with configuring and applying a chain of packet filters, based on the route protocol
+ * and data type, to produce a result that is then forwarded to the StreamManager.</p>
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter;

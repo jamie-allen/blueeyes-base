@@ -1,0 +1,40 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.vms.dssrm.provisioning;
+
+import com.ccadllc.firebird.vms.dssrm.core.PeriodicData;
+import com.ccadllc.firebird.vms.dssrm.core.PeriodicDescription;
+
+import net.jcip.annotations.Immutable;
+
+import com.google.common.base.Preconditions;
+
+/**
+ * Immutable snapshot of a periodic and its data.
+ */
+@Immutable
+public final class RouteSnapshot
+{
+    private final PeriodicDescription description;
+    private final PeriodicData data;
+
+    public RouteSnapshot(final PeriodicDescription description, final PeriodicData data)
+    {
+        Preconditions.checkNotNull(data);
+        Preconditions.checkNotNull(description);
+
+        this.data = data;
+        this.description = description;
+    }
+
+    public PeriodicDescription getDescription()
+    {
+        return description;
+    }
+
+    public PeriodicData getData()
+    {
+        return data;
+    }
+}

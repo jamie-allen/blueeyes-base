@@ -1,0 +1,29 @@
+1272892261771	Copy compilation unit
+1272894390567	Delete element
+1272894407725	Rename type 'Mpeg2AdaptationFieldValidatorTest'
+1272894434746	Rename field 'validator'
+1272896103806	Rename type 'UdpDatagramToMpeg2TransformerTest'
+1272896145082	Rename field 'transformer'
+1272924027267	Move compilation unit
+1272924045458	Move compilation unit
+1272924067302	Rename type 'InserterTest'
+1272925956170	Copy compilation unit
+1272925970091	Rename field 'elementaryStreamRouter'
+1272926601748	Rename local variable 'streamIdsField'
+1272926629689	Rename method 'getStreamIdCacheFromRouter'
+1273007846494	Delete elements
+1273007861521	Move compilation unit
+1273007870107	Move compilation units
+1273008167240	Copy compilation unit
+1273008550552	Rename field 'elementaryStreamRouter'
+1273008658094	Rename local variable 'streamIds'
+1273009113459	Rename local variable 'initialStreamIds'
+1273009130134	Rename local variable 'updatedStreamIds'
+1273010539836	Rename local variable 'ids'
+1273067315247	Rename type 'UdpRouteManagerApplicationContextListenerTest'
+1273173237245	Copy compilation unit
+1273250381620	Delete elements
+1273250446976	Rename field 'managedRouteComponent'
+1273257596735	Rename type 'RouteNotificationHelper'
+1273260274219	Copy compilation unit
+1273260972885	Delete element

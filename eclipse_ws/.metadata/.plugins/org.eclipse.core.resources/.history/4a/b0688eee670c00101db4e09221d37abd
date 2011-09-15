@@ -1,0 +1,6 @@
+package com.ccadllc.commons.jmx;
+
+public class MBeanServerUtilityTest
+{
+
+}

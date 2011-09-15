@@ -1,0 +1,56 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC.  */
+package com.ccadllc.firebird.core.serviceability.reporter.impl.report;
+
+import net.sf.json.JsonConfig;
+import net.sf.json.processors.JsonValueProcessor;
+
+/**
+ * Translates special number values into string values for JSON.
+ */
+public class SpecialNumberValueProcessor implements JsonValueProcessor
+{
+    private static final String NOT_A_NUMBER = "NaN";
+    private static final String NEGATIVE_INFINITY = "-Infinity";
+    private static final String POSITIVE_INFINITY = "Infinity";
+
+    @Override
+    public Object processArrayValue(Object value, JsonConfig config)
+    {
+        return processValue(value);
+    }
+
+    @Override
+    public Object processObjectValue(String key, Object value, JsonConfig jsonConfig)
+    {
+        return processValue(value);
+    }
+
+    private Object processValue(Object value)
+    {
+        if (Double.class.isAssignableFrom(value.getClass()))
+        {
+            Double doubleValue = (Double)value;
+            if (Double.isNaN( (double)doubleValue ))
+            {
+                return NOT_A_NUMBER;
+            }
+            if (Double.isInfinite(doubleValue))
+            {
+                return (doubleValue == Double.POSITIVE_INFINITY) ? POSITIVE_INFINITY : NEGATIVE_INFINITY;
+            }
+        }
+        if (Float.class.isAssignableFrom(value.getClass()))
+        {
+            Float floatValue = (Float)value;
+            if (Float.isNaN( (float)floatValue ))
+            {
+                return NOT_A_NUMBER;
+            }
+            if (Float.isInfinite(floatValue))
+            {
+                return (floatValue == Float.POSITIVE_INFINITY) ? POSITIVE_INFINITY : NEGATIVE_INFINITY;
+            }
+        }
+        return value;
+    }
+}

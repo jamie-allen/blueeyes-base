@@ -1,0 +1,218 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.common;
+
+import java.util.Collections;
+import java.util.Map;
+import java.util.Set;
+
+import com.ccadllc.firebird.dss.common.datatypes.RouteDataType;
+import com.ccadllc.firebird.dss.common.datatypes.RouteType;
+import com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType;
+
+import net.jcip.annotations.Immutable;
+
+import org.apache.commons.lang.builder.EqualsBuilder;
+import org.apache.commons.lang.builder.HashCodeBuilder;
+import org.apache.commons.lang.builder.ToStringBuilder;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Sets;
+
+/**
+ * This is an immutable snapshot of a <code>Route</code>.
+ */
+@Immutable
+public final class DefaultRouteSnapshot implements RouteSnapshot
+{
+    private final long id;
+    private final int port;
+    private final Multimap<Integer, Long> pidMappings;
+    private final Set<Long> streamIds;
+    private final Set<Integer> transportStreamIds;
+    private final TransportProtocolType transportProtocolType;
+    private final RouteType routeType;
+    private final RouteDataType routeDataType;
+    private final Map<String, String> properties;
+
+    private DefaultRouteSnapshot(final Builder builder)
+    {
+        Preconditions.checkNotNull(builder.id, "Route Id must be set.");
+        Preconditions.checkNotNull(builder.port, "Route port must be set.");
+        Preconditions.checkNotNull(builder.transportProtocolType, "Transport Protocol Type must be set.");
+        Preconditions.checkNotNull(builder.routeDataType, "Route Data Type must be set.");
+        Preconditions.checkNotNull(builder.routeType, "Route Type must be set.");
+
+        id = builder.id;
+        port = builder.port;
+        pidMappings = builder.pidMappings;
+        streamIds = builder.streamIds;
+        transportStreamIds = builder.transportStreamIds;
+        transportProtocolType = builder.transportProtocolType;
+        routeType = builder.routeType;
+        routeDataType = builder.routeDataType;
+        properties = builder.properties;
+    }
+
+    @Override
+    public long getId()
+    {
+        return id;
+    }
+
+    @Override
+    public int getPort()
+    {
+        return port;
+    }
+
+    public Multimap<Integer, Long> getPidMappings()
+    {
+        Preconditions.checkState(routeType == RouteType.PID_MAPPED, "Can not get pid mappings from a route that is not of type pid mapped.");
+        return pidMappings;
+    }
+
+    public Set<Long> getStreamIds()
+    {
+        Preconditions.checkState(routeType == RouteType.ELEMENTARY_STREAM, "Can not get stream ids from a route that is not of type elementary stream.");
+        return streamIds;
+    }
+
+    public Set<Integer> getTransportStreamIds()
+    {
+        Preconditions.checkState(routeType == RouteType.TRANSPORT_STREAM, "Can not get stream ids from a route that is not of type transport.");
+        return transportStreamIds;
+    }
+
+    @Override
+    public Map<String, String> getProperties()
+    {
+        return properties != null ? Collections.unmodifiableMap(properties) : null;
+    }
+
+    @Override
+    public TransportProtocolType getTransportProtocolType()
+    {
+        return transportProtocolType;
+    }
+
+    @Override
+    public RouteType getRouteType()
+    {
+        return routeType;
+    }
+
+    @Override
+    public RouteDataType getRouteDataType()
+    {
+        return routeDataType;
+    }
+
+    @Override
+    public int hashCode()
+    {
+        return HashCodeBuilder.reflectionHashCode(this);
+    }
+
+    @Override
+    public boolean equals(final Object obj)
+    {
+        return EqualsBuilder.reflectionEquals(this, obj);
+    }
+
+    @Override
+    public String toString()
+    {
+        return ToStringBuilder.reflectionToString(this);
+    }
+
+    public static class Builder
+    {
+        private long id;
+        private int port;
+        private Multimap<Integer, Long> pidMappings = HashMultimap.create();
+        private Set<Long> streamIds = Sets.newHashSet();
+        private Set<Integer> transportStreamIds = Sets.newHashSet();
+        private TransportProtocolType transportProtocolType;
+        private RouteType routeType;
+        private RouteDataType routeDataType;
+        private Map<String, String> properties = Maps.newHashMap();
+
+        public Builder id(final long id)
+        {
+            this.id = id;
+            return this;
+        }
+
+        public Builder port(final int port)
+        {
+            this.port = port;
+            return this;
+        }
+
+        public Builder properties(final Map<String, String> properties)
+        {
+            if (properties != null)
+            {
+                this.properties = properties;
+            }
+            return this;
+        }
+
+        public Builder streamIds(final Set<Long> streamIds)
+        {
+            Preconditions.checkNotNull(streamIds, "Stream ids should not be null.");
+            this.streamIds = streamIds;
+            return this;
+        }
+
+        public Builder transportStreamIds(final Set<Integer> transportStreamIds)
+        {
+            Preconditions.checkNotNull(transportStreamIds, "Transport stream ids should not be null.");
+            this.transportStreamIds = transportStreamIds;
+            return this;
+        }
+
+        public Builder pidMappings(final Multimap<Integer, Long> pidMappings)
+        {
+            Preconditions.checkNotNull(pidMappings, "Pid mappings should not be null.");
+            this.pidMappings = pidMappings;
+            return this;
+        }
+
+        public Builder transportProtocolType(final TransportProtocolType transportProtocolType)
+        {
+            this.transportProtocolType = transportProtocolType;
+            return this;
+        }
+
+        public DefaultRouteSnapshot buildForStreamIds()
+        {
+            Preconditions.checkState(transportStreamIds.isEmpty(), "Transport streams must not be set for elementary stream routes.");
+            Preconditions.checkState(pidMappings.isEmpty(), "Pid mappings must not be set for elementary stream routes.");
+            routeDataType = RouteDataType.BLOCKS;
+            routeType = RouteType.ELEMENTARY_STREAM;
+            return new DefaultRouteSnapshot(this);
+        }
+
+        public DefaultRouteSnapshot buildForTransportStreamIds()
+        {
+            Preconditions.checkState(pidMappings.isEmpty(), "Pid mappings must not be set for transport stream routes.");
+            Preconditions.checkState(streamIds.isEmpty(), "Stream Ids must not be set for transport stream routes.");
+            routeDataType = RouteDataType.MPEG_PACKETS;
+            routeType = RouteType.TRANSPORT_STREAM;
+            return new DefaultRouteSnapshot(this);
+        }
+
+        public DefaultRouteSnapshot buildForPidMappings()
+        {
+            Preconditions.checkState(streamIds.isEmpty(), "Stream Ids must not be set for pid mapped routes.");
+            Preconditions.checkState(transportStreamIds.isEmpty(), "Transport streams must not be set for pid mapped routes.");
+            routeDataType = RouteDataType.MPEG_PACKETS;
+            routeType = RouteType.PID_MAPPED;
+            return new DefaultRouteSnapshot(this);
+        }
+    }
+}

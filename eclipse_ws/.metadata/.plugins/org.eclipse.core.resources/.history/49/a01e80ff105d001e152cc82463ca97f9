@@ -1,0 +1,11 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.management;
+
+
+public interface InserterInstrumentationMXBean
+{
+    /**
+     * @return comma-separated list of stream Ids
+     */
+    String getStreamIds();
+}

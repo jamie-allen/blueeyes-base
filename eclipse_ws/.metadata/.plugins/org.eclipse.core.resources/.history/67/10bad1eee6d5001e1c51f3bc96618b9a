@@ -1,0 +1,119 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerUnitTestUtility.createTcpBlockRouteSnapshot;
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerUnitTestUtility.getEmptyStreamsList;
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerUnitTestUtility.getStubbedNotifier;
+
+import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+
+import org.apache.mina.transport.socket.nio.NioProcessor;
+import org.easymock.EasyMock;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+import org.testng.v6.Sets;
+
+@Test
+public class TcpBlockRouteControllerTest
+{
+    private static final int PORT4 = 7152;
+
+    private static final int PORT3 = 7151;
+
+    private static final int PORT2 = 7150;
+
+    private static final int PORT1 = 8150;
+
+    private StreamManager mockStreamManager;
+
+    private ScheduledExecutorService executor;
+    private NioProcessor processor;
+
+    @BeforeMethod
+    public void setUp() throws Exception
+    {
+        mockStreamManager = EasyMock.createMock(StreamManager.class);
+        executor = Executors.newSingleThreadScheduledExecutor();
+
+        processor = new NioProcessor(executor);
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testNullStreamIds() throws Exception
+    {
+        new TcpBlockRouteController(createTcpBlockRouteSnapshot(1L, PORT1, null), mockStreamManager, getStubbedNotifier(),
+            aTcpRouteSessionClosedEventDispatcher(), aTcpRouteSessionCreatedEventDispatcher(), executor, processor);
+    }
+
+    public void testEmptyStreamIds() throws Exception
+    {
+        new TcpBlockRouteController(createTcpBlockRouteSnapshot(1L, PORT1, getEmptyStreamsList()), mockStreamManager,
+            getStubbedNotifier(), aTcpRouteSessionClosedEventDispatcher(), aTcpRouteSessionCreatedEventDispatcher(), executor, processor);
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testNullStreamManager() throws Exception
+    {
+        new TcpBlockRouteController(createTcpBlockRouteSnapshot(1L, PORT1, getEmptyStreamsList()), null,
+            getStubbedNotifier(), aTcpRouteSessionClosedEventDispatcher(), aTcpRouteSessionCreatedEventDispatcher(), executor, processor);
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testNullNotificationManager() throws Exception
+    {
+        new TcpBlockRouteController(createTcpBlockRouteSnapshot(1L, PORT1, getEmptyStreamsList()), mockStreamManager,
+            null, aTcpRouteSessionClosedEventDispatcher(), aTcpRouteSessionCreatedEventDispatcher(), executor, processor);
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testInvalidPortNumber() throws Exception
+    {
+        new TcpBlockRouteController(createTcpBlockRouteSnapshot(1L, -1, getEmptyStreamsList()), mockStreamManager,
+            getStubbedNotifier(), aTcpRouteSessionClosedEventDispatcher(), aTcpRouteSessionCreatedEventDispatcher(), executor, processor);
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testNullStreamIdsOnUpdate() throws Exception
+    {
+        final TcpBlockRouteController tcpRouteController = new TcpBlockRouteController(createTcpBlockRouteSnapshot(2L,
+            PORT2, getEmptyStreamsList()), mockStreamManager, getStubbedNotifier(), aTcpRouteSessionClosedEventDispatcher(), aTcpRouteSessionCreatedEventDispatcher(), executor, processor);
+        tcpRouteController.update(null);
+    }
+
+    public void testEmptyStreamIdsOnUpdate() throws Exception
+    {
+        final TcpBlockRouteController tcpRouteController = new TcpBlockRouteController(createTcpBlockRouteSnapshot(2L,
+            PORT3, getEmptyStreamsList()), mockStreamManager, getStubbedNotifier(), aTcpRouteSessionClosedEventDispatcher(), aTcpRouteSessionCreatedEventDispatcher(), executor, processor);
+        tcpRouteController.update(createTcpBlockRouteSnapshot(2L, PORT3, getEmptyStreamsList()));
+    }
+
+    public void testValidStreamIdsOnUpdate() throws Exception
+    {
+        final Set<Long> streamIds = Sets.newHashSet();
+        streamIds.add(1L);
+        streamIds.add(2L);
+        final TcpBlockRouteController tcpRouteController = new TcpBlockRouteController(createTcpBlockRouteSnapshot(3L,
+            PORT4, streamIds), mockStreamManager, getStubbedNotifier(), aTcpRouteSessionClosedEventDispatcher(), aTcpRouteSessionCreatedEventDispatcher(), executor, processor);
+
+        streamIds.clear();
+        streamIds.add(2L);
+        streamIds.add(3L);
+        tcpRouteController.update(createTcpBlockRouteSnapshot(3L, PORT4, streamIds));
+
+        // TODO: Verify results.
+    }
+
+    private TcpRouteSessionClosedEventDispatcher aTcpRouteSessionClosedEventDispatcher()
+    {
+        return new TcpRouteSessionClosedEventDispatcher();
+    }
+
+    private TcpRouteSessionCreatedEventDispatcher aTcpRouteSessionCreatedEventDispatcher()
+    {
+        return new TcpRouteSessionCreatedEventDispatcher();
+    }
+}

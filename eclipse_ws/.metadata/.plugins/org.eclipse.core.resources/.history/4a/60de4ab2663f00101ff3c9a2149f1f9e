@@ -1,0 +1,537 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dac.synchronization.impl;
+
+import static com.ccadllc.commons.util.Option.some;
+import static com.ccadllc.firebird.vms.dac.domain.DacManagedPredicates.hasDacManagedId;
+import static com.ccadllc.firebird.vms.topology.core.TopologyPredicates.isTypeId;
+import static com.ccadllc.firebird.vms.topology.core.TopologyPredicates.locationBelow;
+import static com.google.common.collect.Iterables.all;
+import static com.google.common.collect.Iterables.size;
+import static com.google.common.collect.Lists.newArrayList;
+import static org.easymock.EasyMock.anyObject;
+import static org.easymock.EasyMock.createControl;
+import static org.easymock.EasyMock.eq;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.expectLastCall;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.hasEntry;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
+
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.List;
+import java.util.UUID;
+
+import com.ccadllc.commons.net.UnresolvedInetAddress;
+import com.ccadllc.commons.util.FunctionalIterable;
+import com.ccadllc.commons.util.FunctionalIterables;
+import com.ccadllc.commons.util.MoreHamcrest;
+import com.ccadllc.commons.util.Option;
+import com.ccadllc.firebird.dss.client.topology.Dss;
+import com.ccadllc.firebird.dss.client.topology.DssType;
+import com.ccadllc.firebird.vms.common.digicipher.topology.Constants;
+import com.ccadllc.firebird.vms.dac.cdis.CdisException;
+import com.ccadllc.firebird.vms.dac.cdis.DacDescription;
+import com.ccadllc.firebird.vms.dac.cdis.DssMode;
+import com.ccadllc.firebird.vms.dac.cdis.OmDescription;
+import com.ccadllc.firebird.vms.dac.cdis.OmReference;
+import com.ccadllc.firebird.vms.dac.cdis.RaddDescription;
+import com.ccadllc.firebird.vms.dac.cdis.RaddReference;
+import com.ccadllc.firebird.vms.dac.domain.Dac;
+import com.ccadllc.firebird.vms.dac.domain.Om;
+import com.ccadllc.firebird.vms.dac.synchronization.SynchronizationException;
+import com.ccadllc.firebird.vms.dac.webservice.DacWebService;
+import com.ccadllc.firebird.vms.topology.core.Device;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.PacketizedElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.ServingLocation;
+import com.ccadllc.firebird.vms.topology.core.ServingLocationQName;
+import com.ccadllc.firebird.vms.topology.core.Stream;
+import com.ccadllc.firebird.vms.topology.core.TransportStream;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableTopologyModel;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableTopologyModelPurpose;
+import com.ccadllc.firebird.vms.topology.sdk.tests.TestStubs;
+import com.ccadllc.firebird.vms.topology.simpledevices.SimpleEdgeDevice;
+import com.ccadllc.firebird.vms.topology.simpledevices.SynchronizationConfigProcessor;
+
+import org.easymock.IMocksControl;
+import org.hamcrest.Matchers;
+import org.springframework.web.client.ResourceAccessException;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+/**
+ * Tests <code>DefaultSynchronizationService</code>.
+ */
+@Test
+@SuppressWarnings("unchecked")
+public class DssRaddSynchronizationTest
+{
+    private static final ServingLocationQName ROOT = ServingLocationQName.of(":pa");
+    private static final ServingLocationQName REGIONAL = ServingLocationQName.of(":pa:east");
+    private static final UnresolvedInetAddress DSS_ADDRESS = UnresolvedInetAddress.create("dss-address");
+    private static final Dac DAC = Dac.builder("dac", "hostName").location(ROOT).softwareVersion("R4.2.1_B5_D07").build();
+    private static final Dss.Builder DSS_BUILDER = Dss.builder("dss", DssType.REMOTE).address(DSS_ADDRESS).location(REGIONAL);
+    private static final Dss DSS = DSS_BUILDER.build();
+
+    private final IMocksControl control = createControl();
+    private final DacWebService dacWebService = control.createMock(DacWebService.class);
+    private final SynchronizationConfigProcessor<Om> omConfigurationProcessor = control.createMock(SynchronizationConfigProcessor.class);
+    private final DssRaddSynchronization synch = new DssRaddSynchronization(dacWebService, omConfigurationProcessor, 161);
+
+    private MutableTopologyModel model;
+
+    @BeforeMethod
+    public void beforeMethod()
+    {
+        model = TestStubs.newModelWithContributions(MutableTopologyModelPurpose.SPECULATIVE);
+        model.addServingLocation(ROOT);
+        model.addServingLocation(REGIONAL);
+        model.addDevice(DAC);
+        model.addDevice(DSS);
+        control.reset();
+    }
+
+    public void testRaddifyRemoteDss_ImportsOM()
+    {
+        final UnresolvedInetAddress omAddress = UnresolvedInetAddress.create("om-test-address");
+        expectRaddsFromDac(radd(1));
+        expectOmsFromDac(om(5, omAddress.getAddress(), 1911, 1));
+        expectCacheOm(1);
+
+        control.replay();
+        synch.raddify(REGIONAL, model);
+        control.verify();
+
+
+        final Dss dss = model.getDevices().narrow(Dss.class).head();
+        assertThat(dss.getProperties(), hasEntry(com.ccadllc.firebird.vms.topology.spi.Constants.BELONGS_TO, DAC.getId().toString()));
+
+        final Om om = model.getDevices().filter(hasDacManagedId(5)).narrow(Om.class).head();
+        assertThat(om.getProperties(), hasEntry(com.ccadllc.firebird.vms.topology.spi.Constants.BELONGS_TO, DSS.getId().toString()));
+        assertThat(om.getDacId(), is(DAC.getId()));
+        assertThat(om.getDacManagedId(), is(5L));
+        assertThat(om.getName(), is(DAC.getName() + "/om-5"));
+    }
+
+    public void testRaddifyRemoteDss_ImportsOMsIntoTheirOwnServingLocationsBelowDss()
+    {
+        expectRaddsFromDac(radd(1), radd(2));
+        expectOmsFromDac(om(5, 1), om(6, 1), om(7, 2));
+        expectCacheOm(2);
+
+        control.replay();
+        synch.raddify(REGIONAL, model);
+        control.verify();
+
+        final Iterable<Om> cssOms = model.getDevices().narrow(Om.class);
+        assertThat(size(cssOms), is(2));
+        assertThat(all(cssOms, locationBelow(DSS.getLocation())), is(true));
+    }
+
+    public void testRaddifyRemoteDss_CreatesTransportControlStreamAtDssServingLocation()
+    {
+        expectRaddsFromDac(radd(1));
+        expectOmsFromDac(om(5, 1));
+        expectCacheOm(1);
+
+        control.replay();
+        synch.raddify(REGIONAL, model);
+        control.verify();
+
+        final TransportStream stream = model.getStreams().narrow(TransportStream.class).only().get();
+        assertThat(stream.getLocation(), is(DSS.getLocation()));
+        assertThat(stream.getProperties(), hasEntry(com.ccadllc.firebird.vms.topology.spi.Constants.BELONGS_TO, DSS.getId().toString()));
+        assertThat("TS lives with DSS so cannot be frozen.", stream.getProperties(), not(Matchers.<String, String>hasKey(com.ccadllc.firebird.vms.topology.spi.Constants.LOCATION_DELETEABLE)));
+    }
+
+    public void testRaddifyRemoteDss_CreatesNetworkStreamForEachOmAtOmServingLocation()
+    {
+        expectRaddsFromDac(radd(1));
+        expectOmsFromDac(om(5, 1), om(6, 1), om(7, 1));
+        expectCacheOm(3);
+
+        control.replay();
+        synch.raddify(REGIONAL, model);
+        control.verify();
+
+        final Iterable<Om> omDevices = model.getDevices().narrow(Om.class);
+        assertThat(size(omDevices), is(3));
+        for (final Device omDevice : omDevices)
+        {
+            final Om om = (Om) omDevice;
+            final ServingLocationQName omLocation = om.getLocation();
+            assertThat(model.getElementsAt(omLocation).narrow(Stream.class).only().get(), MoreHamcrest.<Stream>p(isTypeId(Constants.STREAM_TYPES_NETWORK)));
+            assertThat(model.getElementsAt(omLocation).narrow(Stream.class).only().get(), is(PacketizedElementaryStream.class));
+
+            final PacketizedElementaryStream networkStream = model.getElementsAt(omLocation).narrow(PacketizedElementaryStream.class).only().get();
+            assertThat(networkStream.getProperties(), hasEntry(com.ccadllc.firebird.vms.topology.spi.Constants.BELONGS_TO, DSS.getId().toString()));
+        }
+    }
+
+    public void testRaddifyRemoteDss_DryRun_DoesNotEnableDssOnRadd()
+    {
+        final UnresolvedInetAddress omAddress = UnresolvedInetAddress.create("om-test-address");
+        final RaddDescription radd = radd(1);
+        final List<RaddReference> raddRefs = newArrayList();
+        final RaddReference raddReference = RaddReference.create(DAC.getId(), radd.getId());
+        raddRefs.add(RaddReference.create(DAC.getId(), radd.getId()));
+        expect(dacWebService.getRaddDescription(DAC, raddReference)).andReturn(radd);
+        expect(dacWebService.getAllRaddReferences((Dac) anyObject())).andReturn(FunctionalIterables.of(raddRefs));
+
+        expectOmsFromDac(om(5, omAddress.getAddress(), 1911, 1));
+
+        expectCacheOm(1, false);
+
+        control.replay();
+        synch.raddify(REGIONAL, model);
+        control.verify();
+    }
+
+    @Test(expectedExceptions = {IllegalArgumentException.class })
+    public void testRaddifyLocalDss_ThrowsIAE()
+    {
+        model.deleteDevice(DSS.getId());
+        model.addDevice(Dss.builder("dss", DssType.LOCAL).location(ServingLocationQName.ROOT).address(DSS_ADDRESS).build());
+        synch.raddify(REGIONAL, model);
+    }
+
+    @Test(expectedExceptions = {IllegalArgumentException.class })
+    public void testRaddifyRemoteDss_WithNoDacAboveOrAtDssServingLocation_ThrowsIAE()
+    {
+        model.deleteDevice(DAC.getId());
+
+        synch.raddify(REGIONAL, model);
+    }
+
+    @Test(expectedExceptions = {IllegalArgumentException.class })
+    public void testRaddifyRemoteDss_RaddIsDsgType_ThrowsIAE()
+    {
+        expectRaddsFromDac(radd(1L, DSS_ADDRESS.getAddress(), true, DssMode.CAPABLE, 100000));
+        expectOmsFromDac(om(5, 1));
+
+        control.replay();
+        synch.raddify(REGIONAL, model);
+    }
+
+    public void testRaddifyRemoteDss_RaddIsDsgType_WhereOmBandwidthIsTooLow()
+    {
+        expectRaddsFromDac(radd(1L, DSS_ADDRESS.getAddress(), true, DssMode.CAPABLE, 50000));
+        expectOmsFromDac(om(5, 1));
+
+        control.replay();
+        synch.synchronize(DSS, model);
+        control.verify();
+
+        final FunctionalIterable<?> transportStream = model.getElementsAt(DSS.getLocation()).narrow(TransportStream.class);
+        assertThat(transportStream.size(), is(1));
+        final TransportStream ts = (TransportStream)transportStream.head();
+    }
+
+    @Test(expectedExceptions = {IllegalArgumentException.class })
+    public void testRaddifyRemoteDss_NoRaddAtDssAddress_ThrowsIAE()
+    {
+        expectRaddsFromDac();
+        expectOmsFromDac();
+
+        control.replay();
+        synch.raddify(REGIONAL, model);
+    }
+
+    @Test(expectedExceptions = {IllegalArgumentException.class })
+    public void testRaddifyRemoteDss_RaddIsNotDssCapabale_ThrowsIAE()
+    {
+        expectRaddsFromDac(radd(1L, DSS_ADDRESS.getAddress(), false, DssMode.VERSION_INCOMPATIBLE, 100000));
+        expectOmsFromDac(om(5, 1));
+
+        control.replay();
+        synch.raddify(REGIONAL, model);
+    }
+
+    @Test(expectedExceptions = {IllegalArgumentException.class })
+    public void testRaddifyRemoteDss_DacIsNotAValidVersionForRaddifying()
+    {
+        model.deleteDevice(DAC.getId());
+        final Dac newDac = (Dac) DAC.thawedCopy();
+        newDac.setSoftwareVersion(null);
+        model.addDevice(newDac);
+
+        control.replay();
+        synch.raddify(REGIONAL, model);
+    }
+
+    @Test(expectedExceptions = {SynchronizationException.class })
+    public void testRaddify_CdisExceptionIsWrapped() throws URISyntaxException
+    {
+        expect(dacWebService.getAllRaddReferences(DAC)).andThrow(new CdisException(new URI("http://" + DAC.getHostName()), new ResourceAccessException("My message").getMostSpecificCause()));
+
+        control.replay();
+        synch.raddify(REGIONAL, model);
+    }
+
+    public void testSynchronize_DssWithOneOm_DacWebServiceReturnsExistingOmAndNewOm_NewOmIsAddedToModel()
+    {
+        raddifyDssWithOms(om(5, 1));
+
+        expectRaddsFromDac(radd(1));
+        expectOmsFromDac(om(5, 1), om(6, 1));
+
+        omConfigurationProcessor.refresh((Om) anyObject(), eq(some(model)));
+        omConfigurationProcessor.cache((Om) anyObject(), eq(some(model)), eq(false));
+
+        control.replay();
+        synch.synchronize(DSS, model);
+        control.verify();
+
+        assertThat(model.getDevices().narrow(Om.class).size(), is(2));
+    }
+
+    public void testSynchronize_DssWithOneOm_DacWebServiceReturnsNoOms_MissingOmIsRemovedFromModel()
+    {
+        raddifyDssWithOms(om(5, 1));
+
+        expectRaddsFromDac(radd(1));
+        expectOmsFromDac();
+
+        control.replay();
+        synch.synchronize(DSS, model);
+        control.verify();
+
+        assertThat(model.getDevices().narrow(Om.class).size(), is(0));
+    }
+
+    public void testSynchronize_DssWithOneOm_DacWebServiceReturnsNoOms_OldOmServingLocationIsRemoved()
+    {
+        raddifyDssWithOms(om(5, 1));
+
+        expectRaddsFromDac(radd(1));
+        expectOmsFromDac();
+
+        control.replay();
+        synch.synchronize(DSS, model);
+        control.verify();
+
+        assertThat(model.getServingLocation(ServingLocationQName.newAbsolute(DSS.getLocation(), "om-5")), is(Option.<ServingLocation>none()));
+    }
+
+    public void testSynchronize_DssWithOneOm_DacWebServiceReturnsNoOms_OmNetworkStreamsAreRemovedFromOmServingLocations()
+    {
+        raddifyDssWithOms(om(5, 1));
+
+        expectRaddsFromDac(radd(1));
+        expectOmsFromDac();
+
+        control.replay();
+        synch.synchronize(DSS, model);
+        control.verify();
+
+        assertThat(model.getElementsAt(ServingLocationQName.newAbsolute(DSS.getLocation(), "om-5")).narrow(ElementaryStream.class).size(), is(0));
+    }
+
+    public void testSynchronize_DssWithOneOm_DacWebServiceReturnsNoOms_DssControlStreamIsNotRemovedFromDss()
+    {
+        raddifyDssWithOms(om(5, 1));
+
+        expectRaddsFromDac(radd(1));
+        expectOmsFromDac();
+
+        control.replay();
+        synch.synchronize(DSS, model);
+        control.verify();
+
+        assertThat(model.getElementsAt(DSS.getLocation()).narrow(TransportStream.class).size(), is(1));
+    }
+
+    public void testSynchronize_DacWebServiceReturnsNoRadd_ResultsInUnraddifyOfDss()
+    {
+        raddifyDssWithOms(om(5, 1));
+
+        // Expect no radds from DAC in initial synch request
+        expectRaddsFromDac();
+
+        control.replay();
+        synch.synchronize(DSS, model);
+        control.verify();
+
+        final Device dss = model.getElementById(DSS.getId()).narrow(Device.class).get();
+        assertThat(dss.getProperties().containsKey("raddId"), is(false));
+        assertThat(model.getDevices().narrow(Om.class).size(), is(0));
+    }
+
+    public void testUnRaddify_RemovesRaddIdFromDss()
+    {
+        raddifyDssWithOms(om(5, 1));
+
+        control.replay();
+        synch.unraddify(REGIONAL, model);
+        control.verify();
+
+        final Device dss = model.getElementById(DSS.getId()).narrow(Device.class).get();
+        assertThat(dss.getProperties().containsKey("raddId"), is(false));
+    }
+
+
+    public void testUnRaddify_RemovesOms()
+    {
+        raddifyDssWithOms(om(5, 1));
+
+        final ServingLocationQName omServingLocation = ServingLocationQName.newAbsolute(DSS.getLocation(), "Unnamed 1");
+        assertThat(model.getElementsAt(omServingLocation).narrow(ElementaryStream.class).size(), is(1));
+        // Add something to the OM serving location so that it doesn't get deleted automatically
+        model.addDevice(SimpleEdgeDevice.builder("temp", "temp").location(omServingLocation).build());
+
+        control.replay();
+        synch.unraddify(REGIONAL, model);
+        control.verify();
+
+        assertThat(model.getDevices().narrow(Om.class).size(), is(0));
+    }
+
+    public void testUnRaddify_RemovesNetworkStreams()
+    {
+        raddifyDssWithOms(om(5, 1));
+
+        final ServingLocationQName omServingLocation = ServingLocationQName.newAbsolute(DSS.getLocation(), "Unnamed 1");
+        assertThat(model.getElementsAt(omServingLocation).narrow(ElementaryStream.class).size(), is(1));
+        // Add something to the OM serving location so that it doesn't get deleted automatically
+        model.addDevice(SimpleEdgeDevice.builder("temp", "temp").location(omServingLocation).build());
+
+        control.replay();
+        synch.unraddify(REGIONAL, model);
+        control.verify();
+
+        assertThat(model.getElementsAt(omServingLocation).narrow(ElementaryStream.class).size(), is(0));
+    }
+
+    public void testUnRaddify_RemovesControlStream()
+    {
+        raddifyDssWithOms(om(5, 1));
+
+        assertThat(model.getElementsAt(DSS.getLocation()).narrow(TransportStream.class).size(), is(1));
+
+        control.replay();
+        synch.unraddify(REGIONAL, model);
+        control.verify();
+
+        assertThat(model.getElementsAt(DSS.getLocation()).narrow(TransportStream.class).size(), is(0));
+    }
+
+    @Test(expectedExceptions = {IllegalArgumentException.class })
+    public void testUnRaddify_RemovesEmptyServingLocations()
+    {
+        raddifyDssWithOms(om(5, 1));
+
+        final ServingLocationQName omServingLocation = ServingLocationQName.newAbsolute(DSS.getLocation(), "om-5");
+
+        control.replay();
+        synch.unraddify(REGIONAL, model);
+        control.verify();
+
+        model.deleteServingLocation(omServingLocation);
+    }
+
+    public void testUnRaddify_DoesNotRemoveNonEmptyServingLocations()
+    {
+        raddifyDssWithOms(om(5, 1));
+
+        final ServingLocationQName omServingLocation = ServingLocationQName.newAbsolute(DSS.getLocation(), "Unnamed 1");
+        // Add something to the OM serving location so that it doesn't get deleted automatically
+        model.addDevice(SimpleEdgeDevice.builder("temp", "temp").location(omServingLocation).build());
+
+        control.replay();
+        synch.unraddify(REGIONAL, model);
+        control.verify();
+
+        // Delete serving location should not throw since it still exists.
+        model.deleteServingLocation(omServingLocation);
+    }
+
+    @Test(expectedExceptions = {IllegalArgumentException.class })
+    public void testUnRaddify_RemovesEmptyServingLocationsThatHaveBeenRenamed()
+    {
+        raddifyDssWithOms(om(5, 1));
+
+        final ServingLocationQName omServingLocation = ServingLocationQName.newAbsolute(DSS.getLocation(), "om-5");
+        final ServingLocationQName newOmServingLocation = ServingLocationQName.newAbsolute(omServingLocation.getParent(), "new-om-location");
+        model.renameServingLocation(omServingLocation, newOmServingLocation.getLocalName());
+
+        control.replay();
+        synch.unraddify(REGIONAL, model);
+        control.verify();
+
+        model.deleteServingLocation(newOmServingLocation);
+    }
+
+    // Helpers
+
+    private void expectRaddsFromDac(final RaddDescription... radds)
+    {
+        final List<RaddReference> raddRefs = newArrayList();
+        for (final RaddDescription radd : radds)
+        {
+            final RaddReference raddReference = RaddReference.create(DAC.getId(), radd.getId());
+            raddRefs.add(RaddReference.create(DAC.getId(), radd.getId()));
+            expect(dacWebService.getRaddDescription((Dac) anyObject(), eq(raddReference))).andStubReturn(radd);
+        }
+        expect(dacWebService.getAllRaddReferences((Dac) anyObject())).andStubReturn(FunctionalIterables.of(raddRefs));
+    }
+
+    private void expectOmsFromDac(final OmDescription... oms)
+    {
+        final List<OmReference> omRefs = newArrayList();
+        for (final OmDescription om : oms)
+        {
+            final OmReference omReference = OmReference.create(DAC.getId(), om.getId());
+            omRefs.add(omReference);
+            expect(dacWebService.getOmDescription((Dac) anyObject(), eq(omReference))).andStubReturn(om);
+        }
+        expect(dacWebService.getAllOmReferences((Dac) anyObject())).andStubReturn(FunctionalIterables.of(omRefs));
+    }
+
+    private void expectCacheOm(final int numOms, final boolean manualEviction)
+    {
+        omConfigurationProcessor.cache((Om) anyObject(), (Option<MutableTopologyModel>) anyObject(), eq(manualEviction));
+        expectLastCall().times(numOms);
+    }
+
+    private void expectCacheOm(final int numOms)
+    {
+        omConfigurationProcessor.cache((Om) anyObject(), (Option<MutableTopologyModel>) anyObject(), eq(false));
+        expectLastCall().times(numOms);
+    }
+
+    private void raddifyDssWithOms(final OmDescription... oms)
+    {
+        expectRaddsFromDac(radd(1));
+        expectOmsFromDac(oms);
+        expectCacheOm(oms.length);
+
+        control.replay();
+        synch.raddify(REGIONAL, model);
+        control.reset();
+
+        expect(dacWebService.getDacDescription((Dac)anyObject())).andStubReturn(DacDescription.builder(DAC.getId(), UUID.randomUUID(), "R4.1").build());
+    }
+
+    private static RaddDescription radd(final long id)
+    {
+        return radd(id, DSS.getAddress().getAddress(), false, DssMode.ENABLED, 100);
+    }
+
+    private static RaddDescription radd(final long id, final String address, final boolean isDsgType, final DssMode dssMode, final long bandwidth)
+    {
+        return RaddDescription.builder(DAC.getId(), id, "radd-" + id, UnresolvedInetAddress.create(address)).dsgType(isDsgType).dssMode(dssMode).bandwidth(bandwidth).build();
+    }
+
+    private static OmDescription om(final long id, final long raddId)
+    {
+        return om(id, "some-om-address-" + id, 1911, raddId);
+    }
+
+    private static OmDescription om(final long id, final String address, final long networkPid, final long raddId)
+    {
+        return OmDescription.builder(DAC.getId(), id, "om-" + id, UnresolvedInetAddress.create(address))
+            .networkPid(networkPid).raddLink(RaddReference.create(DAC.getId(), raddId).getLink()).bandwidth(703).build();
+    }
+}

@@ -1,0 +1,100 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.core.ui.navigation.impl;
+
+import java.io.IOException;
+import java.util.Map;
+
+import com.ccadllc.firebird.core.base.common.Constants;
+import com.ccadllc.firebird.core.base.common.util.osgi.AbstractBundleRegistry;
+
+import org.osgi.framework.Bundle;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.EncodedResource;
+import org.springframework.osgi.io.OsgiBundleResource;
+
+import com.google.common.collect.MapMaker;
+
+/**
+ * Bundle registry that provides a {@link CompositeNavigationConfiguration} based on the currently started bundles.
+ *
+ * <p>When a bundle is started, this registry checks for the existence of a navigation configuration file in the
+ * bundle at {@value #NAVIGATION_CONFIG_LOCATION}.
+ * If found, the file is parsed and the resultant
+ * navigation configuration is added to the {@code CompositeNavigationConfiguration} maintained by this registry.</p>
+ *
+ * <p>When a bundle is stopped, if the bundle previously provided navigation configuration, its configuration is
+ * removed from the {@code CompositeNavigationConfiguration} maintained by this registry.</p>
+ *
+ * <p>Clients that need the merged navigation configuration of all started bundles can obtain it via
+ * {@link #getConfiguration()}.</p>
+ */
+public class NavigationRegistry extends AbstractBundleRegistry
+{
+    /** Location of the navigation configuration file. */
+    public static final String NAVIGATION_CONFIG_LOCATION = Constants.FIREBIRD_BUNDLE_DIRECTORY + "navigation-config.xml";
+    private static final String LOCATION = "/Users/jallen/ccad/development/tracks/firebird/vms/test-plugin-1.0/tools/web/src/main/resources/META-INF/firebird/navigation-config.xml";
+
+    /** Logger. */
+    private final Logger logger = LoggerFactory.getLogger(NavigationRegistry.class);
+
+    /** Composite configuration. */
+    private final CompositeNavigationConfiguration composite = new CompositeNavigationConfiguration();
+
+    /** Navigation configurations keyed by the bundle that contributed the configuration. */
+    private final Map<Bundle, ImmutableNavigationConfiguration> configurationByBundle = new MapMaker().makeMap();
+
+    /**
+     * Gets the merged configuration of all started bundles.
+     *
+     * @return non-null configuration
+     */
+    public NavigationConfiguration getConfiguration()
+    {
+        return composite;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    protected void register(final Bundle bundle)
+    {
+//        final OsgiBundleResource resource = new OsgiBundleResource(bundle, NAVIGATION_CONFIG_LOCATION);
+        final Resource resource = new FileSystemResource(LOCATION);
+        final EncodedResource encodedResource = new EncodedResource(resource, "UTF-8");
+        if (resource.exists())
+        {
+            logger.debug("Found navigation configuration in bundle {}.", bundle);
+
+            final XmlNavigationConfigurationParser parser = new XmlNavigationConfigurationParser();
+            try
+            {
+                final ImmutableNavigationConfiguration config = parser.parse(encodedResource.getResource());
+                configurationByBundle.put(bundle, config);
+                composite.add(config);
+                logger.debug("Registered navigation configuration for bundle {}.", bundle);
+            }
+            catch (final NavigationConfigurationException nce)
+            {
+                logger.error(String.format("Failed to register navigation support for %s.", bundle), nce);
+            }
+            catch (final IOException ioe)
+            {
+                logger.error(String.format("Failed to register navigation support for %s.", bundle), ioe);
+            }
+        }
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    protected void unregister(final Bundle bundle)
+    {
+        final ImmutableNavigationConfiguration config = configurationByBundle.remove(bundle);
+        if (config != null)
+        {
+            logger.debug("Unregistring navigation configuration for bundle {}.", bundle);
+            composite.remove(config);
+        }
+    }
+}

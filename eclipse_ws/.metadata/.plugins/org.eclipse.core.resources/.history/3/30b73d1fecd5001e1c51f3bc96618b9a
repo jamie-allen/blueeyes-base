@@ -1,0 +1,394 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.it;
+
+import static com.ccadllc.firebird.dss.it.TransportStreamMessageVerifier.verifyPayloadDataMatches;
+import static com.ccadllc.firebird.dss.it.TransportStreamTestUtility.udpMessageListener;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+
+import java.util.Date;
+import java.util.List;
+
+import javax.jms.JMSException;
+import javax.jms.TextMessage;
+import javax.xml.bind.JAXBException;
+
+import com.ccadllc.firebird.dss.common.datatypes.MeteringType;
+import com.ccadllc.firebird.dss.common.datatypes.StreamSummary;
+import com.ccadllc.firebird.dss.common.remote.messages.AddAncillaryStreamRequest;
+import com.ccadllc.firebird.dss.common.remote.messages.DestinationInfo;
+import com.ccadllc.firebird.dss.common.remote.messages.IntegerRangeSummary;
+import com.ccadllc.firebird.dss.common.remote.messages.StreamDestinationInfo;
+import com.ccadllc.firebird.dss.server.realtime.standalone.stream.manager.impl.Mpeg2Packet;
+
+import com.google.common.collect.Lists;
+
+
+/**
+ * <p>The ability to add ancillary streams to transport streams.</p>
+ *
+ * <p>Each transport stream in the DSS may include zero or more ancillary streams. Ancillary streams are not referenced by the PAT
+ * or PMT messages. The PID for an ancillary stream (unlike component streams, PAT streams, or PMT streams) is not selected by the
+ * DSS. This requires specification of a valid and unused PID when addition of a new ancillary stream is requested.</p>
+ */
+public class AddAncillaryStreamIntegrationTest extends AbstractDssOsgiIntegrationTest
+{
+    private static final int MPEG2_PACKET_HEADER_SIZE_WITH_START_BYTE = Mpeg2Packet.HEADER_SIZE_IN_BYTES + 1;
+    private static final int MAXIMUM_ANCILLARY_STREAM_PID = 8190;
+    private static final int MINIMUM_ANCILLARY_STREAM_PID = 1;
+    private static final List<IntegerRangeSummary> RESERVED_PID_RANGES = Lists.newArrayList();
+    private static final List<IntegerRangeSummary> RESERVED_PROGRAM_NUMBER_RANGES = Lists.newArrayList();
+    private static final int TIMEOUT = 5000;
+    private static final int BASE_PORT = 5000;
+    private static final byte[][] PERIODIC_DATA = new byte[][] {{0x00}};
+    private static final int TEST_PID = 1911;
+
+    public void testAddAncillaryStreamTo_Mpeg2TransportStream() throws Exception
+    {
+        /*
+         * Verify table data
+         * Verify stream output PID is same as specified
+         * Verify UDP Mpeg2 payload from periodic created for new stream
+         */
+        final int transportStreamId = anMpegTransportStream();
+        final long ancillaryStreamId = anAncillaryStream(transportStreamId);
+        aPeriodic(ancillaryStreamId);
+
+        verifyNumberOfStreams(2);
+        verifyNumberOfPeriodics(2);
+
+        final StreamSummary stream = queryForStreamById(ancillaryStreamId);
+        verifyAncillaryStreamPidIsValid(stream.getPid());
+        verifyMpeg2AncillaryStreamPeriodicData(PORT1, stream.getPid());
+    }
+
+    public void testAddAncillaryStreamTo_IpDirectTransportStream() throws Exception
+    {
+        /*
+         * Verify table data
+         * Verify stream output PID is same as specified
+         * Verify UDP IP Direct payload from periodic created for new stream on derived port
+         */
+        final int transportStreamId = anIpDirectTransportStream();
+        final long ancillaryStreamId = anAncillaryStream(transportStreamId);
+        aPeriodic(ancillaryStreamId);
+
+        verifyNumberOfStreams(2);
+        verifyNumberOfPeriodics(2);
+
+        final StreamSummary stream = queryForStreamById(ancillaryStreamId);
+        verifyAncillaryStreamPidIsValid(stream.getPid());
+        verifyIpDirectAncillaryStreamPeriodicData(BASE_PORT + stream.getPid(), stream.getPid());
+    }
+
+    public void testShouldSendErrorWhen_PidNumberSpecifiedIsInvalid() throws Exception
+    {
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("pid=\"\\w*\"", "pid=\"asdfasdfasdf\"");
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequest);
+    }
+
+    public void testShouldSendErrorWhen_PidNumberIsMissing() throws Exception
+    {
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("pid=\"\\w*\"", "");
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequest);
+
+        final String illegalAddAncillaryRequestEmptyAttribute = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("pid=\"\\w*\"", "pid=\"\"");
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequestEmptyAttribute);
+    }
+
+    public void testShouldSendErrorWhen_PidNumberIsInUseInTransportStream() throws Exception
+    {
+        anMpegTransportStream();
+
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("pid=\"\\w*\"", String.format("pid=\"%d\"", TEST_PID));
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequest);
+    }
+
+    /**
+     * Maximum pid number is maximum value for 8191.
+     */
+    public void testShouldSendErrorWhen_PidNumberSpecifiedIsTooLarge() throws Exception
+    {
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("pid=\"\\w*\"",
+            String.format("pid=\"%d\"", PID_MAXIMUM + 1));
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequest);
+    }
+
+    /**
+     * Minimum pid number is 0.
+     */
+    public void testShouldSendErrorWhen_PidNumberSpecifiedIsTooSmall() throws Exception
+    {
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("pid=\"\\w*\"",
+            String.format("pid=\"%d\"", PID_MINIMUM - 1));
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequest);
+    }
+
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_GivenMalformedAddAncillaryStreamMessageBody() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final StringBuffer malformedRequest = new StringBuffer(randomAddAncillaryStreamToTransportStreamToXml()).insert(57, "asdfasdf");
+        final TextMessage response = sendAndWait(malformedRequest.toString(), AddAncillaryStreamRequest.class.getSimpleName());
+
+        verifyIsErrorResponse(response);
+    }
+
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_TransportStreamDoesNotExist() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("id=\"\\w*\"", "id=\"6667\"");
+        final TextMessage response = sendAndWait(illegalAddAncillaryRequest, AddAncillaryStreamRequest.class.getSimpleName());
+
+        verifyIsErrorResponse(response);
+    }
+
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_TransportStreamIdIsMissingFromXml() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("transportStreamId=\"\\w*\"", "");
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequest);
+
+        final String illegalAddAncillaryRequestEmptyAttribute = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("transportStreamId=\"\\w*\"", "transportStreamId=\"\"");
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequestEmptyAttribute);
+    }
+
+    /**
+     * Maximum stream id is 9223372036854775807.
+     */
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_TransportStreamIdTooLarge() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("transportStreamId=\"\\w*\"",
+            String.format("transportStreamId=\"%d\"", Long.MAX_VALUE + 1));
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequest);
+    }
+
+    /**
+     * Minimum stream id is 0.
+     */
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_TransportStreamIdTooSmall() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("transportStreamId=\"\\w*\"",
+            String.format("transportStreamId=\"%d\"", Long.MIN_VALUE - 1));
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequest);
+    }
+
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_TransportStreamIdIsInvalid() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("transportStreamId=\"\\w*\"", "transportStreamId=\"asdfasdfasdf\"");
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequest);
+    }
+
+    /**
+     * Minimum for the Maximum average rate value is 1.
+     */
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_MaxAverageRateTooSmall() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("maxAverageRate=\"\\w*\"",
+            String.format("maxAverageRate=\"%d\"", 0));
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequest);
+    }
+
+    /**
+     * Maximum for the Maximum average rate value is 2147483647.
+     */
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_MaxAverageRateTooLarge() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("maxAverageRate=\"\\w*\"",
+            String.format("maxAverageRate=\"%d\"", Integer.MAX_VALUE + 1));
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequest);
+    }
+
+    /**
+     * Minimum for the Maximum burst size value is 1.
+     */
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_MaxBurstSizeTooSmall() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("maxBurstSize=\"\\w*\"",
+            String.format("maxBurstSize=\"%d\"", 0));
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequest);
+    }
+
+    /**
+     * Maximum for the Maximum burst size value is 2147483647.
+     */
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_MaxBurstSizeTooLarge() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("maxBurstSize=\"\\w*\"",
+            String.format("maxBurstSize=\"%d\"", Integer.MAX_VALUE + 1));
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequest);
+    }
+
+    /**
+     * Minimum for the Maximum shaping latency value is 0.
+     */
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_MaxShapingLatencyTooSmall() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("maxShapingLatency=\"\\w*\"",
+            String.format("maxShapingLatency=\"%d\"", 0));
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequest);
+    }
+
+    /**
+     * Maximum for the Maximum shaping latency value is 2147483647.
+     */
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_MaxShapingLatencyTooLarge() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("maxShapingLatency=\"\\w*\"",
+            String.format("maxShapingLatency=\"%d\"", Integer.MAX_VALUE + 1));
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequest);
+    }
+
+    /**
+     * Maximum average rate value must be a positive long numeric value.
+     */
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_MaxAverageRateIsInvalid() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("maxAverageRate=\"\\w*\"", "maxAverageRate=\"asdfasdfasdf\"");
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequest);
+    }
+
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_MaxAverageRateIsMissing() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("maxAverageRate=\"\\w*\"", "");
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequest);
+
+        final String illegalAddAncillaryRequestEmptyAttribute = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("maxAverageRate=\"\\w*\"", "maxAverageRate=\"\"");
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequestEmptyAttribute);
+    }
+
+    /**
+     * Maximum average burst size value must be a positive long numeric value.
+     */
+    public void testShouldSendErrorWhen_MaxBurstSizeIsInvalid() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("maxBurstSize=\"\\w*\"", "maxBurstSize=\"asdfasdfasdf\"");
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequest);
+    }
+
+    public void testShouldSendErrorWhen_MaxBurstSizeIsMissing() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("maxBurstSize=\"\\w*\"", "");
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequest);
+
+        final String illegalAddAncillaryRequestEmptyAttribute = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("maxBurstSize=\"\\w*\"", "maxBurstSize=\"\"");
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequestEmptyAttribute);
+    }
+
+    /**
+     * Maximum shaping latency size value must be a non-negative long numeric value.
+     */
+    public void testShouldSendErrorWhen_MaxShapingLatencyIsInvalid() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("maxShapingLatency=\"\\w*\"", "maxShapingLatency=\"asdfasdfasdf\"");
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequest);
+    }
+
+    public void testShouldSendErrorWhen_MaxShapingLatencyIsMissing() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalAddAncillaryRequest = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("maxShapingLatency=\"\\w*\"", "");
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequest);
+
+        final String illegalAddAncillaryRequestEmptyAttribute = randomAddAncillaryStreamToTransportStreamToXml().replaceAll("maxShapingLatency=\"\\w*\"", "maxShapingLatency=\"\"");
+        sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(illegalAddAncillaryRequestEmptyAttribute);
+    }
+
+    private int anMpegTransportStream() throws JMSException, JAXBException
+    {
+        return dssClient.createMpeg2TransportStream(Lists.<StreamDestinationInfo>newArrayList(new StreamDestinationInfo(IP_STRING, PORT1)),
+            TEST_PID, RESERVED_PID_RANGES, RESERVED_PROGRAM_NUMBER_RANGES, transportStreamProperties);
+    }
+
+    private int anIpDirectTransportStream() throws JMSException, JAXBException
+    {
+        return dssClient.createIpDirectTransportStream(Lists.<DestinationInfo>newArrayList(new DestinationInfo(IP_STRING)),
+            BASE_PORT, TEST_PID, RESERVED_PID_RANGES, RESERVED_PROGRAM_NUMBER_RANGES, transportStreamProperties);
+    }
+
+    private long anAncillaryStream(final int mpegTransportStreamId) throws JMSException, JAXBException
+    {
+        final int currentPidInUseByTest = getNextUniqueStreamPid();
+        return dssClient.addAncillaryStreamRequest(mpegTransportStreamId, currentPidInUseByTest, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, ancillaryStreamProperties);
+    }
+
+    private void aPeriodic(final Long streamid) throws JMSException, JAXBException
+    {
+        dssClient.addPeriodic(null, streamid, PERIODIC_DATA, MeteringType.FRONT_LOADED, new Date(), null, 10);
+    }
+
+    private void verifyMpeg2AncillaryStreamPeriodicData(final int port, final int expectedPid) throws Exception
+    {
+        final byte[] receivedPackets = udpMessageListener(port, System.currentTimeMillis() + TIMEOUT, outputHandler, AbstractDssOsgiIntegrationTest.MAX_BUFFER_VALUE);
+
+        assertThat(receivedPackets.length % MPEG_PACKET_SIZE, is(0));
+        final byte[] verifiableComponentStreamPayload = new byte[PERIODIC_DATA[0].length];
+        System.arraycopy(receivedPackets, MPEG2_PACKET_HEADER_SIZE_WITH_START_BYTE, verifiableComponentStreamPayload, 0, PERIODIC_DATA[0].length);
+        verifyPayloadDataMatches(verifiableComponentStreamPayload, PERIODIC_DATA[0]);
+
+        final int numOfPackets = receivedPackets.length / MPEG_PACKET_SIZE;
+        for (int i = 0; i < numOfPackets; i++)
+        {
+            final byte[] packet = new byte[MPEG_PACKET_SIZE];
+            System.arraycopy(receivedPackets, i * MPEG_PACKET_SIZE, packet, 0, MPEG_PACKET_SIZE);
+
+            verifyPidsInMpeg2Payload(packet, expectedPid);
+        }
+    }
+
+    private void verifyIpDirectAncillaryStreamPeriodicData(final int port, final int expectedPid)
+    {
+        final byte[] ancillaryStreamPayload = udpMessageListener(BASE_PORT + expectedPid, System.currentTimeMillis() + TIMEOUT, outputHandler, AbstractDssOsgiIntegrationTest.MAX_BUFFER_VALUE);
+        assertTrue(ancillaryStreamPayload.length > 0);
+        verifyPayloadDataMatches(ancillaryStreamPayload, PERIODIC_DATA[0]);
+    }
+
+    private void verifyPidsInMpeg2Payload(final byte[] packet, final int expectedPid)
+    {
+        final int packetPid = ((packet[1] & 0x1F) << 8) | (packet[2] & 0xFF);
+        if (packetPid == expectedPid)
+        {
+            return;
+        }
+
+        if (packetPid != 0)
+        {
+            fail("Invalid PID found on ancillary stream destination.");
+        }
+    }
+
+    private void verifyAncillaryStreamPidIsValid(final int pid)
+    {
+        if (pid < MINIMUM_ANCILLARY_STREAM_PID || pid > MAXIMUM_ANCILLARY_STREAM_PID)
+        {
+            fail("Ancillary stream PID is outside of valid PID range.");
+        }
+    }
+}

@@ -1,0 +1,33 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager;
+
+import java.io.IOException;
+
+import com.ccadllc.firebird.dss.common.datatypes.RouteDescription;
+
+/**
+ * Clients of DSS use this interface to establish a TCP route.
+ */
+public interface RouteEstablisher
+{
+    /**
+     * Binds a TCP port for the given route description.
+     *
+     * <p>Uses the route description instance to route incoming data by pid mappings, stream ids or transport stream ids.
+     * The primary reason why a port may not get bound are all the available ports are exhausted.</p>
+     *
+     * @param routeDescription routeDescription that contains the value by which the route will be established
+     * @return port that is guaranteed to be bound
+     * @throws IOException if a route was not established, or if the port was not bound
+     */
+    int establishTcpRoute(RouteDescription routeDescription) throws IOException;
+
+    /**
+     * Releases a TCP port for reuse.
+     *
+     * @param port number to be released.
+     */
+    void unregisterPort(int port);
+}

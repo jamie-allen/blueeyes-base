@@ -1,0 +1,44 @@
+package com.ccadllc.example.session;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import com.ccadllc.commons.session.AbstractAsynchronousSession;
+import com.ccadllc.commons.session.SessionFailureException;
+
+public class TestSession extends AbstractAsynchronousSession
+{
+
+    private final int n;
+
+    public TestSession(final int n)
+    {
+        this.n = n;
+    }
+
+    @Override
+    protected void onStart() throws SessionFailureException
+    {
+        begin();
+    }
+
+    private int calculateFibonacci(final int n)
+    {
+        if (n < 2)
+        {
+            return n;
+        }
+        return (n - 1) + (n - 2);
+    }
+
+    private void begin()
+    {
+        final List<Integer> sequence = new ArrayList<Integer>();
+        for (int i = 0; i < n; ++i)
+        {
+            sequence.add(calculateFibonacci(i));
+        }
+        markCompleted();
+        System.out.println(sequence.toString());
+    }
+}

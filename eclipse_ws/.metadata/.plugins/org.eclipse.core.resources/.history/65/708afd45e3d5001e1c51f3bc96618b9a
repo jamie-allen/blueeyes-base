@@ -1,0 +1,70 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.stream.manager.impl;
+
+import java.util.Date;
+import java.util.Map;
+import java.util.Set;
+
+import com.ccadllc.firebird.dss.common.datatypes.StreamType;
+import com.ccadllc.firebird.dss.common.datatypes.TransmissionType;
+
+/**
+ * Interface describing the JMX instrumented data for streams.
+ */
+public interface StreamInstrumentationMXBean
+{
+    /**
+     * @return the id of the stream being instrumented
+     */
+    Long getStreamId();
+
+    /**
+     * @return the packet identifier
+     */
+    Integer getPid();
+
+    /**
+     * @return maximum average bytes per second
+     */
+    int getMaxAverageRate();
+
+    /**
+     * @return maximum burst size in bytes
+     */
+    int getMaxBurstSize();
+
+    /**
+     * @return maximum shaping latency seconds of delayed packets
+     */
+    int getMaxShapingLatency();
+
+    /**
+     * @return a copy of the stream destination
+     */
+    Set<String> getDestinations();
+
+    /**
+     * @return the transmission type of stream
+     */
+    TransmissionType getTransmissionType();
+
+    /**
+     * @return the type of stream
+     */
+    StreamType getType();
+
+    /**
+     * @return the properties associated with this stream
+     */
+    Map<String, String> getProperties();
+
+    /**
+     * @return when the last insertion occurred on the instrumented stream, <code>null</code> if insertion has never occurred
+     */
+    Date getLastInsertionTime();
+
+    /**
+     * @param lastInsertionTime when the last insertion occurred on the instrumented stream
+     */
+    void setLastInsertionTime(Date lastInsertionTime);
+}

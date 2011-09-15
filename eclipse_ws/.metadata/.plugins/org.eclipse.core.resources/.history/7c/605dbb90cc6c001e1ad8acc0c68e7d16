@@ -1,0 +1,43 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.configuration.stream.domain.management;
+
+import java.util.Map;
+
+/**
+ * Represents program data associated with a transport stream.
+ */
+public abstract class ProgramData
+{
+    public abstract Integer getProgramNumber();
+    public abstract long getPmtStreamId();
+    public abstract Map<String, String> getProperties();
+//    private final Integer programNumber;
+//    private final long pmtStreamId;
+//    private final Map<String, String> properties;
+//
+//    public ProgramData(final Integer programNumber, final long pmtStreamId, final Map<String, String> properties)
+//    {
+//        this.programNumber = programNumber;
+//        this.pmtStreamId = pmtStreamId;
+//        this.properties = Maps.newHashMap(properties);
+//    }
+//    public Integer getProgramNumber()
+//    {
+//        return programNumber;
+//    }
+//    public long getPMTStreamId()
+//    {
+//        return pmtStreamId;
+//    }
+//    public long getPmtStreamId()
+//    {
+//        return pmtStreamId;
+//    }
+//    public Map<String, String> getProperties()
+//    {
+//        return properties != null ? Collections.unmodifiableMap(properties) : null;
+//    }
+}

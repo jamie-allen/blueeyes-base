@@ -1,0 +1,131 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.terminals.domain.impl;
+
+import java.util.Iterator;
+import java.util.List;
+import java.util.UUID;
+
+import javax.persistence.NoResultException;
+import javax.persistence.Query;
+
+import com.ccadllc.firebird.core.database.persistence.util.AbstractJpaRepository;
+import com.ccadllc.firebird.vms.terminals.domain.Operation;
+import com.ccadllc.firebird.vms.terminals.domain.OperationRepository;
+
+import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.google.common.base.Preconditions;
+
+/**
+ * JPA implementation of the <code>OperationRepository</code>.
+ *
+ * <p>The operation class that is persisted as an attribute of the <code>Operation</code> must be available on the
+ * classpath.</p>
+ */
+public class DefaultOperationRepository extends AbstractJpaRepository<Operation> implements OperationRepository
+{
+    /** Constructor. */
+    public DefaultOperationRepository()
+    {
+        super(Operation.class);
+    }
+
+    @Transactional(readOnly = true)
+    public Operation get(final UUID id)
+    {
+        return super.get(id);
+    }
+
+    @Transactional(readOnly = true)
+    public Operation get(final String clazz, final String selector, final UUID streamId)
+    {
+        Preconditions.checkArgument(clazz != null, "clazz cannot be null");
+        Preconditions.checkArgument(selector != null, "selector cannot be null");
+
+        Query query = null;
+
+        if (streamId != null)
+        {
+            query = entityManager.createQuery("select operation from Operation operation where operation.actionClass = :action_class "
+                + "and operation.selector = :selector and operation.streamId = :streamId");
+            query.setParameter("streamId", streamId);
+        }
+        else
+        {
+            query = entityManager.createQuery("select operation from Operation operation where operation.actionClass = :action_class "
+                + "and operation.selector = :selector and operation.streamId is null");
+        }
+
+        query.setParameter("action_class", clazz);
+        query.setParameter("selector", selector);
+
+
+        try
+        {
+            return ((Operation)query.getSingleResult());
+        }
+        catch (final EmptyResultDataAccessException e)
+        {
+            return null;
+        }
+        catch (final NoResultException e)
+        {
+            return null;
+        }
+    }
+
+    @Transactional(readOnly = true)
+    @SuppressWarnings("unchecked")
+    public List<Operation> getWithStreamId(final UUID streamId)
+    {
+        Preconditions.checkArgument(streamId != null, "streamId cannot be null");
+
+
+        final Query query = entityManager
+            .createQuery("select operation from Operation operation where operation.hidden != true and operation.streamId = :streamId");
+        query.setParameter("streamId", streamId);
+        return (query.getResultList());
+    }
+
+    @Override
+    public List<Operation> getAll()
+    {
+        return getAll(false);
+    }
+
+    @Transactional(readOnly = true)
+    @SuppressWarnings("unchecked")
+    public List<Operation> getAll(final boolean includeHidden)
+    {
+        if (includeHidden)
+        {
+            return super.getAll();
+        }
+        else
+        {
+            final Query query = entityManager
+                .createQuery("select operation from Operation operation where operation.hidden != true");
+            return (query.getResultList());
+        }
+    }
+
+    @Override
+    @Transactional
+    public void persist(final Operation content)
+    {
+        final Iterator<Operation> operationsOnThisStreamIterator = getWithStreamId(content.getStreamId()).iterator();
+        float availableBandwidthPercentage = 100;
+        while (operationsOnThisStreamIterator.hasNext() && availableBandwidthPercentage > 0)
+        {
+            availableBandwidthPercentage -= operationsOnThisStreamIterator.next().getBandwidthPercent();
+        }
+
+        if (availableBandwidthPercentage - content.getBandwidthPercent() < 0)
+        {
+            throw new IllegalArgumentException(String.format("Terminal operation cannot be added because it exceeds available bandwidth, using %f percent.", availableBandwidthPercentage));
+        }
+
+        super.persist(content);
+    }
+}

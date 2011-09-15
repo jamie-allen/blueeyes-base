@@ -1,0 +1,72 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dssrm.provisioning;
+
+import javax.persistence.Column;
+import javax.persistence.Embeddable;
+
+import com.ccadllc.firebird.core.base.common.util.MorePreconditions;
+
+import org.apache.commons.lang.builder.EqualsBuilder;
+import org.apache.commons.lang.builder.HashCodeBuilder;
+import org.apache.commons.lang.builder.ToStringBuilder;
+
+/**
+ * Pid to stream mapping.
+ *
+ * <p>Used by routes that support MPEG Packet data to route data for the given pid to a specified stream's destinations.</p>
+ */
+@Embeddable
+public class PidMapping
+{
+    private static final Integer PID_MINIMUM = 0;
+    private static final Integer PID_MAXIMUM = 8191;
+
+    @Column(name = "pid", nullable = false)
+    private int pid;
+
+    @Column(name = "stream_id", nullable = false)
+    private long streamId;
+
+    /**
+     * JPA constructor.
+     */
+    @SuppressWarnings("unused")
+    private PidMapping()
+    {
+    }
+
+    public PidMapping(final Integer pid, final Long streamId)
+    {
+        MorePreconditions.checkArgumentRange(pid, PID_MINIMUM, PID_MAXIMUM, "Invalid PID");
+        this.pid = pid;
+        this.streamId = streamId;
+    }
+
+    public int getPid()
+    {
+        return pid;
+    }
+
+    public long getStreamId()
+    {
+        return streamId;
+    }
+
+    @Override
+    public String toString()
+    {
+        return ToStringBuilder.reflectionToString(this);
+    }
+
+    @Override
+    public int hashCode()
+    {
+        return HashCodeBuilder.reflectionHashCode(this);
+    }
+
+    @Override
+    public boolean equals(final Object obj)
+    {
+        return EqualsBuilder.reflectionEquals(obj, this);
+    }
+}

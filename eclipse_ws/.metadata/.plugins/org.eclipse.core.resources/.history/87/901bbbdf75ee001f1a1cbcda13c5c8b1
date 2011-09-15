@@ -1,0 +1,62 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.core.base.common.util;
+
+import junit.framework.Assert;
+
+import org.testng.annotations.Test;
+
+/**
+ *	Unit tests for {@link TextParsingUtility}.
+ */
+@Test
+public class TextParsingUtilityTest
+{
+	String upperCaseString = "RESET_ON_CONNECT_ONLY";
+	public void testHumanizeUpperCaseString()
+	{
+		final String s = TextParsingUtility.humanizeUpperCaseTextString(upperCaseString);
+		Assert.assertEquals(s, "Reset On Connect Only");
+	}
+
+	public void testValidateBooleanStringValue_withLowerCaseTrue()
+	{
+
+	}
+
+    public void testValidateBooleanStringValue_withLowerCaseFalse()
+    {
+
+    }
+
+    public void testValidateBooleanStringValue_withMixedCaseTrue()
+    {
+
+    }
+
+    public void testValidateBooleanStringValue_withMixedCaseFalse()
+    {
+
+    }
+
+    public void testValidateBooleanStringValue_withUpperCaseTrue()
+    {
+
+    }
+
+    public void testValidateBooleanStringValue_withUpperCaseFalse()
+    {
+
+    }
+
+    @Test(expectedExceptions = {IllegalArgumentException.class })
+    public void testValidateBooleanStringValue_withInvalidStringValue()
+    {
+
+    }
+
+    @Test(expectedExceptions = {IllegalArgumentException.class })
+    public void testValidateBooleanStringValue_withNumericValue()
+    {
+
+    }
+}

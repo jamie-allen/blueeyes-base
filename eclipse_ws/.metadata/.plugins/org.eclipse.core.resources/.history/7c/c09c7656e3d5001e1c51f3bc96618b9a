@@ -1,0 +1,68 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.stream.manager.impl;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.util.Set;
+
+import com.ccadllc.firebird.dss.server.common.StreamSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.transport.manager.TransportManager;
+import com.ccadllc.firebird.vms.common.packetfiltering.AbstractPacketFilter;
+
+import net.jcip.annotations.ThreadSafe;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Sets;
+
+/**
+ * Extension of <code>AbstractPacketFilter</code> for sending datagrams to their destinations.
+ */
+@ThreadSafe
+public class TransportSender extends AbstractPacketFilter
+{
+    private final Logger logger = LoggerFactory.getLogger(TransportSender.class);
+    private final TransportManager transportManager;
+    private volatile Set<InetSocketAddress> destinations;
+
+    public TransportSender(final TransportManager transportManager, final StreamSnapshot stream)
+    {
+        super();
+        Preconditions.checkNotNull(transportManager, "transportManager");
+        Preconditions.checkNotNull(stream, "stream");
+        this.transportManager = transportManager;
+        setDestinations(stream.getDestinations());
+    }
+
+    @Override
+    public boolean insert(final byte[] packet)
+    {
+        for (final InetSocketAddress destination : destinations)
+        {
+            try
+            {
+                transportManager.send(packet, destination);
+            }
+            catch (final IOException ioe)
+            {
+                final String errorMessage = String.format("Failed during insert of a packet to %s at %s.",
+                        destination.getHostName(),
+                        destination.getPort());
+                logger.error(errorMessage, ioe);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * This mutator exists to support update of destinations in a stream.
+     * @param destinations to update
+     */
+    public void setDestinations(final Set<InetSocketAddress> destinations)
+    {
+        this.destinations = Sets.newHashSet(destinations);
+    }
+}

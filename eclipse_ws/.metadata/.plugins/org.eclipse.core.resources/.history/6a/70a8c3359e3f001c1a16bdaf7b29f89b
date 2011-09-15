@@ -1,0 +1,100 @@
+package com.ccadllc.example.session;
+
+import java.util.concurrent.Executors;
+
+import com.ccadllc.commons.session.Session;
+import com.ccadllc.commons.session.SessionCompletionListener;
+import com.ccadllc.commons.util.concurrent.CallbackSupportingScheduledExecutorService;
+import com.ccadllc.commons.util.concurrent.Callbacks;
+
+import org.testng.annotations.Test;
+
+public class TestSessionTest
+{
+    /**
+     * Number of seconds to allow for a session to complete before the test is considered failed.
+     */
+    private static final int SESSION_COMPLETION_LIMIT_SECONDS = 5;
+
+    /**
+     * @see #getExecutor()
+     */
+    private static final CallbackSupportingScheduledExecutorService EXECUTOR = Callbacks.enableCallbackSupportForExecutor(Executors
+        .newSingleThreadScheduledExecutor());
+
+    /**
+     * Executor provided to sessions.
+     * 
+     * @return EXECUTOR
+     */
+    protected CallbackSupportingScheduledExecutorService getExecutor()
+    {
+        return EXECUTOR;
+    }
+
+    /**
+     * Starts the session and waits up to 5 seconds for it to complete.
+     * 
+     * @throws InterruptedException
+     */
+    protected void startSessionNoWaiting(final TestSession testSession)
+    {
+        // final Semaphore semaphore = new Semaphore(0);
+        testSession.addListener(new SessionCompletionListener()
+        {
+            @Override
+            public void terminated(final Session session)
+            {
+                System.out.println("Complete");
+                // semaphore.release();
+            }
+        });
+        testSession.start();
+
+        // try
+        // {
+        // Assert.assertTrue(semaphore.tryAcquire(SESSION_COMPLETION_LIMIT_SECONDS, TimeUnit.SECONDS));
+        // }
+        // catch (final InterruptedException ie)
+        // {
+        // throw new RuntimeException("Interrupted while waiting for session to finish.", ie);
+        // }
+    }
+
+    protected TestSession createSession(final int num)
+    {
+        return new TestSession(num);
+    }
+
+    @Test
+    public void testSession()
+    {
+        final TestSession testSession1 = createSession(20);
+        testSession1.setExecutor(EXECUTOR);
+
+        final TestSession testSession2 = createSession(40);
+        testSession2.setExecutor(EXECUTOR);
+
+        final Thread thread1 = new Thread()
+        {
+            @Override
+            public void run()
+            {
+                startSessionNoWaiting(testSession1);
+            }
+        };
+
+        final Thread thread2 = new Thread()
+        {
+            @Override
+            public void run()
+            {
+                startSessionNoWaiting(testSession2);
+            }
+        };
+
+        thread1.start();
+        thread2.start();
+
+    }
+}

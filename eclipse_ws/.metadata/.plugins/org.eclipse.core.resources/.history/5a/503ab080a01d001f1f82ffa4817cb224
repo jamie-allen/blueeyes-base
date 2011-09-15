@@ -1,0 +1,61 @@
+<?xml version="1.0"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <artifactId>ccad-firebird-vms-common-mpeg2-psi</artifactId>
+    <packaging>bundle</packaging>
+    <version>3.4.0-SNAPSHOT</version>
+    <name>Firebird VMS Common MPEG2 PSI</name>
+    <description>Common MPEG2 Program Specific Information bundle</description>
+    <parent>
+        <groupId>com.ccadllc.firebird.vms</groupId>
+        <artifactId>ccad-firebird-vms-common-mpeg2</artifactId>
+        <version>3.4.0-SNAPSHOT</version>
+    </parent>
+    <properties>
+        <bundle.symbolicName>com.ccadllc.firebird.vms.common.mpeg2.psi</bundle.symbolicName>
+        <bundle.namespace>com.ccadllc.firebird.vms.common.mpeg2.psi</bundle.namespace>
+    </properties>
+    <scm>
+        <connection>${scmConnectionBase}/common/mpeg2/psi</connection>
+    </scm>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.felix</groupId>
+                <artifactId>maven-bundle-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+
+    <dependencies>
+    
+        <dependency>
+            <groupId>com.ccadllc.commons</groupId>
+            <artifactId>ccad-common</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.ccadllc.commons</groupId>
+            <artifactId>ccad-commons-messaging</artifactId>
+        </dependency>
+
+        <!-- Testing dependencies -->
+        <dependency>
+            <groupId>com.ccadllc.firebird.core</groupId>
+            <artifactId>ccad-firebird-core-test-support</artifactId>
+            <version>${ccad.firebird.core.version}</version>
+            <scope>test</scope>
+        </dependency> 
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>org.springframework.test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.ccadllc.commons</groupId>
+            <artifactId>ccad-commons-test-support</artifactId>
+            <scope>test</scope>
+        </dependency>
+        
+    </dependencies>
+</project>

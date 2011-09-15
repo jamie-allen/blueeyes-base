@@ -1,0 +1,7 @@
+1282574187207	Rename local variable 'TYPE1'
+1282592821119	Rename local variable 'mpegMsg'
+1282593202979	Rename local variable 'blockMsg'
+1282593420714	Rename local variable 'collector'
+1282593428823	Rename local variable 'collector2'
+1282598983041	Extract constant 'TYPE1'
+1282845347504	Rename local variable 'routeId'

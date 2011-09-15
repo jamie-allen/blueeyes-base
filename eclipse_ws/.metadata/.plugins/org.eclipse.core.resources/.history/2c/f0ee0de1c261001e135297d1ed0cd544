@@ -1,0 +1,25 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.management;
+
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter.Inserter;
+
+import net.jcip.annotations.Immutable;
+
+/**
+ * JMX Bean instrumenting information about an Inserter packet filter instance in a route.
+ */
+@Immutable
+public final class InserterInstrumentation implements InserterInstrumentationMXBean
+{
+    private final Inserter inserter;
+
+    public InserterInstrumentation(final Inserter inserter)
+    {
+        this.inserter = inserter;
+    }
+
+    public Long[] getStreamIds()
+    {
+        return inserter.getStreamIdsAsString();
+    }
+}

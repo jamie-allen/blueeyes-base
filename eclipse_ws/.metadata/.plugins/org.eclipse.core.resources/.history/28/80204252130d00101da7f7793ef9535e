@@ -1,0 +1,98 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dkssimulator.core
+
+import com.ccadllc.firebird.vms.common.digicipher.domain.UnitAddress
+import com.google.common.base.Preconditions
+import com.ccadllc.commons.scala.Logging
+import com.ccadllc.commons.jmx.MBeanServerUtility
+import org.springframework.jmx.export.annotation._
+
+case class DeeAddressStatus(deeAddress: UnitAddress, var active: Boolean) {
+  def activateDeeAddress(newActiveValue: Boolean) = DeeAddressStatus(deeAddress, newActiveValue)
+}
+
+@ManagedResource(objectName="DKS Simulator:type=DEE Manager", description="Manager of all DEE addresses in the DKS Simulator")
+object DeeManager extends Logging {
+  val deeAddressUamString_1 = "000-03023-61881-092"
+  val deeAddressUamString_2 = "000-03018-92359-157"
+  val deeAddressUamString_3 = "000-02989-68200-030"
+  val deeAddressUamString_4 = "000-02995-47440-022"
+  val deeAddressUamString_5 = "000-03335-17220-095"
+  val deeAddressUamString_6 = "000-02997-18439-162"
+  val deeAddressUamString_7 = "000-03030-66601-059"
+  val deeAddressUamString_8 = "000-02998-92402-153"
+
+  private val maxDeeAddresses = 8
+
+  @ManagedAttribute(description = "A list of DEE unit addresses and their current status.")
+  private var dees = newDeeAddressList
+  private var deeCount = dees.length
+  private var currentPos = 0
+
+  def newDeeAddressList: List[DeeAddressStatus] = {
+    List(
+      DeeAddressStatus(new UnitAddress(deeAddressUamString_1), true),
+      DeeAddressStatus(new UnitAddress(deeAddressUamString_2), true),
+      DeeAddressStatus(new UnitAddress(deeAddressUamString_3), true),
+      DeeAddressStatus(new UnitAddress(deeAddressUamString_4), true),
+      DeeAddressStatus(new UnitAddress(deeAddressUamString_5), true),
+      DeeAddressStatus(new UnitAddress(deeAddressUamString_6), true),
+      DeeAddressStatus(new UnitAddress(deeAddressUamString_7), true),
+      DeeAddressStatus(new UnitAddress(deeAddressUamString_8), true))
+  }
+
+  def deeCount(max: Int) { Preconditions.checkArgument(max > 0 && max <= maxDeeAddresses); deeCount = max }
+
+  @ManagedOperation(description = "Resets the DEE address list to the original eight active unit addresses, and sets the current position back to 0.")
+  def reset { currentPos = 0; dees = newDeeAddressList }
+
+  def deeAddress: UnitAddress = {
+    synchronized {
+      val startPos = currentPos
+      def getNextActiveDeeAddress: DeeAddressStatus = {
+        val addressToUse = dees(currentPos)
+        currentPos += 1
+        if (currentPos >= deeCount) currentPos = 0
+        if (currentPos == startPos && !addressToUse.active)
+          throw new IllegalStateException("Did not find active DEE Address to use, all are inactive: " + dees)
+        if (addressToUse.active)
+          return addressToUse
+
+        return getNextActiveDeeAddress
+      }
+
+      return getNextActiveDeeAddress.deeAddress
+    }
+  }
+
+  @ManagedOperation(description = "Activates or deactivates a specific DEE address.")
+//  @ManagedOperationParameters(Array(
+//    @ManagedOperationParameter(name="deeAddress" description="The DEE unit address to activate or deactivate."),
+//    @ManagedOperationParameter(name="active" description="The boolean true (active) or false (inactive) value for activating or deactivating a DEE address.")
+//  ))
+  def activateDeeAddress(deeAddress: UnitAddress, active: Boolean) {
+    val exists = dees.foldLeft(false)((a, deeAddressStatus) => if (deeAddressStatus.deeAddress == deeAddress || a == true) true else false)
+    if (!exists) {
+      logDebug("Dee Address: " + deeAddress + " not found, cannot be changed to: " + active)
+      return
+    }
+
+    dees = dees.map(deeAddressStatus => if (deeAddressStatus.deeAddress == deeAddress) deeAddressStatus.activateDeeAddress(active) else deeAddressStatus)
+  }
+
+  @ManagedOperation(description = "Activate or deactivate all DEE addresses.")
+//  @ManagedOperationParameters({
+//    @ManagedOperationParameter(name="active" description="The boolean true (active) or false (inactive) value for activating or deactivating all DEE addresses.")
+//  })
+  def activateAllDeeAddresses(active: Boolean) {
+    dees = dees.map(deeAddressStatus => { deeAddressStatus.activateDeeAddress(active) })
+  }
+
+  def validDee(deeAddress: UnitAddress): Boolean = {
+    val foundDee = dees.filter(deeAddressStatus => deeAddressStatus.deeAddress == deeAddress)
+    if (foundDee.length > 0)
+      return foundDee(0).active
+
+    return false
+  }
+}

@@ -1,0 +1,3 @@
+#Wed May 19 13:58:33 EDT 2010
+prefWatchExpressions=<?xml version\="1.0" encoding\="UTF-8" standalone\="no"?>\n<watchExpressions>\n<expression enabled\="true" text\="java.lang.management.ManagementFactory.getPlatformMBeanServer().queryMBeans(new javax.management.ObjectName(&quot;DSS\:*&quot;), null)"/>\n<expression enabled\="true" text\="expectedPrograms.get(programSummary.get(&quot;programNumber&quot;))"/>\n<expression enabled\="true" text\="xml"/>\n<expression enabled\="true" text\="java.lang.management.ManagementFactory.getPlatformMBeanServer().getAttributes(new javax.management.ObjectName(&quot;DSS\:beanType\=Router,protocol\=UDP,routeId\=1,type\=Routes&quot;), new String[] {});"/>\n</watchExpressions>\n
+eclipse.preferences.version=1

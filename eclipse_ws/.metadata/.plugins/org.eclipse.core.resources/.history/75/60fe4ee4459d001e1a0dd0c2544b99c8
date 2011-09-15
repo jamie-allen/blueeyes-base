@@ -1,0 +1,77 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dssrm.core;
+
+import org.hamcrest.Matcher;
+import org.hamcrest.TypeSafeMatcher;
+import org.hamcrest.Description;
+import static org.hamcrest.Matchers.hasProperty;
+import static org.hamcrest.Matchers.hasKey;
+import static org.hamcrest.Matchers.hasEntry;
+
+import java.util.UUID;
+
+import com.google.common.base.Preconditions;
+
+/**
+ * Utility class that provides matchers for {@link PeriodicDescription}s.
+ *
+ * @see DataStreamServerResourceManager#queryForPeriodic(Matcher)
+ * @see DataStreamServerResourceManager#queryForPeriodics(Matcher)
+ */
+public final class DssrmCoreMatchers<T>
+{
+    /** Prevents instantiation. */
+    private DssrmCoreMatchers()
+    {
+    }
+
+    public static Matcher<T> hasId(final UUID id)
+    {
+        Preconditions.checkNotNull(id, "id");
+
+        return new TypeSafeMatcher<T>() {
+
+            @Override
+            public boolean matchesSafely(final T toMatch)
+            {
+                return id.equals(toMatch.getId());
+            }
+
+            @Override
+            public void describeTo(final Description desc)
+            {
+                desc.appendText("id is ").appendValue(id);
+            }
+        };
+    }
+
+    public static Matcher<PeriodicDescription> hasStreamId(final UUID streamId)
+    {
+        Preconditions.checkNotNull(streamId, "streamId");
+
+        return new TypeSafeMatcher<PeriodicDescription>() {
+
+            @Override
+            public boolean matchesSafely(final PeriodicDescription toMatch)
+            {
+                return streamId.equals(toMatch.getStreamId());
+            }
+
+            @Override
+            public void describeTo(final Description desc)
+            {
+                desc.appendText("streamId is ").appendValue(streamId);
+            }
+        };
+    }
+
+    public static Matcher<PeriodicDescription> hasPropertyKey(final String key)
+    {
+        return hasProperty("properties", hasKey(key));
+    }
+
+    public static Matcher<PeriodicDescription> hasPropertyValue(final String key, final String value)
+    {
+        return hasProperty("properties", hasEntry(key, value));
+    }
+}

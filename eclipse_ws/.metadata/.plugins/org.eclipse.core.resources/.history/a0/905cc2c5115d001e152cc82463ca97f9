@@ -1,0 +1,37 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.management;
+
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter.Mpeg2PacketStatisticsCollector;
+
+import net.jcip.annotations.ThreadSafe;
+
+/**
+ * JMX Bean instrumenting information about Mpeg2 packets inserted from the referenced
+ * packet filter, as well as those rejected by the subsequent packet filter in the chain.
+ */
+@ThreadSafe
+public final class Mpeg2PacketStatistics implements Mpeg2PacketStatisticsMXBean
+{
+    private final Mpeg2PacketStatisticsCollector collector;
+
+    public Mpeg2PacketStatistics(final Mpeg2PacketStatisticsCollector collector)
+    {
+        this.collector = collector;
+        collector.resetCounters();
+    }
+
+    public Long getPacketsInserted()
+    {
+        return collector.getPacketsInserted();
+    }
+
+    public Long getPacketsRejected()
+    {
+        return collector.getPacketsRejected();
+    }
+
+    public void resetCounters()
+    {
+        collector.resetCounters();
+    }
+}

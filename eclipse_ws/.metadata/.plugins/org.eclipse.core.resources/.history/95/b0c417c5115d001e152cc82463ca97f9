@@ -1,0 +1,65 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import com.ccadllc.firebird.dss.common.datatypes.RouteDataType;
+import com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.management.JmxRouteNotificationManager;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+
+/**
+ *
+ */
+public final class RouteControllerFactory
+{
+    private static final Logger logger = LoggerFactory.getLogger(RouteControllerFactory.class);
+
+    private RouteControllerFactory()
+    {
+    }
+
+    public static AbstractRouteController getRouteController(
+            final RouteSnapshot route,
+            final StreamManager streamManager,
+            final JmxRouteNotificationManager jmxRouteNotificationManager) throws IOException
+    {
+        AbstractRouteController routeController = null;
+
+        if (route.getTransportProtocolType() == TransportProtocolType.UDP
+            && route.getDataType() == RouteDataType.BLOCKS)
+        {
+            logger.debug("RouteControllerFactory creating UdpBlockRouteController.");
+            routeController = new UdpBlockRouteController(route, streamManager, jmxRouteNotificationManager);
+        }
+
+        if (route.getTransportProtocolType() == TransportProtocolType.UDP
+            && route.getDataType() == RouteDataType.MPEG_PACKETS)
+        {
+            logger.debug("RouteControllerFactory creating UdpMpeg2RouteController.");
+            routeController = new UdpMpeg2RouteController(route, streamManager, jmxRouteNotificationManager);
+        }
+
+        if (route.getTransportProtocolType() == TransportProtocolType.TCP
+            && route.getDataType() == RouteDataType.BLOCKS)
+        {
+            logger.debug("RouteControllerFactory creating TcpBlockRouteController.");
+            routeController = new TcpBlockRouteController(route, streamManager, jmxRouteNotificationManager);
+        }
+
+        if (route.getTransportProtocolType() == TransportProtocolType.TCP
+            && route.getDataType() == RouteDataType.MPEG_PACKETS)
+        {
+            logger.debug("RouteControllerFactory creating TcpMpeg2RouteController.");
+            routeController = new TcpMpeg2RouteController(route, streamManager, jmxRouteNotificationManager);
+        }
+
+        return routeController;
+    }
+}

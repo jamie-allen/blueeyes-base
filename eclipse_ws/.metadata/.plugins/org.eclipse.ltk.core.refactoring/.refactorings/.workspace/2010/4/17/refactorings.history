@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Delete 4 resources" deleteContents="false" description="Delete 4 resources" element1="/ccad-firebird-vms-common-mpeg2-psi" element2="/ccad-firebird-vms-common-units" element3="/ccad-firebird-vms-test-controllers" element4="/ccad-firebird-vms-test-plugin" flags="7" id="org.eclipse.ltk.core.refactoring.delete.resources" resources="4" stamp="1271784467907"/>
+</session>

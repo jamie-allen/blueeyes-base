@@ -1,0 +1,103 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.JmxRouteNotificationManager;
+import com.ccadllc.firebird.vms.common.packetfiltering.CompositePacketFilter;
+
+import org.apache.mina.core.service.IoHandlerAdapter;
+import org.apache.mina.transport.socket.DatagramSessionConfig;
+import org.apache.mina.transport.socket.nio.NioDatagramAcceptor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.base.Preconditions;
+
+/**
+ * Base implementation for {@code UdpRouteController}.
+ */
+public abstract class AbstractUdpRouteController implements UdpRouteController
+{
+    private final Logger logger = LoggerFactory.getLogger(AbstractUdpRouteController.class);
+
+    private volatile boolean disposed;
+    private NioDatagramAcceptor acceptor;
+    private CompositePacketFilter chain;
+
+    /** Lock used when manipulating the streamIds collection. */
+    private final Object lock = new Object();
+
+    public AbstractUdpRouteController(final RouteSnapshot route, final StreamManager streamManager,
+        final JmxRouteNotificationManager jmxRouteNotificationManager)
+    {
+        Preconditions.checkNotNull(streamManager);
+        Preconditions.checkNotNull(jmxRouteNotificationManager);
+    }
+
+    @Override
+    public final void update(final RouteSnapshot route)
+    {
+        updateValidations(route);
+
+        synchronized (lock)
+        {
+            ensureNotDisposed();
+            updateInternal(route);
+        }
+    }
+
+    abstract void updateValidations(RouteSnapshot route);
+    abstract void updateInternal(RouteSnapshot route);
+
+    void setChain(final CompositePacketFilter chain)
+    {
+        this.chain = chain;
+    }
+
+    CompositePacketFilter getChain()
+    {
+        return chain;
+    }
+
+    @Override
+    public void shutdown()
+    {
+        logger.debug("Shutdown...");
+        synchronized (lock)
+        {
+            if (acceptor != null)
+            {
+                acceptor.dispose();
+            }
+
+            chain.dispose();
+            disposed = true;
+        }
+    }
+
+    void ensureNotDisposed()
+    {
+        if (disposed)
+        {
+            logger.warn("Action called on disposed filter chain.");
+            throw new IllegalStateException("Object has been disposed.");
+        }
+    }
+
+    void openUdpPort(final int port, final IoHandlerAdapter handler) throws IOException
+    {
+        acceptor = new NioDatagramAcceptor();
+        acceptor.setHandler(handler);
+
+        final DatagramSessionConfig datagramSessionConfig = acceptor.getSessionConfig();
+        datagramSessionConfig.setReuseAddress(true);
+
+        acceptor.bind(new InetSocketAddress(port));
+        logger.debug("UDPServer listening on port " + port);
+    }
+}

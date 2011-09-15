@@ -1,0 +1,340 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.client.broker.it;
+
+import static com.ccadllc.firebird.core.test.support.osgi.options.Options.artifact;
+import static com.ccadllc.firebird.core.test.support.osgi.options.Options.bundles;
+import static com.ccadllc.firebird.core.test.support.osgi.options.Options.group;
+
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Dictionary;
+import java.util.Hashtable;
+import java.util.List;
+import java.util.Map;
+import java.util.jar.Attributes;
+import java.util.jar.Manifest;
+
+import com.ccadllc.commons.util.MapUtility;
+import com.ccadllc.commons.util.Pair;
+import com.ccadllc.firebird.core.test.support.osgi.AbstractWebOsgiIntegrationTest;
+import com.ccadllc.firebird.core.test.support.osgi.MockOsgiService;
+import com.ccadllc.firebird.core.test.support.osgi.options.Options;
+import com.ccadllc.firebird.core.test.support.osgi.options.OsgiConfiguration;
+import com.ccadllc.firebird.dss.common.datatypes.BlockDescriptor;
+import com.ccadllc.firebird.dss.common.datatypes.BlockSetDescriptor;
+import com.ccadllc.firebird.dss.common.datatypes.UdpRouteSummary;
+import com.ccadllc.firebird.dss.common.remote.messages.BlockRouteData;
+import com.ccadllc.firebird.dss.common.remote.messages.MessageMarshallerAdapter;
+import com.ccadllc.firebird.dss.common.remote.messages.MpegPacketRouteData;
+import com.ccadllc.firebird.dss.common.remote.messages.PidMapping;
+import com.ccadllc.firebird.dss.server.configuration.blockset.domain.BlockSetRepository;
+import com.ccadllc.firebird.dss.server.configuration.route.domain.RouteRepository;
+import com.ccadllc.firebird.dss.server.configuration.stream.domain.StreamRepository;
+import com.ccadllc.firebird.dss.server.configuration.stream.domain.TransportStreamRepository;
+
+import org.apache.activemq.broker.BrokerService;
+import org.apache.activemq.store.memory.MemoryPersistenceAdapter;
+import org.osgi.framework.BundleContext;
+import org.osgi.service.cm.Configuration;
+import org.osgi.service.cm.ConfigurationAdmin;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jms.listener.DefaultMessageListenerContainer;
+
+import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Sets;
+
+/**
+ * Abstract test for all the client broker integration tests.
+ */
+public abstract class AbstractClientBrokerIntegrationTest extends AbstractWebOsgiIntegrationTest
+{
+    protected static final String PROVISIONING_FACADE_BUNDLE = "com.ccadllc.firebird.dss.server.provisioning.facade";
+    protected static final String DSS_CONFIG_PID = "com.ccadllc.firebird.dss.client.broker";
+    protected static final String BROKER_IMPL_BUNDLE = "com.ccadllc.firebird.dss.client.broker.impl";
+    protected static final int EMM_PID_ONE = 0x1503;
+    protected static final long DEFAULT_STREAM_ID = 100L;
+    protected static final Integer PID = 3;
+    protected static final long STREAM_ID = 5L;
+    protected static final long DEFAULT_ROUTE_ID = 101L;
+    protected static final long DEFAULT_ROUTE_ID2 = 102L;
+    protected static final int PORT_NUMBER = 8810;
+    private static final int NUMBER_OF_BLOCKS = 100;
+    private static final int SIZE_OF_BLOCKS = 20;
+    private static final byte[] BLOCK_SET_BYTE_DATA = new byte[]{0x00, 0x01};
+    private static boolean stubJmsBrokerStarted;
+    protected final Map<String, String> properties = MapUtility.toMap("key1", "value1");
+
+    @MockOsgiService protected MessageMarshallerAdapter messageMarshallingAdapter;
+    @MockOsgiService protected StreamRepository streamRepository;
+    @MockOsgiService protected TransportStreamRepository transportStreamRepository;
+    @MockOsgiService protected BlockSetRepository blockSetRepository;
+    @MockOsgiService protected RouteRepository routeRepository;
+
+    @Autowired
+    DefaultMessageListenerContainer messageListenerContainer;
+
+    @OsgiConfiguration Options systemUnderTest = bundles(
+        group("com.ccadllc.firebird.vms",
+            artifact("ccad-firebird-dss-client-broker"),
+            artifact("ccad-firebird-dss-client-topology"),
+            artifact("ccad-firebird-dss-client-broker-impl")));
+
+    @OsgiConfiguration Options topologyBundles = bundles(
+        artifact("org.eclipse.equinox", "event"),
+        group("com.ccadllc.firebird.vms",
+            artifact("ccad-firebird-vms-common-units"),
+            artifact("ccad-firebird-vms-topology-core"),
+            artifact("ccad-firebird-vms-topology-device"),
+            artifact("ccad-firebird-vms-topology-estream"),
+            artifact("ccad-firebird-vms-topology-serving-location"),
+            artifact("ccad-firebird-vms-topology-spi"),
+            artifact("ccad-firebird-vms-topology-service")),
+        group("org.sat4j",
+            artifact("core"),
+            artifact("pb")));
+
+    @OsgiConfiguration Options supportingBundles = bundles(
+        artifact("org.apache.lucene", "com.springsource.org.apache.lucene"),
+        artifact("org.apache.activemq", "com.springsource.org.apache.activemq"),
+        artifact("commons-io", "commons-io").noStart(),
+        artifact("commons-pool", "commons-pool"),
+        artifact("commons-math", "commons-math").noStart(),
+        group("org.apache.geronimo.specs",
+            artifact("geronimo-j2ee-management_1.1_spec"),
+            artifact("geronimo-jms_1.1_spec")),
+            group("org.springframework",
+            artifact("org.springframework.jms")),
+        group("com.ccadllc.firebird.vms",
+            artifact("ccad-firebird-vms-common-packet-filtering").noStart(),
+            artifact("ccad-firebird-vms-common-mpeg2-psi").noStart(),
+            artifact("ccad-firebird-dss-server-common").noStart(),
+            artifact("ccad-firebird-dss-server-realtime-external-route-manager").noStart(),
+            artifact("ccad-firebird-dss-server-realtime-stream-manager").noStart(),
+            artifact("ccad-firebird-dss-server-realtime-transport-manager").noStart(),
+            artifact("ccad-firebird-dss-server-realtime-snapshot-manager").noStart(),
+            artifact("ccad-firebird-dss-server-configuration-stream-domain").noStart(),
+            artifact("ccad-firebird-dss-server-configuration-route-domain").noStart(),
+            artifact("ccad-firebird-dss-server-configuration-manager").noStart(),
+            artifact("ccad-firebird-dss-server-provisioning-facade").noStart(),
+            artifact("ccad-firebird-dss-server-configuration-blockset-domain").noStart(),
+            artifact("ccad-firebird-dss-common-remote-messages"),
+            artifact("ccad-firebird-dss-server-common"),
+            artifact("ccad-firebird-dss-common-datatypes")),
+        group("org.apache.commons",
+            artifact("com.springsource.org.apache.commons.httpclient").noStart(),
+            artifact("com.springsource.org.apache.commons.codec").noStart(),
+            artifact("com.springsource.org.apache.commons.discovery").noStart()),
+        group("com.ccadllc.firebird.core",
+            artifact("ccad-firebird-core-jms-activemq-broker").noStart()),
+        artifact("org.jruby", "com.springsource.org.jruby").noStart(),
+        artifact("com.ccadllc.firebird.libs", "javax.script-jruby-engine").noStart(),
+        artifact("com.ccadllc.commons", "ccad-commons-messaging"),
+        group("com.ccadllc.commons",
+                artifact("ccad-common")),
+        group("org.apache.mina",
+                artifact("mina-core").noStart())
+    );
+
+    @OsgiConfiguration Options persistence = bundles(
+        group("com.ccadllc.firebird.core",
+            artifact("ccad-firebird-core-database-datasource"),
+            artifact("ccad-firebird-core-database-db-migrate"),
+            artifact("ccad-firebird-core-database-persistence"),
+            artifact("ccad-firebird-core-database-c3p0-driver-support")),
+        artifact("com.mchange.c3p0", "com.springsource.com.mchange.v2.c3p0"),
+        group("com.ccadllc.firebird.libs",
+            artifact("org.hibernate-hibernate-entitymanager"),
+            artifact("org.liquibase-liquibase-core")),
+        artifact("org.dom4j", "com.springsource.org.dom4j"),
+        artifact("org.hsqldb", "com.springsource.org.hsqldb"),
+        group("org.springframework",
+            artifact("org.springframework.transaction"),
+            artifact("org.springframework.orm"),
+            artifact("org.springframework.jdbc"),
+            artifact("org.springframework.aspects")),
+        artifact("javax.persistence", "com.springsource.javax.persistence"),
+        artifact("org.apache.geronimo.specs", "geronimo-jta_1.1_spec")
+    );
+
+    private BrokerService broker;
+
+    @Override
+    protected void onSetUp() throws Exception
+    {
+        startJmsBroker();
+        messageListenerContainer.initialize();
+        super.onSetUp();
+    }
+
+    @Override
+    protected Manifest createDefaultManifest()
+    {
+        final Manifest manifest = super.createDefaultManifest();
+        final Attributes attrs = manifest.getMainAttributes();
+        attrs.putValue("Web-ContextPath", "/testContext");
+        return manifest;
+    }
+
+    @Override
+    protected void onTearDown() throws Exception
+    {
+        messageListenerContainer.shutdown();
+        //stopJmsBroker();
+        super.onTearDown();
+    }
+
+    private void startJmsBroker() throws Exception
+    {
+        if (!stubJmsBrokerStarted)
+        {
+            try
+            {
+                broker = new BrokerService();
+                broker.setPersistent(false);
+                broker.setPersistenceAdapter(new MemoryPersistenceAdapter());
+                broker.addConnector("tcp://localhost:61618");
+                broker.start();
+                stubJmsBrokerStarted = true;
+            }
+            // CHECKSTYLE:OFF
+            catch (final Exception e)
+            // CHECKSTYLE:ON
+            {
+                logger.error("Failed to start ActiveMQ broker due to exception.", e);
+                throw e;
+            }
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private void stopJmsBroker() throws Exception
+    {
+        broker.stop();
+    }
+
+    @Override
+    protected String[] getBundleContentPattern()
+    {
+        return new String[] {"**/it/**", "**/*.xml"};
+    }
+
+    @Override
+    protected void preProcessBundleContext(final BundleContext platformBundleContext) throws Exception
+    {
+        super.preProcessBundleContext(platformBundleContext);
+    }
+
+    @Override
+    protected boolean createManifestOnlyFromTestClass()
+    {
+        return false;
+    }
+
+    @Override
+    protected Iterable<String> getAdditionalPackageImports()
+    {
+        return Iterables.concat(super.getAdditionalPackageImports(), Arrays.asList(
+            "javax.annotation;resolution:=\"optional\"", "org.springframework.jms.listener", "org.springframework.jms.support", "org.apache.activemq",
+             "com.ccadllc.firebird.dss.server.provisioning.facade;resolution:=\"optional\"", "org.apache.activemq.store",
+             "org.apache.activemq.pool", "javax.annotation;resolution:=\"optional\"", "javax.jms"
+        ));
+    }
+
+    protected void setBrokerConfigurationToLocal(final ConfigurationAdmin configurationAdmin) throws InterruptedException
+    {
+        try
+        {
+            final Configuration configuration = configurationAdmin.getConfiguration(DSS_CONFIG_PID, null);
+            configuration.update(new Hashtable<String, String>());
+            Thread.sleep(2000);
+        }
+        catch (final IOException e)
+        {
+            fail("unable to get configuration from configuration admin service.");
+        }
+    }
+
+    protected void setBrokerConfigurationToRemote(final ConfigurationAdmin configurationAdmin) throws InterruptedException
+    {
+        try
+        {
+            final Configuration configuration = configurationAdmin.getConfiguration(DSS_CONFIG_PID, null);
+            final Dictionary<String, String> props = new Hashtable<String, String>();
+            props.put("remote.queue_name", "northbound.queue");
+            props.put("enable.remote.dss", "true");
+            props.put("ipAddress", "localhost");
+            configuration.update(props);
+            Thread.sleep(2000);
+        }
+        catch (final IOException e)
+        {
+            fail("unable to get configuration from configuration admin service.");
+        }
+    }
+
+    protected ByteArrayInputStream aBlockSetDataInputStream()
+    {
+        return new ByteArrayInputStream(BLOCK_SET_BYTE_DATA);
+    }
+
+    protected BlockSetDescriptor aBlockSetDesciptor()
+    {
+        final BlockDescriptor serverBlockDescriptor = new BlockDescriptor(NUMBER_OF_BLOCKS, SIZE_OF_BLOCKS);
+        final Iterable<BlockDescriptor> serverList = Collections.singletonList(serverBlockDescriptor);
+        return new BlockSetDescriptor(serverList);
+    }
+
+    protected Multimap<Integer, Long> aPidMapping()
+    {
+        final Multimap<Integer, Long> pidAndStreamId = ArrayListMultimap.create();
+        pidAndStreamId.put(EMM_PID_ONE, DEFAULT_STREAM_ID);
+        return pidAndStreamId;
+    }
+
+    protected MpegPacketRouteData anMpegPacketRouteDataWithMappings()
+    {
+        return new MpegPacketRouteData(Lists.newArrayList(new PidMapping(EMM_PID_ONE, Lists.newArrayList(DEFAULT_STREAM_ID))));
+    }
+
+    protected BlockRouteData aBlockRouteDataWithAStream()
+    {
+        return new BlockRouteData(Sets.<Long>newHashSet(DEFAULT_STREAM_ID));
+    }
+
+    protected List<Pair<Integer, Integer>> aListOfReservedProgramNumberRanges()
+    {
+        final List<Pair<Integer, Integer>> reservedProgramNumberRanges = Lists.newArrayList();
+        reservedProgramNumberRanges.add(new Pair<Integer, Integer>(3500, 4095));
+        return reservedProgramNumberRanges;
+    }
+
+    protected List<Pair<Integer, Integer>> aListOfReservedPidRanges()
+    {
+        final List<Pair<Integer, Integer>> reservedPidRanges = Lists.newArrayList();
+        reservedPidRanges.add(new Pair<Integer, Integer>(0, 15));
+        return reservedPidRanges;
+    }
+
+    protected UdpRouteSummary anMpegUdpRouteSummary()
+    {
+        final Multimap<Integer, Long> pidMappings = HashMultimap.create();
+        pidMappings.put(PID, STREAM_ID);
+        return new UdpRouteSummary(DEFAULT_ROUTE_ID, PORT_NUMBER, pidMappings, properties);
+    }
+
+    protected com.ccadllc.firebird.dss.common.remote.messages.UdpRouteSummary anMpegUdpRouteSummaryAsRemote()
+    {
+        return new com.ccadllc.firebird.dss.common.remote.messages.UdpRouteSummary(DEFAULT_ROUTE_ID, properties, PORT_NUMBER, new MpegPacketRouteData(Lists.newArrayList(new PidMapping(PID, Lists.newArrayList(STREAM_ID)))));
+    }
+
+    protected UdpRouteSummary aBlockUdpRouteSummary()
+    {
+        return new UdpRouteSummary(DEFAULT_ROUTE_ID2, PORT_NUMBER, Sets.newHashSet(DEFAULT_STREAM_ID), properties);
+    }
+}

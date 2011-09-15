@@ -1,0 +1,112 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.topology.core;
+
+import static org.hamcrest.Matchers.anyOf;
+
+import org.hamcrest.Description;
+import org.hamcrest.Matcher;
+import org.hamcrest.TypeSafeMatcher;
+
+import com.google.common.base.Preconditions;
+
+/** Utility class that provides matchers for {@link ServingLocationQName}s. */
+public final class ServingLocationMatchers
+{
+    /** Prevents instantiation. */
+    private ServingLocationMatchers()
+    {
+        // Nothing to do.
+    }
+
+    public static Matcher<ServingLocation> hasName(final Matcher<ServingLocationQName> nameMatcher)
+    {
+        return new TypeSafeMatcher<ServingLocation>(ServingLocation.class) {
+            @Override
+            public boolean matchesSafely(final ServingLocation toMatch)
+            {
+                return nameMatcher.matches(toMatch.getQualifiedName());
+            }
+
+            @Override
+            public void describeTo(final Description desc)
+            {
+                desc.appendDescriptionOf(nameMatcher);
+            }
+        };
+    }
+
+    public static Matcher<ServingLocationQName> ancestorOf(final ServingLocationQName qualifiedName)
+    {
+//        Preconditions.checkNotNull(qualifiedName, "qualifiedName");
+
+        return new TypeSafeMatcher<ServingLocationQName>(ServingLocationQName.class) {
+            @Override
+            public boolean matchesSafely(final ServingLocationQName toMatch)
+            {
+                if (toMatch == null)
+                {
+                    return false;
+                }
+                return toMatch.contains(qualifiedName) && !toMatch.equals(qualifiedName);
+            }
+
+            @Override
+            public void describeTo(final Description desc)
+            {
+                desc.appendText("present in parent locations").appendValue(qualifiedName);
+            }
+        };
+    }
+
+    public static Matcher<ServingLocationQName> presentIncludingParentLocations(final ServingLocationQName qualifiedName)
+    {
+//        Preconditions.checkNotNull(qualifiedName, "qualifiedName");
+
+        return new TypeSafeMatcher<ServingLocationQName>(ServingLocationQName.class) {
+            @Override
+            public boolean matchesSafely(final ServingLocationQName toMatch)
+            {
+                if (toMatch == null)
+                {
+                    return false;
+                }
+                return toMatch.contains(qualifiedName);
+            }
+
+            @Override
+            public void describeTo(final Description desc)
+            {
+                desc.appendText("present including parent locations").appendValue(qualifiedName);
+            }
+        };
+    }
+
+    public static Matcher<ServingLocationQName> presentIncludingChildLocations(final ServingLocationQName qualifiedName)
+    {
+//        Preconditions.checkNotNull(qualifiedName, "qualifiedName");
+
+        return new TypeSafeMatcher<ServingLocationQName>(ServingLocationQName.class) {
+            @Override
+            public boolean matchesSafely(final ServingLocationQName toMatch)
+            {
+                if (toMatch == null)
+                {
+                    return false;
+                }
+                return qualifiedName.contains(toMatch);
+            }
+
+            @Override
+            public void describeTo(final Description desc)
+            {
+                desc.appendText("present including child locations").appendValue(qualifiedName);
+            }
+        };
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Matcher<ServingLocationQName> presentIncludingParentAndChildNetworks(final ServingLocationQName qualifiedName)
+    {
+        return anyOf(presentIncludingParentLocations(qualifiedName), presentIncludingChildLocations(qualifiedName));
+    }
+}

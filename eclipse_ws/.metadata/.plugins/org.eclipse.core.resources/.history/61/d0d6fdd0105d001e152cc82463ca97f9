@@ -1,0 +1,20 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.management;
+
+public interface Mpeg2PacketStatisticsMXBean
+{
+    /**
+     * @return the number of Mpeg2 packets inserted to the next packet filter.
+     */
+    Long getPacketsInserted();
+
+    /**
+     * @return the number of Mpeg2 packets rejected by the next packet filter.
+     */
+    Long getPacketsRejected();
+
+    /**
+     * Reset all counters to zero.
+     */
+    void resetCounters();
+}

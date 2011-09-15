@@ -1,0 +1,92 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.common;
+
+import java.nio.ByteBuffer;
+import java.util.Queue;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+
+import com.ccadllc.firebird.vms.common.packetfiltering.ForwardingPacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.Packet;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.Packets;
+
+import net.jcip.annotations.ThreadSafe;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Implementation of the <code>ForwardingPacketFilter</code> for packing multiple fixed length packets in to a larger packet.
+ *
+ * <p>Particularly useful for packing MPEG packets in to UDP datagrams.</p>
+ */
+@ThreadSafe
+public class TransportPacker extends ForwardingPacketFilter
+{
+    private static final Logger logger = LoggerFactory.getLogger(TransportPacker.class);
+    private static final int MAX_QUEUED_PACKETS = 7;
+
+    private final Object lock = new Object();
+    private final Queue<byte[]> packets = new ArrayBlockingQueue<byte[]>(MAX_QUEUED_PACKETS);
+    private final ScheduledFuture<?> timer;
+
+    public TransportPacker(final PacketFilter sink, final ScheduledExecutorService executor)
+    {
+        super(sink);
+
+        timer = executor.scheduleWithFixedDelay(new Runnable() {
+            @Override
+            public void run()
+            {
+                synchronized (lock)
+                {
+                    if (!packets.isEmpty())
+                    {
+                        sendPackets();
+                    }
+                }
+            }
+        }, 50, 50, TimeUnit.MILLISECONDS);
+    }
+
+    @Override
+    public boolean insert(final Packet packet)
+    {
+        synchronized (lock)
+        {
+            logger.debug("################# TransportPacker inserting packet");
+            final boolean queued = packets.offer(packet.getData());
+            if (queued && packets.size() >= MAX_QUEUED_PACKETS)
+            {
+                logger.debug("################# TransportPacker sending...");
+                sendPackets();
+            }
+            return queued;
+        }
+    }
+
+    private void sendPackets()
+    {
+        final ByteBuffer buffer = ByteBuffer.allocate(packets.size() * packets.element().length);
+        for (final byte[] packet : packets)
+        {
+            buffer.put(packet);
+        }
+        buffer.flip();
+        logger.debug("Inserting packet {} to sink", buffer.array());
+        if (sink().insert(Packets.wrap(buffer.array())))
+        {
+            packets.clear();
+        }
+    }
+
+    @Override
+    public void dispose()
+    {
+        super.dispose();
+        timer.cancel(true);
+    }
+}

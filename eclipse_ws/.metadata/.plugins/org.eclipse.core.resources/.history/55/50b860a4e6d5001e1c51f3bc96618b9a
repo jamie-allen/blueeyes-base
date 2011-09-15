@@ -1,0 +1,119 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import static com.ccadllc.firebird.dss.common.datatypes.RouteDataType.BLOCKS;
+import static com.ccadllc.firebird.dss.common.datatypes.RouteDataType.MPEG_PACKETS;
+import static com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType.TCP;
+import static com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType.UDP;
+
+import java.io.IOException;
+import java.util.concurrent.ScheduledExecutorService;
+
+import com.ccadllc.firebird.dss.server.common.MBeanServerUtility;
+import com.ccadllc.firebird.dss.server.common.RouteJmxUtility;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.JmxRouteNotificationManager;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.TcpBlockRouteInstrumentation;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.TcpMpeg2RouteInstrumentation;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.UdpBlockRouteInstrumentation;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.UdpMpeg2RouteInstrumentation;
+import com.ccadllc.firebird.dss.server.realtime.standalone.stream.manager.StreamManager;
+
+import org.apache.mina.transport.socket.nio.NioProcessor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.base.Preconditions;
+
+/**
+ * Factory to create valid {@link RouteController}s.
+ */
+public final class DefaultRouteControllerFactory implements RouteControllerFactory
+{
+    private static final Logger logger = LoggerFactory.getLogger(DefaultRouteControllerFactory.class);
+
+    private final TcpRouteSessionClosedEventDispatcher tcpRouteSessionClosedEventDispatcher;
+    private final TcpRouteSessionCreatedEventDispatcher tcpRouteSessionCreatedEventDispatcher;
+
+    public DefaultRouteControllerFactory(final TcpRouteSessionClosedEventDispatcher tcpRouteSessionClosedEventDispatcher,
+        final TcpRouteSessionCreatedEventDispatcher tcpRouteSessionCreatedEventDispatcher)
+
+    {
+        this.tcpRouteSessionClosedEventDispatcher = tcpRouteSessionClosedEventDispatcher;
+        this.tcpRouteSessionCreatedEventDispatcher = tcpRouteSessionCreatedEventDispatcher;
+    }
+
+    public TcpRouteController createTcpRouteControllerAndExposeManagementInfo(
+        final RouteSnapshot route, 
+        final StreamManager streamManager,
+        final JmxRouteNotificationManager jmxRouteNotificationManager,
+        final ScheduledExecutorService executor,
+        final NioProcessor processor) throws IOException
+    {
+        validate(route);
+        if (route.getTransportProtocolType() == TCP && route.getDataType() == BLOCKS)
+        {
+            logger.debug("RouteControllerFactory creating TcpBlockRouteController with route {}.", route);
+            final TcpBlockRouteController tcpBlockRouteController = new TcpBlockRouteController(route, streamManager, jmxRouteNotificationManager,
+                tcpRouteSessionClosedEventDispatcher, tcpRouteSessionCreatedEventDispatcher, executor, processor);
+            MBeanServerUtility.register(new TcpBlockRouteInstrumentation(route), RouteJmxUtility.createRouteMxBeanName(route, RouteJmxUtility.ROUTE_INFORMATION_JMX_BEAN_TYPE));
+            return tcpBlockRouteController;
+        }
+        else if (route.getTransportProtocolType() == TCP && route.getDataType() == MPEG_PACKETS)
+        {
+            logger.debug("RouteControllerFactory creating TcpMpeg2RouteController with route {}.", route);
+            final TcpMpeg2RouteController tcpMpeg2RouteController = new TcpMpeg2RouteController(route, streamManager, jmxRouteNotificationManager,
+                tcpRouteSessionClosedEventDispatcher, tcpRouteSessionCreatedEventDispatcher, executor, processor);
+            MBeanServerUtility.register(new TcpMpeg2RouteInstrumentation(route), RouteJmxUtility.createRouteMxBeanName(route, RouteJmxUtility.ROUTE_INFORMATION_JMX_BEAN_TYPE));
+            return tcpMpeg2RouteController;
+        }
+        else
+        {
+            throw new IllegalArgumentException(String.format("Unable to create TCP route controller for route %s", route));
+        }
+    }
+
+    public UdpRouteController createUdpRouteControllerAndExposeManagementInfo(final RouteSnapshot route, final StreamManager streamManager,
+        final JmxRouteNotificationManager jmxRouteNotificationManager) throws IOException
+    {
+        validate(route);
+        if (route.getTransportProtocolType() == UDP && route.getDataType() == BLOCKS)
+        {
+            logger.debug("RouteControllerFactory creating UdpBlockRouteController with route {}.", route);
+            final UdpBlockRouteController udpBlockRouteController = new UdpBlockRouteController(route, streamManager, jmxRouteNotificationManager);
+            MBeanServerUtility.register(new UdpBlockRouteInstrumentation(route), RouteJmxUtility.createRouteMxBeanName(route, RouteJmxUtility.ROUTE_INFORMATION_JMX_BEAN_TYPE));
+            return udpBlockRouteController;
+        }
+        else if (route.getTransportProtocolType() == UDP && route.getDataType() == MPEG_PACKETS)
+        {
+            logger.debug("RouteControllerFactory creating UdpMpeg2RouteController with route {}.", route);
+            final UdpMpeg2RouteController udpMpeg2RouteController = new UdpMpeg2RouteController(route, streamManager, jmxRouteNotificationManager);
+            MBeanServerUtility.register(new UdpMpeg2RouteInstrumentation(route), RouteJmxUtility.createRouteMxBeanName(route, RouteJmxUtility.ROUTE_INFORMATION_JMX_BEAN_TYPE));
+            return udpMpeg2RouteController;
+        }
+        else
+        {
+            throw new IllegalArgumentException(String.format("Unable to create UDP route controller for route %s", route));
+        }
+    }
+
+    private void validate(final RouteSnapshot route)
+    {
+        Preconditions.checkNotNull(route);
+
+        switch (route.getDataType())
+        {
+            case MPEG_PACKETS:
+                Preconditions.checkNotNull(route.getPidMappings());
+                Preconditions.checkNotNull(route.getPidMappings().values());
+                break;
+            case BLOCKS:
+                Preconditions.checkNotNull(route.getStreamIds());
+                break;
+            default:
+                throw new IllegalArgumentException("Invalid data type.");
+        }
+    }
+}

@@ -1,0 +1,62 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.INSERTER_STATISTICS_JMX_BEAN_TYPE;
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.MXBEAN_STREAMS_OBJECT_NAME_EXTENSION;
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.createRouteMxBeanName;
+
+import java.io.IOException;
+
+import com.ccadllc.firebird.dss.server.common.MBeanServerUtility;
+import com.ccadllc.firebird.dss.server.common.RouteJmxUtility;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter.BlockStatisticsCollector;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter.Inserter;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.JmxRouteNotificationManager;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.UdpBlockRouteInstrumentation;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+import com.ccadllc.firebird.vms.common.packetfiltering.CompositePacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilter;
+
+import net.jcip.annotations.ThreadSafe;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
+
+/**
+ * {@code RouteController} for UDP routes handling block data.
+ */
+@ThreadSafe
+public class UdpBlockRouteController extends AbstractUdpRouteController
+{
+    private final Inserter inserter;
+
+    public UdpBlockRouteController(
+            final RouteSnapshot route,
+            final StreamManager streamManager,
+            final JmxRouteNotificationManager jmxRouteNotificationManager) throws IOException
+    {
+        super(route, streamManager, jmxRouteNotificationManager);
+        inserter = new Inserter(streamManager, route.getStreamIds(), createRouteMxBeanName(route, MXBEAN_STREAMS_OBJECT_NAME_EXTENSION));
+        final PacketFilter inserterStatistics = new BlockStatisticsCollector(inserter, route, INSERTER_STATISTICS_JMX_BEAN_TYPE);
+        setChain(new CompositePacketFilter(ImmutableList.of(inserterStatistics, inserter)));
+        openUdpPort(route.getPort(), new UdpBlockRouteControllerHandler(getChain()));
+    }
+
+    @Override
+    void updateValidations(final RouteSnapshot route)
+    {
+        Preconditions.checkNotNull(route);
+        Preconditions.checkNotNull(route.getStreamIds());
+    }
+
+    @Override
+    void updateInternal(final RouteSnapshot route)
+    {
+        inserter.setStreamIds(route.getStreamIds());
+        MBeanServerUtility.register(new UdpBlockRouteInstrumentation(route),
+            RouteJmxUtility.createRouteMxBeanName(route, RouteJmxUtility.ROUTE_INFORMATION_JMX_BEAN_TYPE));
+    }
+}

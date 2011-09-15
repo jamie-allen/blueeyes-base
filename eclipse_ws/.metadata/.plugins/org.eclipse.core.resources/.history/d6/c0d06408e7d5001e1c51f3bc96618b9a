@@ -1,0 +1,104 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+
+import java.lang.reflect.Field;
+import java.util.Collections;
+import java.util.Set;
+
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+
+import org.easymock.EasyMock;
+import org.springframework.util.ReflectionUtils;
+import org.testng.annotations.Test;
+
+import com.google.common.collect.Sets;
+
+@Test
+public class InserterTest
+{
+    private static final String MXBEAN_OBJECT_NAME = "DSS:type=Inserter";
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testNullStreamManager()
+    {
+        new Inserter(null, createStreamIds(1L, 2L, 3L), MXBEAN_OBJECT_NAME);
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testNullStream()
+    {
+        new Inserter(EasyMock.createMock(StreamManager.class), null, MXBEAN_OBJECT_NAME);
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testEmptyListOfStreamIds()
+    {
+        new Inserter(EasyMock.createMock(StreamManager.class), Collections.EMPTY_SET, MXBEAN_OBJECT_NAME);
+    }
+
+    public void testChangeStreamIdsWhen_SetOfIdsIsBiggerThanExistingSet()
+    {
+        changeStreamIds(createStreamIds(1L, 2L, 3L, 4L, 5L), createStreamIds(1L, 2L, 10L, 11L, 12L, 13L, 14L));
+    }
+
+    public void testChangeStreamIdsWhen_SetOfIdsIsSmallerThanExistingSet()
+    {
+        changeStreamIds(createStreamIds(1L, 2L, 3L, 4L, 5L), createStreamIds(1L, 2L, 10L, 11L));
+    }
+
+    public void testChangeStreamIdsWhen_SetOfIdsIsSameSizeAsExistingSet()
+    {
+        changeStreamIds(createStreamIds(1L, 2L, 3L, 4L, 5L), createStreamIds(10L, 11L, 12L, 13L, 14L));
+    }
+
+    private void changeStreamIds(final Set<Long> initialStreamIds, final Set<Long> updatedStreamIds)
+    {
+        final StreamManager streamManager = EasyMock.createMock(StreamManager.class);
+
+        EasyMock.replay(streamManager);
+
+        // Check that the correct number of stream IDs is set initially.
+        final Inserter inserter = new Inserter(streamManager, initialStreamIds, MXBEAN_OBJECT_NAME);
+        assertThat(getStreamIdCacheFromInserter(inserter).size(), is(initialStreamIds.size()));
+
+        // Check that the mutated stream IDs set is correct.
+        inserter.setStreamIds(updatedStreamIds);
+        assertThat(getStreamIdCacheFromInserter(inserter).size(), is(updatedStreamIds.size()));
+
+        EasyMock.verify(streamManager);
+    }
+
+    /**
+     * Uses reflection to get a reference to the stream ID cache in Inserter instance.
+     *
+     * @param inserter from which to get a reference to the stream ID collection
+     * @return stream IDs
+     */
+    @SuppressWarnings("unchecked")
+    private Set<Long> getStreamIdCacheFromInserter(final Inserter inserter)
+    {
+        final Field streamIdsField = ReflectionUtils.findField(Inserter.class, "streamIds");
+        ReflectionUtils.makeAccessible(streamIdsField);
+        return (Set<Long>)ReflectionUtils.getField(streamIdsField, inserter);
+    }
+
+    /**
+     * Creates a set of stream IDs to use for testing.
+     *
+     * @param idsToUse in the test
+     * @return set of <code>Long</code> stream IDs
+     */
+    private Set<Long> createStreamIds(final Long... idsToUse)
+    {
+        final Set<Long> ids = Sets.newHashSet();
+        for (final Long idToUse : idsToUse)
+        {
+            ids.add(idToUse);
+        }
+
+        return ids;
+    }
+}

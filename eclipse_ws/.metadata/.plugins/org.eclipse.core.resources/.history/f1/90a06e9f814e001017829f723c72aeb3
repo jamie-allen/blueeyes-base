@@ -1,0 +1,134 @@
+/*
+ * Copyright 2010 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import static com.ccadllc.firebird.dss.server.realtime.common.Events.ESTABLISH_EXTERNAL_ROUTE_EVENT;
+import static com.ccadllc.firebird.dss.server.realtime.common.Events.REMOVE_EXTERNAL_ROUTE_EVENT;
+import static com.ccadllc.firebird.dss.server.realtime.common.Events.UPDATE_EXTERNAL_ROUTE_EVENT;
+
+import java.io.IOException;
+import java.util.Map;
+
+import com.ccadllc.firebird.dss.common.datatypes.RouteType;
+import com.ccadllc.firebird.dss.server.common.OsgiEventPropertyKeys;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.RouteManagerEventAdminServiceStrategy;
+import com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager;
+
+import org.easymock.EasyMock;
+import org.easymock.IMocksControl;
+import org.osgi.service.event.Event;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+import com.google.common.collect.Maps;
+
+@Test
+public class RouteManagerTest
+{
+    private IMocksControl mocks;
+    private RouteManager routeManager;
+    private RouteControllerFactory mockRouteControllerFactory;
+    private RouteManagerEventAdminServiceStrategy mockRouteManagerEventAdminServiceStrategy;
+    private RealTimeSnapshotManager realTimeSnapshotManager;
+
+    @BeforeMethod
+    public void setUp()
+    {
+        mocks = EasyMock.createControl();
+        mockRouteControllerFactory = mocks.createMock(RouteControllerFactory.class);
+        mockRouteManagerEventAdminServiceStrategy = mocks.createMock(RouteManagerEventAdminServiceStrategy.class);
+        realTimeSnapshotManager = mocks.createMock(RealTimeSnapshotManager.class);
+        routeManager = new RouteManager(mockRouteControllerFactory, mockRouteManagerEventAdminServiceStrategy, realTimeSnapshotManager);
+    }
+
+    public void testHandleEstablishRoute() throws IOException
+    {
+        final Map<String, RouteSnapshot> props = Maps.newHashMap();
+        final RouteSnapshot mockRouteSnapshot = mocks.createMock(RouteSnapshot.class);
+        props.put(OsgiEventPropertyKeys.ROUTE_SNAPSHOT_KEY, mockRouteSnapshot);
+        EasyMock.expect(mockRouteSnapshot.getId()).andStubReturn(1L);
+        EasyMock.expect(mockRouteSnapshot.getRouteType()).andStubReturn(RouteType.PID_MAPPED);
+
+        final RouteController mockRouteController = mocks.createMock(RouteController.class);
+        EasyMock.expect(mockRouteControllerFactory.create(mockRouteSnapshot, routeManager), null).andReturn(mockRouteController);
+
+        mockRouteManagerEventAdminServiceStrategy.postEvent(ESTABLISH_EXTERNAL_ROUTE_EVENT, mockRouteSnapshot);
+
+        mocks.replay();
+        routeManager.handleEvent(new Event(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_ESTABLISH_EVENT, props));
+        mocks.verify();
+    }
+
+    public void testHandleUpdateRouteWithNoExistingRoute()
+    {
+        final Map<String, RouteSnapshot> props = Maps.newHashMap();
+        final RouteSnapshot mockRouteSnapshot = mocks.createMock(RouteSnapshot.class);
+        props.put(OsgiEventPropertyKeys.ROUTE_SNAPSHOT_KEY, mockRouteSnapshot);
+        EasyMock.expect(mockRouteSnapshot.getId()).andStubReturn(1L);
+
+        mocks.replay();
+        routeManager.handleEvent(new Event(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_UPDATE_EVENT, props));
+        mocks.verify();
+    }
+
+    public void testHandleUpdateRouteWithExistingRoute() throws IOException
+    {
+        final Map<String, RouteSnapshot> props = Maps.newHashMap();
+        final RouteSnapshot mockRouteSnapshot = mocks.createMock(RouteSnapshot.class);
+        props.put(OsgiEventPropertyKeys.ROUTE_SNAPSHOT_KEY, mockRouteSnapshot);
+        EasyMock.expect(mockRouteSnapshot.getId()).andStubReturn(1L);
+        EasyMock.expect(mockRouteSnapshot.getRouteType()).andStubReturn(RouteType.PID_MAPPED);
+
+        // Adding route
+        final RouteController mockRouteController = mocks.createMock(RouteController.class);
+        EasyMock.expect(mockRouteControllerFactory.create(mockRouteSnapshot, routeManager, null)).andReturn(mockRouteController);
+
+        mockRouteManagerEventAdminServiceStrategy.postEvent(ESTABLISH_EXTERNAL_ROUTE_EVENT, mockRouteSnapshot);
+
+        // Updating route
+        mockRouteController.updateRoute(mockRouteSnapshot);
+        mockRouteManagerEventAdminServiceStrategy.postEvent(UPDATE_EXTERNAL_ROUTE_EVENT, mockRouteSnapshot);
+
+        mocks.replay();
+        routeManager.handleEvent(new Event(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_ESTABLISH_EVENT, props));
+        routeManager.handleEvent(new Event(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_UPDATE_EVENT, props));
+        mocks.verify();
+    }
+
+    public void testHandleRemoveRouteWithNoExistingRoute()
+    {
+        final Map<String, RouteSnapshot> props = Maps.newHashMap();
+        final RouteSnapshot mockRouteSnapshot = mocks.createMock(RouteSnapshot.class);
+        props.put(OsgiEventPropertyKeys.ROUTE_SNAPSHOT_KEY, mockRouteSnapshot);
+        EasyMock.expect(mockRouteSnapshot.getId()).andStubReturn(1L);
+
+        mocks.replay();
+        routeManager.handleEvent(new Event(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_REMOVE_EVENT, props));
+        mocks.verify();
+    }
+
+    public void testHandleRemoveRouteWithExistingRoute() throws IOException
+    {
+        final Map<String, RouteSnapshot> props = Maps.newHashMap();
+        final RouteSnapshot mockRouteSnapshot = mocks.createMock(RouteSnapshot.class);
+        props.put(OsgiEventPropertyKeys.ROUTE_SNAPSHOT_KEY, mockRouteSnapshot);
+        EasyMock.expect(mockRouteSnapshot.getId()).andStubReturn(1L);
+        EasyMock.expect(mockRouteSnapshot.getRouteType()).andStubReturn(RouteType.PID_MAPPED);
+
+        // Adding route
+        final RouteController mockRouteController = mocks.createMock(RouteController.class);
+        EasyMock.expect(mockRouteControllerFactory.create(mockRouteSnapshot, routeManager, null)).andReturn(mockRouteController);
+        mockRouteManagerEventAdminServiceStrategy.postEvent(ESTABLISH_EXTERNAL_ROUTE_EVENT, mockRouteSnapshot);
+
+        // Remove route
+        mockRouteController.dispose();
+        mockRouteManagerEventAdminServiceStrategy.postEvent(REMOVE_EXTERNAL_ROUTE_EVENT, mockRouteSnapshot);
+
+        mocks.replay();
+        routeManager.handleEvent(new Event(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_ESTABLISH_EVENT, props));
+        routeManager.handleEvent(new Event(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_REMOVE_EVENT, props));
+        mocks.verify();
+    }
+}

@@ -1,0 +1,6 @@
+1260215016473	Rename type 'UdpMpeg2StandaloneStreamRouteController'
+1260215278360	Rename method 'updateValidations'
+1260215370743	Delete element
+1260215417973	Rename method 'updateValidations'
+1260386512094	Rename local variable 'type'
+1260389044985	Extract method 'aValidTransportStreamRouteSnapshotWithExpectations'

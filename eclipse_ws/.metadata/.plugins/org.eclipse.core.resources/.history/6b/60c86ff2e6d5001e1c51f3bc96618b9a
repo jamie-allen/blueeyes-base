@@ -1,0 +1,246 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import org.apache.mina.transport.socket.nio.NioProcessor;
+import static org.easymock.EasyMock.expect;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+
+import java.io.IOException;
+import java.util.Dictionary;
+import java.util.Hashtable;
+import java.util.Set;
+import java.util.concurrent.ScheduledExecutorService;
+
+import com.ccadllc.firebird.dss.common.datatypes.RouteDataType;
+import com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType;
+import com.ccadllc.firebird.dss.server.common.OsgiEventPropertyKeys;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.common.StreamSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.JmxRouteNotificationManager;
+import com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+
+import org.easymock.EasyMock;
+import org.easymock.IMocksControl;
+import org.hamcrest.BaseMatcher;
+import org.hamcrest.Description;
+import org.hamcrest.Matcher;
+import org.osgi.service.event.Event;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Sets;
+
+@Test
+public class TcpRouteManagerTest
+{
+    private TcpRouteManager tcpRouteManager;
+    private StreamManager mockStreamManager;
+    private RouteControllerFactory mockRouteControllerFactory;
+    private JmxRouteNotificationManager stubJmxRouteNotificationManager;
+    private IMocksControl mocks;
+
+    @BeforeMethod
+    public void setUp()
+    {
+        stubJmxRouteNotificationManager = new JmxRouteNotificationManager(null);
+        mocks = EasyMock.createControl();
+        mockStreamManager = mocks.createMock(StreamManager.class);
+        mockRouteControllerFactory = mocks.createMock(RouteControllerFactory.class);
+
+        tcpRouteManager = new TcpRouteManager(mockRouteControllerFactory, mockStreamManager, stubJmxRouteNotificationManager, TcpRouteManager.LEGAL_PORT_MIN_RANGE, TcpRouteManager.LEGAL_PORT_MAX_RANGE);
+    }
+
+    public void testEstablishTcpRouteWithStreamIds() throws IOException
+    {
+        final Set<Long> streamIds = Sets.newHashSet(1L);
+        expectEstablishTcpRouteWithMpegData(streamIds);
+
+        mocks.replay();
+        assertThat(tcpRouteManager.getTcpRoutes().size(), is(0));
+        final int port = tcpRouteManager.establishTcpRoute(streamIds);
+        assertThat(tcpRouteManager.getTcpRoutes().size(), is(1));
+        assertThat(port, isInRange(TcpRouteManager.LEGAL_PORT_MIN_RANGE, TcpRouteManager.LEGAL_PORT_MAX_RANGE));
+        mocks.verify();
+    }
+
+    private TcpRouteController expectEstablishTcpRouteWithMpegData(final Set<Long> streamIds) throws IOException
+    {
+        final RouteSnapshot route = aStubRouteWithBlockData(streamIds);
+        final TcpRouteController routeController = aStubRouteController(route, stubJmxRouteNotificationManager);
+        EasyMock.expect(mockRouteControllerFactory.createTcpRouteControllerAndExposeManagementInfo((RouteSnapshot)EasyMock.notNull(), (StreamManager)EasyMock.notNull(), (JmxRouteNotificationManager)EasyMock.notNull(), (ScheduledExecutorService)EasyMock.notNull(), (NioProcessor)EasyMock.notNull())).andReturn(routeController);
+        return routeController;
+    }
+
+    private TcpRouteController expectEstablishTcpRouteWithPidMappings(final Multimap<Integer, Long> pidMappings) throws IOException
+    {
+        final RouteSnapshot route = aStubRouteWithMpegData(pidMappings);
+        final TcpRouteController stubRouteController = aStubRouteController(route, stubJmxRouteNotificationManager);
+        EasyMock.expect(mockRouteControllerFactory.createTcpRouteControllerAndExposeManagementInfo((RouteSnapshot)EasyMock.notNull(), (StreamManager)EasyMock.notNull(), (JmxRouteNotificationManager)EasyMock.notNull(), (ScheduledExecutorService)EasyMock.notNull(), (NioProcessor)EasyMock.notNull())).andReturn(stubRouteController);
+        return stubRouteController;
+    }
+
+    public void testEstablishTcpRouteWithPidMappings() throws IOException
+    {
+        final Multimap<Integer, Long> pidMappings = HashMultimap.create();
+        pidMappings.put(1, 2L);
+
+        final RouteSnapshot route = aStubRouteWithMpegData(pidMappings);
+        final TcpRouteController stubRouteController = aStubRouteController(route, stubJmxRouteNotificationManager);
+        EasyMock.expect(mockRouteControllerFactory.createTcpRouteControllerAndExposeManagementInfo((RouteSnapshot)EasyMock.notNull(), (StreamManager)EasyMock.notNull(), (JmxRouteNotificationManager)EasyMock.notNull(), (ScheduledExecutorService)EasyMock.notNull(), (NioProcessor)EasyMock.notNull())).andReturn(stubRouteController);
+
+        mocks.replay();
+        assertThat(tcpRouteManager.getTcpRoutes().size(), is(0));
+        final int port = tcpRouteManager.establishTcpRoute(pidMappings);
+        assertThat(tcpRouteManager.getTcpRoutes().size(), is(1));
+        assertThat(port, isInRange(TcpRouteManager.LEGAL_PORT_MIN_RANGE, TcpRouteManager.LEGAL_PORT_MAX_RANGE));
+        mocks.verify();
+    }
+
+    public void testHandleStreamDeletedEventForOneRemainingStreamInPidMappings() throws IOException
+    {
+        final Multimap<Integer, Long> pidMappings = HashMultimap.create();
+        pidMappings.put(1234, 1L);
+        pidMappings.put(1234, 2L);
+        pidMappings.put(5678, 4L);
+        final TcpRouteController routeController = expectEstablishTcpRouteWithPidMappings(pidMappings);
+        routeController.update((RouteSnapshot)EasyMock.notNull());
+
+        final StreamSnapshot stream = anMpegStream(pidMappings.values().iterator().next());
+        final Dictionary<String, StreamSnapshot> dictionary = new Hashtable<String, StreamSnapshot>();
+        dictionary.put(OsgiEventPropertyKeys.STREAM_SNAPSHOT_KEY, stream);
+        final Event streamDeleteEvent = new Event(RealTimeSnapshotManager.STREAM_SNAPSHOT_DELETED_EVENT, dictionary);
+
+        mocks.replay();
+        assertThat(tcpRouteManager.getTcpRoutes().size(), is(0));
+        tcpRouteManager.establishTcpRoute(pidMappings);
+        assertThat(tcpRouteManager.getTcpRoutes().size(), is(1));
+        tcpRouteManager.handleEvent(streamDeleteEvent);
+        assertThat(tcpRouteManager.getTcpRoutes().size(), is(1));
+        mocks.verify();
+    }
+
+    public void testHandleStreamDeletedEventForOneRemainingStreamInStreamIds() throws IOException
+    {
+        final Set<Long> streamIds = Sets.newHashSet(1L, 2L);
+        final TcpRouteController routeController = expectEstablishTcpRouteWithMpegData(streamIds);
+
+        final StreamSnapshot stream = anMpegStream(streamIds.iterator().next());
+        final Dictionary<String, StreamSnapshot> dictionary = new Hashtable<String, StreamSnapshot>();
+        dictionary.put(OsgiEventPropertyKeys.STREAM_SNAPSHOT_KEY, stream);
+        final Event streamDeleteEvent = new Event(RealTimeSnapshotManager.STREAM_SNAPSHOT_DELETED_EVENT, dictionary);
+        routeController.update((RouteSnapshot)EasyMock.notNull());
+
+        mocks.replay();
+        assertThat(tcpRouteManager.getTcpRoutes().size(), is(0));
+        tcpRouteManager.establishTcpRoute(streamIds);
+        assertThat(tcpRouteManager.getTcpRoutes().size(), is(1));
+        tcpRouteManager.handleEvent(streamDeleteEvent);
+        assertThat(tcpRouteManager.getTcpRoutes().size(), is(1));
+        mocks.verify();
+    }
+
+    public void testHandleStreamDeletedEventForNoRemainingStreamInPidMappings() throws IOException
+    {
+        final Multimap<Integer, Long> pidMappings = HashMultimap.create();
+        pidMappings.put(1234, 1L);
+        final TcpRouteController routeController = expectEstablishTcpRouteWithPidMappings(pidMappings);
+
+        final StreamSnapshot stream = anMpegStream(pidMappings.values().iterator().next());
+        final Dictionary<String, StreamSnapshot> dictionary = new Hashtable<String, StreamSnapshot>();
+        dictionary.put(OsgiEventPropertyKeys.STREAM_SNAPSHOT_KEY, stream);
+        final Event streamDeleteEvent = new Event(RealTimeSnapshotManager.STREAM_SNAPSHOT_DELETED_EVENT, dictionary);
+        routeController.shutdown();
+
+        mocks.replay();
+        assertThat(tcpRouteManager.getTcpRoutes().size(), is(0));
+        tcpRouteManager.establishTcpRoute(pidMappings);
+        assertThat(tcpRouteManager.getTcpRoutes().size(), is(1));
+        tcpRouteManager.handleEvent(streamDeleteEvent);
+        assertThat(tcpRouteManager.getTcpRoutes().size(), is(0));
+        mocks.verify();
+    }
+
+    public void testHandleStreamDeletedEventForNoRemainingStreamInStreamIds() throws IOException
+    {
+        final Set<Long> streamIds = Sets.newHashSet(1L);
+        final TcpRouteController routeController = expectEstablishTcpRouteWithMpegData(streamIds);
+
+        final StreamSnapshot stream = anMpegStream(streamIds.iterator().next());
+        final Dictionary<String, StreamSnapshot> dictionary = new Hashtable<String, StreamSnapshot>();
+        dictionary.put(OsgiEventPropertyKeys.STREAM_SNAPSHOT_KEY, stream);
+        final Event streamDeleteEvent = new Event(RealTimeSnapshotManager.STREAM_SNAPSHOT_DELETED_EVENT, dictionary);
+        routeController.shutdown();
+
+        mocks.replay();
+        assertThat(tcpRouteManager.getTcpRoutes().size(), is(0));
+        tcpRouteManager.establishTcpRoute(streamIds);
+        assertThat(tcpRouteManager.getTcpRoutes().size(), is(1));
+        tcpRouteManager.handleEvent(streamDeleteEvent);
+        assertThat(tcpRouteManager.getTcpRoutes().size(), is(0));
+        mocks.verify();
+    }
+
+    private RouteSnapshot aStubRouteWithMpegData(final Multimap<Integer, Long> pidMappings)
+    {
+        final RouteSnapshot route = EasyMock.createNiceMock(RouteSnapshot.class);
+        EasyMock.expect(route.getDataType()).andStubReturn(RouteDataType.MPEG_PACKETS);
+        EasyMock.expect(route.getPidMappings()).andStubReturn(pidMappings);
+        EasyMock.expect(route.getTransportProtocolType()).andStubReturn(TransportProtocolType.TCP);
+        EasyMock.replay(route);
+        return route;
+    }
+
+    private RouteSnapshot aStubRouteWithBlockData(final Set<Long> streamIds)
+    {
+        final RouteSnapshot route = EasyMock.createNiceMock(RouteSnapshot.class);
+        EasyMock.expect(route.getDataType()).andStubReturn(RouteDataType.BLOCKS);
+        EasyMock.expect(route.getStreamIds()).andStubReturn(streamIds);
+        EasyMock.expect(route.getTransportProtocolType()).andStubReturn(TransportProtocolType.TCP);
+        EasyMock.replay(route);
+        return route;
+    }
+
+    private StreamSnapshot anMpegStream(final long streamId)
+    {
+        final StreamSnapshot mockStreamSnapshot = EasyMock.createMock(StreamSnapshot.class);
+        expect(mockStreamSnapshot.getId()).andStubReturn(streamId);
+        EasyMock.replay(mockStreamSnapshot);
+        return mockStreamSnapshot;
+    }
+
+    private TcpRouteController aStubRouteController(final RouteSnapshot route, final JmxRouteNotificationManager routeNotificationManager)
+    {
+        final TcpRouteController routeController = mocks.createMock(TcpRouteController.class);
+        routeController.addRouteEventListener((TcpRouteEventListener)EasyMock.notNull());
+        return routeController;
+    }
+
+    private Matcher<Integer> isInRange(final int min, final int max)
+    {
+        return new BaseMatcher<Integer>() {
+            @Override
+            public boolean matches(final Object actual)
+            {
+                if (actual instanceof Integer)
+                {
+                    if (((Integer)actual >= min) && ((Integer)actual <= max))
+                    {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            @Override
+            public void describeTo(final Description description)
+            {
+            }
+        };
+    }
+}

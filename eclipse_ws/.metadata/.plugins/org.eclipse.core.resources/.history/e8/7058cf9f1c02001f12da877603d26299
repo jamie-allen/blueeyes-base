@@ -1,0 +1,847 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.topology.simpledevices;
+
+import static com.ccadllc.firebird.vms.topology.core.EthernetPortMatchers.getEthernetPort;
+import static com.ccadllc.firebird.vms.topology.core.EthernetPortMatchers.hasId;
+import static com.ccadllc.firebird.vms.topology.core.ModulatorMatchers.getModulator;
+import static com.ccadllc.firebird.vms.topology.core.ModulatorMatchers.hasUpconverter;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
+import javax.persistence.AttributeOverride;
+import javax.persistence.CascadeType;
+import javax.persistence.Column;
+import javax.persistence.Embedded;
+import javax.persistence.Entity;
+import javax.persistence.FetchType;
+import javax.persistence.Id;
+import javax.persistence.OneToMany;
+import javax.persistence.PostPersist;
+import javax.persistence.PostRemove;
+import javax.persistence.PostUpdate;
+import javax.persistence.Table;
+
+import com.ccadllc.commons.util.Pair;
+import com.ccadllc.firebird.core.base.common.UnresolvedInetAddress;
+import com.ccadllc.firebird.vms.topology.core.Device;
+import com.ccadllc.firebird.vms.topology.core.DeviceInput;
+import com.ccadllc.firebird.vms.topology.core.DeviceOutput;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStreamTransmissionDescriptor;
+import com.ccadllc.firebird.vms.topology.core.EthernetPort;
+import com.ccadllc.firebird.vms.topology.core.EthernetPortDescription;
+import com.ccadllc.firebird.vms.topology.core.EthernetPortMatchers;
+import com.ccadllc.firebird.vms.topology.core.ModulatedRFElementaryStreamTransmissionDescriptor;
+import com.ccadllc.firebird.vms.topology.core.Modulator;
+import com.ccadllc.firebird.vms.topology.core.ModulatorDescription;
+import com.ccadllc.firebird.vms.topology.core.ModulatorMatchers;
+import com.ccadllc.firebird.vms.topology.core.PacketizedElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.PidRoute;
+import com.ccadllc.firebird.vms.topology.core.PidRouteDescription;
+import com.ccadllc.firebird.vms.topology.core.ServingLocationQName;
+import com.ccadllc.firebird.vms.topology.core.UDPElementaryStreamTransmissionDescriptor;
+import com.ccadllc.firebird.vms.topology.core.Upconverter;
+import com.ccadllc.firebird.vms.topology.core.UpconverterDescription;
+import com.ccadllc.firebird.vms.topology.core.UpconverterMatchers;
+import com.ccadllc.firebird.vms.topology.core.event.SimpleEdgeDeviceModifiedEvent;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableEthernetPortSupportingDevice;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutablePidRouteBasedElementaryStreamInserter;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableQAMSupportingDevice;
+import com.ccadllc.firebird.vms.topology.simpledevices.SedPidRoute.InputView;
+import com.ccadllc.firebird.vms.topology.spi.NotificationSink;
+
+import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang.builder.ReflectionToStringBuilder;
+import org.apache.commons.lang.builder.ToStringBuilder;
+import org.apache.commons.lang.builder.ToStringStyle;
+import org.hibernate.annotations.Cascade;
+import org.hibernate.annotations.CollectionOfElements;
+import org.hibernate.annotations.MapKey;
+import org.hibernate.annotations.Type;
+import org.osgi.service.event.EventAdmin;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Configurable;
+
+import com.google.common.base.Preconditions;
+import com.google.common.base.Predicate;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
+
+/**
+ * Represents a Simple Edge Device.
+ */
+@Entity
+@Table(name = "sed")
+@Configurable
+public class SimpleEdgeDevice implements MutablePidRouteBasedElementaryStreamInserter, MutableQAMSupportingDevice, MutableEthernetPortSupportingDevice
+{
+    private final transient Logger logger = LoggerFactory.getLogger(SimpleEdgeDevice.class);
+
+    // TODO: Remove this in Topology 2.0 as well as the osgi:reference in osgi-context.xml (all SimpleEdgeDevice events can be removed from topology-core at that point)
+    @Deprecated @Autowired private transient EventAdmin eventAdmin;
+
+    @Autowired private transient NotificationSink notificationSink;
+
+    @Id
+    @Type(type = "com.ccadllc.firebird.core.database.persistence.UUIDUserType")
+    private final UUID id;
+
+    @Column
+    private String name;
+    private transient String oldName;
+
+    @Embedded
+    @AttributeOverride(column = @Column(name = "location"), name = "qualifiedName")
+    private ServingLocationQName location;
+
+    private final String type;
+
+    @OneToMany(fetch = FetchType.EAGER, cascade = CascadeType.ALL, mappedBy = "sed")
+    @Cascade(value = org.hibernate.annotations.CascadeType.DELETE_ORPHAN)
+    private final Set<SedEthernetPort> ethernetPorts = Sets.newHashSet();
+
+    @OneToMany(fetch = FetchType.EAGER, cascade = CascadeType.ALL, mappedBy = "sed")
+    @Cascade(value = org.hibernate.annotations.CascadeType.DELETE_ORPHAN)
+    private final Set<SedModulator> modulators = Sets.newHashSet();
+
+    @OneToMany(fetch = FetchType.EAGER, cascade = CascadeType.ALL, mappedBy = "sed")
+    @Cascade(value = org.hibernate.annotations.CascadeType.DELETE_ORPHAN)
+    private final Set<SedPidRoute> pidRoutes = Sets.newHashSet();
+
+    @CollectionOfElements(fetch = FetchType.EAGER)
+    @MapKey(columns = { @Column(name = "parameter_key") })
+    @Column(name = "parameter_value")
+    @Cascade(value = org.hibernate.annotations.CascadeType.DELETE_ORPHAN)
+    private final Map<String, String> properties = Maps.newHashMap();
+
+    /**
+     *  Used to force a PostUpdate event to be fired any time a relationship is added/modified/deleted.
+     *  See http://opensource.atlassian.com/projects/hibernate/browse/EJB-288
+     */
+    @Column(name = "last_changed")
+    @SuppressWarnings("unused")
+    private long lastChanged;
+
+    private transient Device parentDevice;
+
+    private SimpleEdgeDevice()
+    {
+        id = null;
+        type = null;
+    }
+
+    private SimpleEdgeDevice(final Builder builder)
+    {
+        this(UUID.randomUUID(), builder);
+    }
+
+    private SimpleEdgeDevice(final UUID id, final Builder builder)
+    {
+        Preconditions.checkNotNull(builder.name, "name cannot be null");
+        Preconditions.checkNotNull(builder.type, "type cannot be null");
+
+        this.id = id;
+        name = builder.name;
+        type = builder.type;
+        location = builder.location;
+        if (builder.properties != null)
+        {
+            properties.putAll(builder.properties);
+        }
+    }
+
+    public void setParentDevice(final Device parentDevice)
+    {
+        this.parentDevice = parentDevice;
+    }
+
+    @Override
+    public UUID getId()
+    {
+        return id;
+    }
+
+    @Override
+    public String getName()
+    {
+        return name;
+    }
+
+    public void setName(final String name)
+    {
+        Preconditions.checkNotNull(name, "name");
+        if (oldName == null)
+        {
+            oldName = this.name;
+        }
+        this.name = name;
+    }
+
+    public String getOldName()
+    {
+        return oldName;
+    }
+
+    @Override
+    public String getType()
+    {
+        return type;
+    }
+
+    @Override
+    public Iterable<? extends PidRoute> getPidRoutes()
+    {
+        return Iterables.unmodifiableIterable(pidRoutes);
+    }
+
+    @Override
+    public ServingLocationQName getLocation()
+    {
+        return location;
+    }
+
+    @Override
+    public void setLocation(final ServingLocationQName location)
+    {
+        this.location = location;
+    }
+
+    @Override
+    public Iterable<? extends EthernetPort> getEthernetPorts()
+    {
+        return Iterables.unmodifiableIterable(ethernetPorts);
+    }
+
+    @Override
+    public Iterable<? extends Modulator> getModulators()
+    {
+        return Iterables.unmodifiableIterable(modulators);
+    }
+
+    @Override
+    public Map<String, String> getProperties()
+    {
+        return properties;
+    }
+
+    /**
+     * Puts this key/value pair into the <code>properties</code> map.
+     *
+     * <p>Note that if the key already exists in the map, then its value will be overwritten with the new value.</p>
+     *
+     * @param key key
+     * @param value value
+     */
+    public void addProperty(final String key, final String value)
+    {
+        properties.put(key, value);
+        updateLastChanged();
+    }
+
+    public void removeProperty(final String key)
+    {
+        properties.remove(key);
+        updateLastChanged();
+    }
+
+    @Override
+    public UUID addEthernetPort(final EthernetPortDescription ethernetPortDescription)
+    {
+        final SedEthernetPort ethernetPort = SedEthernetPort.builder(ethernetPortDescription.getName(), ethernetPortDescription.getType(),
+            ethernetPortDescription.getUnicastAddress()).portNumber(ethernetPortDescription.getPortNumber()).build();
+        updateLastChanged();
+        return addEthernetPort(ethernetPort);
+    }
+
+    public UUID addEthernetPort(final SedEthernetPort ethernetPort)
+    {
+        ethernetPort.setSimpleEdgeDevice(this);
+        ethernetPorts.add(ethernetPort);
+        updateLastChanged();
+        return ethernetPort.getId();
+    }
+
+    @Override
+    public void removeEthernetPort(final UUID ethernetPortId)
+    {
+        final SedEthernetPort port = (SedEthernetPort) getEthernetPort(ethernetPorts, EthernetPortMatchers.hasId(ethernetPortId));
+
+        // Remove all of the PidRoutes that reference a deleted port
+        final Iterable<SedPidRoute> relatedPidRoutes = Iterables.filter(pidRoutes, new Predicate<SedPidRoute>()
+        {
+            @Override
+            public boolean apply(final SedPidRoute route)
+            {
+                final InputView routeInputView = route.getInputView();
+                if (routeInputView != null && routeInputView.getEthernetPort().getId().equals(ethernetPortId))
+                {
+                    return true;
+                }
+                return false;
+            }
+        });
+
+        for (final SedPidRoute route : ImmutableList.copyOf(relatedPidRoutes))
+        {
+            removePidRoute(route.getId());
+        }
+
+        // Set sed reference of port to null
+        port.setSimpleEdgeDevice(null);
+        ethernetPorts.remove(port);
+        updateLastChanged();
+    }
+
+    @Override
+    public void addMulticastAddressToEthernetPort(final UnresolvedInetAddress address, final UUID ethernetPortId)
+    {
+        final SedEthernetPort port = (SedEthernetPort) getEthernetPort(ethernetPorts, hasId(ethernetPortId));
+        if (port != null)
+        {
+            port.addMulticastAddress(address);
+        }
+        else
+        {
+            logger.warn(String.format("Unable to add Multicast Address [%s] to ethernet port [%s] because the ethernet port does not exist on edge device [%s].", address, ethernetPortId.toString(), name));
+        }
+        updateLastChanged();
+    }
+
+    public void removeMulticastAddressFromEthernetPort(final UnresolvedInetAddress address, final UUID ethernetPortId)
+    {
+        final SedEthernetPort port = (SedEthernetPort) getEthernetPort(ethernetPorts, hasId(ethernetPortId));
+        if (port != null)
+        {
+            port.removeMulticastAddress(address);
+            updateLastChanged();
+        }
+    }
+
+    @Override
+    public UUID addListenerToMulticastAddressOnEthernetPort(final int udpPort, final UUID ethernetPortId, final UnresolvedInetAddress address)
+    {
+        final SedEthernetPort port = (SedEthernetPort) getEthernetPort(ethernetPorts, hasId(ethernetPortId));
+        if (port != null)
+        {
+            updateLastChanged();
+            return port.addUDPListenerToMulticastAddress(udpPort, address);
+        }
+        else
+        {
+            logger.warn(String.format("Unable to add UDP port [%d] to ethernet port [%s] on edge device [%s] because the ethernet port does not exist.", udpPort, ethernetPortId.toString(), name));
+            return null;
+        }
+    }
+
+    @Override
+    public UUID addListenerToUnicastAddressOnEthernetPort(final int udpPort, final UUID ethernetPortId)
+    {
+        final SedEthernetPort port = (SedEthernetPort) EthernetPortMatchers.getEthernetPort(ethernetPorts, hasId(ethernetPortId));
+        if (port != null)
+        {
+            updateLastChanged();
+            return port.addUDPListener(udpPort);
+        }
+        else
+        {
+            logger.warn(String.format("Unable to add UDP port [%d] to ethernet port [%s] on edge device [%s] because the ethernet port does not exist.", udpPort, ethernetPortId.toString(), name));
+            return null;
+        }
+    }
+
+    @Override
+    public UUID addModulator(final ModulatorDescription modulatorDescription)
+    {
+        final SedModulator modulator = SedModulator.builder(modulatorDescription.getModulation(), modulatorDescription.getModulatorNumber()).build();
+        updateLastChanged();
+        return addModulator(modulator);
+    }
+
+    public UUID addModulator(final SedModulator modulator)
+    {
+        modulator.setSimpleEdgeDevice(this);
+        modulators.add(modulator);
+        updateLastChanged();
+        return modulator.getId();
+    }
+
+    @Override
+    public void removeModulator(final UUID modulatorId)
+    {
+        final SedModulator sedModulator = (SedModulator) getModulator(modulators, ModulatorMatchers.hasId(modulatorId));
+
+        if (sedModulator != null)
+        {
+            // Remove all of the PidRoutes that reference a deleted port
+            final Iterable<SedPidRoute> relatedPidRoutes = Iterables.filter(pidRoutes, new Predicate<SedPidRoute>()
+            {
+                @Override
+                public boolean apply(final SedPidRoute route)
+                {
+                    final Pair<Modulator, Upconverter> routeOutputView = route.getOutputView();
+                    if (routeOutputView != null && routeOutputView.getFirst().getId().equals(modulatorId))
+                    {
+                        return true;
+                    }
+                    return false;
+                }
+            });
+
+            for (final SedPidRoute route : ImmutableList.copyOf(relatedPidRoutes))
+            {
+                removePidRoute(route.getId());
+            }
+
+            // Set sed reference of port to null
+            sedModulator.setSimpleEdgeDevice(null);
+            modulators.remove(sedModulator);
+            updateLastChanged();
+        }
+        else
+        {
+            logger.warn(String.format("Unable to remove modulator [%s] from edge device [%s] because a modulator with that id cannot be found.", modulatorId, name));
+        }
+
+    }
+
+    @Override
+    public UUID addUpconverterToModulator(final UpconverterDescription upconverterDescription, final UUID modulatorId)
+    {
+        final SedUpconverter upconverter = SedUpconverter.builder(upconverterDescription.getFrequency(), upconverterDescription.getUpconverterNumber()).build();
+        updateLastChanged();
+        return addUpconverterToModulator(upconverter, modulatorId);
+    }
+
+    private UUID addUpconverterToModulator(final SedUpconverter upconverter, final UUID modulatorId)
+    {
+        final SedModulator sedModulator = (SedModulator) getModulator(modulators, ModulatorMatchers.hasId(modulatorId));
+        if (sedModulator != null)
+        {
+            sedModulator.addUpconverter(upconverter);
+            updateLastChanged();
+            return upconverter.getId();
+        }
+        else
+        {
+            logger.warn(String.format("Unable to add upconverter [%s] to modulator [%s] on edge device [%s] because the modulator does not exist.", upconverter.getName(), name));
+            return null;
+        }
+    }
+
+    @Override
+    public void removeUpconverter(final UUID upconverterId)
+    {
+        final Modulator modulator = getModulator(modulators, hasUpconverter(UpconverterMatchers.hasId(upconverterId)));
+        if (modulator != null)
+        {
+            final SedModulator sedModulator = (SedModulator) modulator;
+            sedModulator.removeUpconverter(upconverterId);
+            updateLastChanged();
+        }
+        else
+        {
+            logger.warn(String.format("Unable to remove upconverter [%s] from edge device [%s] because a modulator with that upconverter cannot be found.", upconverterId, name));
+        }
+    }
+
+    @Override
+    public UUID addPidRoute(final PidRouteDescription pidRouteDescription)
+    {
+        final SedPidRoute pidRoute;
+        if (pidRouteDescription.getInput() != null)
+        {
+            pidRoute = SedPidRoute.builder(pidRouteDescription.getInput(), pidRouteDescription.getOutput(), pidRouteDescription.getInPid(), pidRouteDescription.getOutPid()).build();
+        }
+        else
+        {
+            final UUID inputEthernetPort = pidRouteDescription.getInputEthernetPort();
+            final int udp = pidRouteDescription.getUdp();
+            final EthernetPort ethernetPort = getEthernetPort(getEthernetPorts(), hasId(inputEthernetPort));
+            final UDPListener udpListener = UDPListenerMatchers.getUDPListener(((SedEthernetPort) ethernetPort).getUnicastListenerEntities(), UDPListenerMatchers.hasUDP(udp));
+            if (udpListener == null)
+            {
+                final SedEthernetPortMulticastAddress multicastAddress = SedEthernetPortMulticastAddressMatchers.getMulticastAddress(((SedEthernetPort)ethernetPort).getMulticastAddressEntities(), SedEthernetPortMulticastAddressMatchers.hasUDPListener(UDPListenerMatchers.hasUDP(udp)));
+                final UDPListener mcastUDPListener = UDPListenerMatchers.getUDPListener(multicastAddress.getListeners(), UDPListenerMatchers.hasUDP(udp));
+                if (mcastUDPListener != null)
+                {
+                    pidRoute = SedPidRoute.builder(mcastUDPListener.getId(), pidRouteDescription.getOutput(), pidRouteDescription.getInPid(), pidRouteDescription.getOutPid()).build();
+                }
+                else
+                {
+                    logger.error(String.format("Unable to add pid route to edge device %s because there is no matching UDP listener input on ethernet port [%s] with udp .", name, pidRouteDescription.getInputEthernetPort(), pidRouteDescription.getUdp()));
+                    return null;
+                }
+            }
+            else
+            {
+                pidRoute = SedPidRoute.builder(udpListener.getId(), pidRouteDescription.getOutput(), pidRouteDescription.getInPid(), pidRouteDescription.getOutPid()).build();
+            }
+        }
+        return addPidRoute(pidRoute);
+    }
+
+    public UUID addPidRoute(final SedPidRoute pidRoute)
+    {
+        pidRoute.setSimpleEdgeDevice(this);
+        pidRoutes.add(pidRoute);
+        updateLastChanged();
+        return pidRoute.getId();
+    }
+
+    @Override
+    public void removePidRoute(final UUID pidRouteId)
+    {
+        final SedPidRoute sedPidRoute = Iterables.getOnlyElement(Iterables.filter(pidRoutes, new Predicate<PidRoute>()
+        {
+            @Override
+            public boolean apply(final PidRoute pidRoute)
+            {
+                return pidRoute.getId().equals(pidRouteId);
+            }
+        }));
+        if (sedPidRoute != null)
+        {
+            sedPidRoute.setSimpleEdgeDevice(null);
+            pidRoutes.remove(sedPidRoute);
+            updateLastChanged();
+        }
+        else
+        {
+            logger.warn(String.format("Unable to remove pid route [%s] from edge device [%s] because a pid route with that id cannot be found.", pidRouteId, name));
+        }
+    }
+
+    @Override
+    public Iterable<DeviceInput> getInputs()
+    {
+        final Collection<DeviceInput> inputs = Lists.newArrayList();
+        for (final SedEthernetPort ethernetPort : ethernetPorts)
+        {
+            for (final UDPListener unicastListener : ethernetPort.getUnicastListenerEntities())
+            {
+                inputs.add(new DeviceInput(unicastListener.getId(), String.format("%s:%d", ethernetPort.getName(), unicastListener.getUDP())));
+            }
+            for (final SedEthernetPortMulticastAddress multicastAddress : ethernetPort.getMulticastAddressEntities())
+            {
+                for (final MulticastUDPListener multicastListener : multicastAddress.getListeners())
+                {
+                    inputs.add(new DeviceInput(multicastListener.getId(), String.format("%s:%s:%d", ethernetPort.getName(), multicastAddress.getMulticastAddress().getAddress(), multicastListener.getUDP())));
+                }
+            }
+        }
+
+        return inputs;
+    }
+
+    @Override
+    public Iterable<DeviceOutput> getOutputs()
+    {
+        final Collection<DeviceOutput> outputs = Lists.newArrayList();
+        for (final SedModulator modulator : modulators)
+        {
+            for (final Upconverter upconverter : modulator.getUpconverters())
+            {
+                outputs.add(new DeviceOutput(upconverter.getId(), upconverter.getName()));
+            }
+        }
+
+        return outputs;
+    }
+
+    @Override
+    public Iterable<ElementaryStreamTransmissionDescriptor> describeInput(final ElementaryStream stream)
+    {
+        final List<ElementaryStreamTransmissionDescriptor> descriptors = Lists.newArrayList();
+
+        if (stream instanceof PacketizedElementaryStream)
+        {
+            for (final PidRoute route : getPidRoutes(((PacketizedElementaryStream)stream).getPid()))
+            {
+                addDescriptors(descriptors, stream, route);
+            }
+        }
+
+        return descriptors;
+    }
+
+    private void addDescriptors(final List<ElementaryStreamTransmissionDescriptor> descriptors, final ElementaryStream stream, final PidRoute route)
+    {
+        int udp = 0;
+        final EthernetPort ethernetPort = getEthernetPort(ethernetPorts, SedEthernetPortMatchers.hasUDPListener(UDPListenerMatchers.hasId(route.getInput())));
+        if (ethernetPort != null)
+        {
+            final SedEthernetPort sedEthernetPort = (SedEthernetPort) ethernetPort;
+            udp = UDPListenerMatchers.getUDPListener(sedEthernetPort.getUnicastListenerEntities(), UDPListenerMatchers.hasId(route.getInput())).getUDP();
+            addDescriptor(descriptors, stream, route.getInputPid(), sedEthernetPort.getUnicastAddress(), udp);
+
+            for (final Map.Entry<UnresolvedInetAddress, Set<Integer>> entry : ethernetPort.getMulticastListeners().entrySet())
+            {
+                if (entry.getValue().contains(udp))
+                {
+                    addDescriptor(descriptors, stream, route.getInputPid(), entry.getKey(), udp);
+                }
+            }
+        }
+    }
+
+    private void addDescriptor(final List<ElementaryStreamTransmissionDescriptor> descriptors, final ElementaryStream stream, final int inputPid, final UnresolvedInetAddress address, final int udpListener)
+    {
+        final UDPElementaryStreamTransmissionDescriptor.Builder<?> builder = UDPElementaryStreamTransmissionDescriptor.builder()
+            .stream(stream)
+            .sink(this);
+        descriptors.add(
+            builder
+                .pid(inputPid)
+                .address(address)
+                .port(udpListener)
+                .build());
+    }
+
+    @Override
+    public Iterable<ElementaryStreamTransmissionDescriptor> describeOutput(final ElementaryStreamTransmissionDescriptor inputDescriptor)
+    {
+        final List<ElementaryStreamTransmissionDescriptor> descriptors = Lists.newArrayList();
+
+        final ModulatedRFElementaryStreamTransmissionDescriptor.Builder<?> builder = ModulatedRFElementaryStreamTransmissionDescriptor.builder()
+            .stream(inputDescriptor.getStream())
+            .format(inputDescriptor.getFormat())
+            .pid(inputDescriptor.getPid())
+            .source(this);
+
+        for (final PidRoute route : getPidRoutes(inputDescriptor.getPid()))
+        {
+            final Modulator modulator = getModulator(modulators, hasUpconverter(UpconverterMatchers.hasId(route.getOutput())));
+            if (modulator != null)
+            {
+                final Upconverter upconverter = UpconverterMatchers.getUpconverter(modulator.getUpconverters(), UpconverterMatchers.hasId(route.getOutput()));
+                descriptors.add(
+                    builder
+                        .frequency(upconverter.getFrequency())
+                        .modulation(modulator.getModulation())
+                        .build());
+                continue;
+            }
+            else
+            {
+                // Additional port types checked here.
+            }
+        }
+
+        return descriptors;
+    }
+
+    private Iterable<? extends PidRoute> getPidRoutes(final int inPid)
+    {
+        return Iterables.filter(getPidRoutes(), new Predicate<PidRoute>()
+        {
+            @Override
+            public boolean apply(final PidRoute route)
+            {
+                return route.getInputPid() == inPid;
+            }
+        });
+    }
+
+    /**
+     * {@inheritDoc}
+     * <p>Makes a new copy of this {@link SimpleEdgeDevice}.</p>
+     */
+    @Override
+    public SimpleEdgeDevice copyOf()
+    {
+        final SimpleEdgeDevice copy = new SimpleEdgeDevice(id, builder(name, type).location(location).properties(properties));
+        for (final SedEthernetPort ethernetInputPort : ethernetPorts)
+        {
+            copy.addEthernetPort(ethernetInputPort.copyOf());
+        }
+        for (final SedModulator rfOutputModulator : modulators)
+        {
+            copy.addModulator(rfOutputModulator.copyOf());
+        }
+        for (final SedPidRoute sedPidRoute : pidRoutes)
+        {
+            copy.addPidRoute(sedPidRoute.copyOf());
+        }
+        return copy;
+    }
+
+    /** @see #lastChanged */
+    void updateLastChanged()
+    {
+        logger.trace("Updating last changed time of SED {} because one or more relationships changed.", name);
+        lastChanged = System.nanoTime();
+    }
+
+    @PostUpdate
+    void updated()
+    {
+        // TODO: Remove the following line in Topology-2.0; the line is required because early versions of dac-plugin (3.1.0),
+        // sem-plugin (1.1.0), and apex-plugin (1.1.0) required event to be sent so that the event handler in the respective
+        // plugins could send notifications themselves. However, since Topology-1.1.1, Apex-1.1.1, and Sem-1.1.1 this is no longer
+        // the case as all notifications are to be sent from SimpleEdgeDevice by using the "parentDevice" reference.
+        eventAdmin.sendEvent(new SimpleEdgeDeviceModifiedEvent(this, oldName));
+
+        final String oldName = getOldName() == null ? getName() : getOldName();
+
+        if (parentDevice != null)
+        {
+            notificationSink.deviceModified(parentDevice, oldName);
+        }
+        else
+        {
+            // TODO: This is required until Topology 2.0; early versions of dac-plugin (3.0), sem-plugin(1.0), and apex-plugin(1.0)
+            // required notifications to be sent from here with SimpleEdgeDevice as the device
+            notificationSink.deviceModified(this, oldName);
+        }
+    }
+
+
+    @PostPersist
+    void added()
+    {
+        if (parentDevice != null)
+        {
+            notificationSink.deviceAdded(parentDevice);
+        }
+        else
+        {
+            // TODO: This is required until Topology 2.0; early versions of dac-plugin (3.0), sem-plugin(1.0), and apex-plugin(1.0)
+            // required notifications to be sent from here with SimpleEdgeDevice as the device
+            notificationSink.deviceAdded(this);
+        }
+    }
+
+    @PostRemove
+    void removed()
+    {
+        if (parentDevice != null)
+        {
+            notificationSink.deviceDeleted(parentDevice);
+        }
+        else
+        {
+            // TODO: This is required until Topology 2.0; early versions of dac-plugin (3.0), sem-plugin(1.0), and apex-plugin(1.0)
+            // required notifications to be sent from here with SimpleEdgeDevice as the device
+            notificationSink.deviceDeleted(this);
+        }
+    }
+
+    @Override
+    public String toString()
+    {
+        ToStringBuilder.setDefaultStyle(ToStringStyle.SHORT_PREFIX_STYLE);
+        return ReflectionToStringBuilder.toStringExclude(this, Lists.newArrayList("ethernetPorts", "modulators", "pidRoutes", "properties", "lastChanged", "parentDevice"));
+    }
+
+    public String toStringFancy()
+    {
+        final StringBuilder bldr = new StringBuilder(String.format("SED: %s  |  %s  |  %s  | %s%n", name, type, location, id));
+        bldr.append("Ethernet Ports -----\n");
+        for (final EthernetPort port : getEthernetPorts())
+        {
+            final SedEthernetPort ePort = (SedEthernetPort) port;
+            final String unicastAddress = ePort.getUnicastAddress() == null ? "null" : ePort.getUnicastAddress().getAddress();
+            bldr.append(String.format("Port: %s | %s  |  %s  |  %d  |  %s%n", ePort.getType().name(), ePort.getName(), unicastAddress, ePort.getPortNumber(), ePort.getId().toString()));
+            for (final UnicastUDPListener listener : ePort.getUnicastListenerEntities())
+            {
+                bldr.append(String.format("\tUDP Listener (unicast): %d  |  %s\n", listener.getUDP(), listener.getId()));
+            }
+
+            for (final SedEthernetPortMulticastAddress address : ePort.getMulticastAddressEntities())
+            {
+                bldr.append(String.format("\tMulticast Address: %s  | %s%n", address.getMulticastAddress().getAddress(), StringUtils.join(Lists.newArrayList(address.getListeners()), ", ")));
+                for (final MulticastUDPListener listener : address.getListeners())
+                {
+                    bldr.append(String.format("\t\tUDP Listener (multicast): %d  |  %s\n", listener.getUDP(), listener.getId()));
+                }
+            }
+        }
+        bldr.append("Modulators -----\n");
+        for (final Modulator modulator : getModulators())
+        {
+            bldr.append(String.format("Modulator: %s  |  %s |  %s%n", modulator.getName(), modulator.getModulation().name(), modulator.getId().toString()));
+
+            for (final Upconverter upconverter : modulator.getUpconverters())
+            {
+                bldr.append(String.format("\tUpconverter: %s  |  %d   |  %d  | %s%n", upconverter.getName(), upconverter.getFrequency().getKHz(), upconverter.getUpconverterNumber(), upconverter.getId()));
+            }
+        }
+
+        bldr.append("Pid Routes <----->\n");
+        for (final SedPidRoute route : pidRoutes)
+        {
+            bldr.append(String.format("Route:%n"));
+            final InputView inputView = route.getInputView();
+            if (inputView != null)
+            {
+                bldr.append(String.format("\tInput: %s%n", route.getInputView().getEthernetPort().getName()));
+                bldr.append(String.format("\t\tUDP: %d%n", route.getInputView().getListener().getUDP()));
+            }
+            else
+            {
+                bldr.append(String.format("\tUnable to display view on input becuase it is null for input id [%s].%n", route.getInput()));
+            }
+            final Pair<Modulator, Upconverter> outputView = route.getOutputView();
+            if (outputView != null)
+            {
+                bldr.append(String.format("\tOutput: %s  |  %d%n", outputView.getFirst().getModulation().name(), outputView.getSecond().getFrequency().getKHz()));
+                bldr.append(String.format("\tIn PID: %d%n", route.getInputPid()));
+                bldr.append(String.format("\tOut PID: %d%n", route.getOutputPid()));
+            }
+            else
+            {
+                bldr.append(String.format("\tUnable to display view on output because it is null for output id [%s].%n", route.getOutput()));
+            }
+
+        }
+
+        return bldr.toString();
+    }
+
+    public static class Builder
+    {
+        private final String name;
+        private final String type;
+
+        // Optional
+        private ServingLocationQName location;
+        private Map<String, String> properties;
+
+        public Builder(final String name, final String type)
+        {
+            this.name = name;
+            this.type = type;
+        }
+
+        public Builder location(final ServingLocationQName location)
+        {
+            this.location = location;
+            return this;
+        }
+
+        public Builder properties(final Map<String, String> properties)
+        {
+            this.properties = properties;
+            return this;
+        }
+
+        public SimpleEdgeDevice build()
+        {
+            return new SimpleEdgeDevice(this);
+        }
+    }
+
+    public static Builder builder(final String name, final String type)
+    {
+        return new Builder(name, type);
+    }
+}

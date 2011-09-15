@@ -1,0 +1,336 @@
+/*
+ * Copyright 2007 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.dac.common;
+
+import com.ccadllc.commons.EnumLookup;
+
+/**
+ * XML Field type lookup class. This class registers every field type and its corresponding XML element tag.
+ */
+public final class XmlFieldTypeLookup
+{
+    /**
+     * Static reference to a specific instance of the class.
+     */
+    private static final XmlFieldTypeLookup INSTANCE = new XmlFieldTypeLookup();
+
+    /**
+     * xml field lookup.
+     */
+    private final EnumLookup<FieldType, String> xmlFieldLookup = new EnumLookup<FieldType, String>(FieldType.class);
+
+    /**
+     * Registers all field types and associates each one with an XML element tag.
+     */
+    private XmlFieldTypeLookup()
+    {
+        xmlFieldLookup.registerPair(FieldType.SERIAL_NUMBER, "serialNumber");
+        xmlFieldLookup.registerPair(FieldType.TERMINAL_ID, "terminalId");
+        xmlFieldLookup.registerPair(FieldType.HOST_ID, "hostId");
+        xmlFieldLookup.registerPair(FieldType.POD_ID, "podId");
+        xmlFieldLookup.registerPair(FieldType.POD_HOST_DATA, "podHostData");
+        xmlFieldLookup.registerPair(FieldType.VALIDATION_TIME, "validationTime");
+        xmlFieldLookup.registerPair(FieldType.POD_HOST_OVERRIDE, "podHostOverride");
+        xmlFieldLookup.registerPair(FieldType.HOST_ON_CRL, "hostOnCrl");
+        xmlFieldLookup.registerPair(FieldType.POD_ON_CRL, "podOnCrl");
+        xmlFieldLookup.registerPair(FieldType.VALIDATION_STATUS, "validationStatus");
+        xmlFieldLookup.registerPair(FieldType.RETURN_PATH_TYPE, "returnpathType");
+        xmlFieldLookup.registerPair(FieldType.UPSTREAM_PLANT_TYPE, "uspType");
+        xmlFieldLookup.registerPair(FieldType.TERMINAL_TYPE, "terminalType");
+        xmlFieldLookup.registerPair(FieldType.UPSTREAM_PLANT_NAME, "uspName");
+        xmlFieldLookup.registerPair(FieldType.UPSTREAM_FREQUENCY, "upstreamCenterFrequency");
+        xmlFieldLookup.registerPair(FieldType.PHONE_NUMBER, "phoneNumber");
+        xmlFieldLookup.registerPair(FieldType.IP_ADDRESS, "ipAddress");
+        xmlFieldLookup.registerPair(FieldType.RADD_NAME, "raddName");
+        xmlFieldLookup.registerPair(FieldType.UNIT_ADDRESS, "unitAddress");
+        xmlFieldLookup.registerPair(FieldType.HOUSEHOLD_ID, "householdId");
+        xmlFieldLookup.registerPair(FieldType.ON_PLANT, "ON_PLANT");
+        xmlFieldLookup.registerPair(FieldType.OFF_PLANT, "OFF_PLANT");
+        xmlFieldLookup.registerPair(FieldType.OM_NAME, "omName");
+        xmlFieldLookup.registerPair(FieldType.BUSINESS_SYSTEM_NAME, "businessSystemName");
+        xmlFieldLookup.registerPair(FieldType.DOWNSTREAM_PLANT_NAME, "downstreamPlantName");
+        xmlFieldLookup.registerPair(FieldType.DOWNSTREAM_PLANT_TYPE, "downstreamPlantType");
+        xmlFieldLookup.registerPair(FieldType.PACKAGE_TIER, "tier");
+        xmlFieldLookup.registerPair(FieldType.PACKAGE_NAME, "packageName");
+        xmlFieldLookup.registerPair(FieldType.SOURCE_NAME, "sourceName");
+        xmlFieldLookup.registerPair(FieldType.SERVICE_PROVIDER_NAME, "serviceProviderName");
+        xmlFieldLookup.registerPair(FieldType.SERVICE_PROVIDER_ID, "serviceProviderId");
+        xmlFieldLookup.registerPair(FieldType.EXTERNAL_PACKAGE_HANDLE, "externalPackageHandle");
+        xmlFieldLookup.registerPair(FieldType.DOWNSTREAM_PLANT_ID, "downstreamPlantId");
+        xmlFieldLookup.registerPair(FieldType.LINEUP_NAME, "lineupName");
+        xmlFieldLookup.registerPair(FieldType.VIRTUAL_CHANNEL_NUMBER, "virtualChannelNumber");
+        xmlFieldLookup.registerPair(FieldType.CHANNEL_TYPE, "channelType");
+        xmlFieldLookup.registerPair(FieldType.SOURCE_ID, "externalSourceId");
+        xmlFieldLookup.registerPair(FieldType.SOURCE_TYPE, "sourceType");
+        xmlFieldLookup.registerPair(FieldType.DELIVERY_TYPE, "deliveryType");
+        xmlFieldLookup.registerPair(FieldType.LOGICAL_CHANNEL_MAP_NAME, "logicalChannelMapName");
+        xmlFieldLookup.registerPair(FieldType.EXTERNAL_HANDLE, "externalHandle");
+        xmlFieldLookup.registerPair(FieldType.DEVICE_NAME, "deviceName");
+        xmlFieldLookup.registerPair(FieldType.PROVIDER_NAME, "providerName");
+        xmlFieldLookup.registerPair(FieldType.SERVICE_TYPE, "serviceType");
+        xmlFieldLookup.registerPair(FieldType.PROGRAM_PROVISION, "programProvision");
+        xmlFieldLookup.registerPair(FieldType.CCI_LEVEL, "cciLevel");
+        xmlFieldLookup.registerPair(FieldType.LANGUAGE, "language");
+        xmlFieldLookup.registerPair(FieldType.BSG_HANDLE, "BSGHandle");
+        xmlFieldLookup.registerPair(FieldType.SERVICE_QUEUING, "serviceQueuing");
+        xmlFieldLookup.registerPair(FieldType.SERVICE_QUEUINGS, "serviceQueuings");
+        xmlFieldLookup.registerPair(FieldType.LOCATION_NAME, "locationName");
+        xmlFieldLookup.registerPair(FieldType.TIME_SOURCE, "timeSource");
+        xmlFieldLookup.registerPair(FieldType.INPUT_PORT_NAME, "inputPortName");
+        xmlFieldLookup.registerPair(FieldType.IRT_NAME, "irtName");
+        xmlFieldLookup.registerPair(FieldType.MODULATION_MODE, "modulationMode");
+        xmlFieldLookup.registerPair(FieldType.UPCONVERTER_NAME, "upconverterName");
+        xmlFieldLookup.registerPair(FieldType.DEVICE_TYPE, "deviceType");
+        xmlFieldLookup.registerPair(FieldType.TUNNED_CHANNEL, "tunedChannel");
+        xmlFieldLookup.registerPair(FieldType.VIDEO_STANDARD, "videoStandard");
+        xmlFieldLookup.registerPair(FieldType.CARD_NUMBER, "cardNumber");
+        xmlFieldLookup.registerPair(FieldType.FREQUENCY, "frequency");
+        xmlFieldLookup.registerPair(FieldType.INTERACTIVE_RETURN_PATH_ID, "interactiveReturnPathId");
+        xmlFieldLookup.registerPair(FieldType.ONLINE, "online");
+        xmlFieldLookup.registerPair(FieldType.POLL_RETRY, "pollRetry");
+        xmlFieldLookup.registerPair(FieldType.ROUTER_NAME, "routerName");
+        xmlFieldLookup.registerPair(FieldType.ROUTER_DEVICE_NAME, "routerDeviceName");
+        xmlFieldLookup.registerPair(FieldType.POLL_TIMEOUT, "pollTimeout");
+        xmlFieldLookup.registerPair(FieldType.SHARED_RETURN_PATH, "sharedReturnPath");
+        xmlFieldLookup.registerPair(FieldType.INTERCELL_TIMEOUT, "intercellTimeout");
+        xmlFieldLookup.registerPair(FieldType.MIN_AMPLITUDE, "minAmplitude");
+        xmlFieldLookup.registerPair(FieldType.MAX_AMPLITUDE, "maxAmplitude");
+        xmlFieldLookup.registerPair(FieldType.AMPLITUDE_STEP_SIZE, "amplitudeStepSize");
+        xmlFieldLookup.registerPair(FieldType.AMPLITUDE_LEVEL, "amplitudeLevel");
+        xmlFieldLookup.registerPair(FieldType.DOWNSTREAM_PLANT_HANDLE, "downstreamPlantHandle");
+        xmlFieldLookup.registerPair(FieldType.DEFAULT_DOWNSTREAM_PLANT, "default");
+        xmlFieldLookup.registerPair(FieldType.MULTICAST_16_SET_NAME, "multicast16SetName");
+        xmlFieldLookup.registerPair(FieldType.DEVICE_PORT_NAME, "devicePortName");
+        xmlFieldLookup.registerPair(FieldType.UPSTREAM_PLANT_HANDLE, "uspHandle");
+        xmlFieldLookup.registerPair(FieldType.STARTING_IP_ADDRESS, "startingIPAddress");
+        xmlFieldLookup.registerPair(FieldType.ENDING_IP_ADDRESS, "endingIPAddress");
+        xmlFieldLookup.registerPair(FieldType.MODEM_BANK_NAME, "modemBankName");
+        xmlFieldLookup.registerPair(FieldType.MODEM_BANK_DEVICE_NAME, "modemBankDeviceName");
+        xmlFieldLookup.registerPair(FieldType.HEADEND_NAME, "headendName");
+        xmlFieldLookup.registerPair(FieldType.HEADEND_HANDLE, "headendHandle");
+        xmlFieldLookup.registerPair(FieldType.PCM_NAME, "pcmName");
+        xmlFieldLookup.registerPair(FieldType.DEFAULT_HEADEND, "defaultHeadend");
+        xmlFieldLookup.registerPair(FieldType.RPD_NAME, "rpdName");
+        xmlFieldLookup.registerPair(FieldType.RPD_DEVICE_NAME, "rpdDeviceName");
+        xmlFieldLookup.registerPair(FieldType.STREAM_TYPE, "streamType");
+        xmlFieldLookup.registerPair(FieldType.ADDRESS_1, "address1");
+        xmlFieldLookup.registerPair(FieldType.ADDRESS_2, "address2");
+        xmlFieldLookup.registerPair(FieldType.ADDRESS_3, "address3");
+        xmlFieldLookup.registerPair(FieldType.ADDRESS_4, "address4");
+        xmlFieldLookup.registerPair(FieldType.PACKAGE_PROVIDER_NAME, "packageProviderName");
+        xmlFieldLookup.registerPair(FieldType.INSERTION_BANDWIDTH, "insertionBandwidth");
+        xmlFieldLookup.registerPair(FieldType.INTERACTIVE_DOWNSTREAM_PATH_ID, "interactiveDownstreamPathId");
+        xmlFieldLookup.registerPair(FieldType.OPERATIONAL_STATE, "operationalState");
+        xmlFieldLookup.registerPair(FieldType.MPS_NAME, "mpsName");
+        xmlFieldLookup.registerPair(FieldType.SEM_NAME, "semName");
+        xmlFieldLookup.registerPair(FieldType.DEFAULT_UPSTREAMPLANT, "defaultUsp");
+        xmlFieldLookup.registerPair(FieldType.DSG_STREAM_NAME, "dsgStreamName");
+        xmlFieldLookup.registerPair(FieldType.DSG_IP_ADDRESS, "dsgIpAddress");
+        xmlFieldLookup.registerPair(FieldType.DSG_IP_ADDRESS_MODE, "dsgIpAddressMode");
+        xmlFieldLookup.registerPair(FieldType.DSG_RADD_NAME, "dsgRaddName");
+        xmlFieldLookup.registerPair(FieldType.DSG_RADD_DATA_RATE, "dsgRaddDataRate");
+        xmlFieldLookup.registerPair(FieldType.DSG_DESCRIPTION, "dsgDescription");
+        xmlFieldLookup.registerPair(FieldType.DECODER_CONDITIONAL_NAME, "decoderConditionalName");
+        xmlFieldLookup.registerPair(FieldType.DECODER_CONDITIONAL_VALUE, "decoderConditionalValue");
+        xmlFieldLookup.registerPair(FieldType.OUTPUT_MPEG_SERVICE_NUMBER, "outputMpegServiceNumber");
+        xmlFieldLookup.registerPair(FieldType.INPUT_MPEG_SERVICE_NUMBER, "inputMpegServiceNumber");
+        xmlFieldLookup.registerPair(FieldType.QUEUING_DEVICE_NAME, "queuingDeviceName");
+        xmlFieldLookup.registerPair(FieldType.OUTPUT_PORT_NAME, "outputPortName");
+        xmlFieldLookup.registerPair(FieldType.INPUT_SERVICE_NUMBER, "inputServiceNumber");
+        xmlFieldLookup.registerPair(FieldType.QUEUING_STATE, "queuingState");
+        xmlFieldLookup.registerPair(FieldType.ENCRYPTION_MODE, "encryptionMode");
+        xmlFieldLookup.registerPair(FieldType.ANALOG_DEVICE_NAME, "analogDeviceName");
+        xmlFieldLookup.registerPair(FieldType.MACROVISION_CONSTRAIN_IMAGE, "macrovisionConstrainImage");
+        xmlFieldLookup.registerPair(FieldType.EXTERNAL_ENCRYPTION_MODE, "externalEncryptionMode");
+        xmlFieldLookup.registerPair(FieldType.SERVICE_CODE, "serviceCode");
+        xmlFieldLookup.registerPair(FieldType.RESOURCE_NAME, "resourceName");
+        xmlFieldLookup.registerPair(FieldType.SERVICE_HANDLE, "serviceHandle");
+        xmlFieldLookup.registerPair(FieldType.AVAILABILITY, "availability");
+        xmlFieldLookup.registerPair(FieldType.DSG_PLANT_NAME, "dsgPlantName");
+        xmlFieldLookup.registerPair(FieldType.LAST_FAILURE_DATE, "lastFailureDate");
+        xmlFieldLookup.registerPair(FieldType.NUMBER_OF_FAILURES, "numberOfFailures");
+        xmlFieldLookup.registerPair(FieldType.LAST_RESPONDED, "lastResponded");
+        xmlFieldLookup.registerPair(FieldType.LAST_RESPONSE_DAYS, "lastResponseDays");
+        xmlFieldLookup.registerPair(FieldType.POWERLEVEL_ATTEMPTS, "powerLevelAttempts");
+        xmlFieldLookup.registerPair(FieldType.RPD_DEMOD_NUMBER, "rpdDemodNumber");
+        xmlFieldLookup.registerPair(FieldType.CMTS_NAME, "cmtsName");
+        xmlFieldLookup.registerPair(FieldType.SUCCESS_POLL_COUNTS, "successPollCounts");
+        xmlFieldLookup.registerPair(FieldType.TERMINAL_COUNTS, "counts");
+        xmlFieldLookup.registerPair(FieldType.IPPV_ENABLED, "ippvEnabled");
+        xmlFieldLookup.registerPair(FieldType.AUTO_DISCOVERY, "autoDiscovery");
+        xmlFieldLookup.registerPair(FieldType.VIRTUAL_CHANNEL_MAP_NAME, "virtualChannelMapName");
+        xmlFieldLookup.registerPair(FieldType.IS_NON_RESPONDER, "isNonResponder");
+        xmlFieldLookup.registerPair(FieldType.IS_CHRONIC_NON_RESPONDER, "isChronicNonResponder");
+        xmlFieldLookup.registerPair(FieldType.PACKAGE_TYPE, "packageType");
+        xmlFieldLookup.registerPair(FieldType.PACKAGE_HANDLE, "packageHandle");
+        xmlFieldLookup.registerPair(FieldType.OM_ID, "omId");
+        xmlFieldLookup.registerPair(FieldType.INSTALL_DATE, "installDate");
+        xmlFieldLookup.registerPair(FieldType.UPSTREAM_PLANT_ID, "upstreamPlantId");
+        xmlFieldLookup.registerPair(FieldType.TERMINAL_TYPE_ID, "terminalTypeId");
+        xmlFieldLookup.registerPair(FieldType.PACKAGE_ID, "packageId");
+        xmlFieldLookup.registerPair(FieldType.BUSINESS_SYSTEM_ID, "businessSystemId");
+        xmlFieldLookup.registerPair(FieldType.CATEGORY, "category");
+        xmlFieldLookup.registerPair(FieldType.FAILURE_THRESHOLD, "failureThreshold");
+        xmlFieldLookup.registerPair(FieldType.PASS_AVG, "passAverage");
+        xmlFieldLookup.registerPair(FieldType.PASS_MIN, "passMinimum");
+        xmlFieldLookup.registerPair(FieldType.PASS_MAX, "passMaximum");
+        xmlFieldLookup.registerPair(FieldType.RPD_ID, "rpdId");
+        xmlFieldLookup.registerPair(FieldType.BSI_COMMAND_NUMBER, "bsiCommandNumber");
+        xmlFieldLookup.registerPair(FieldType.BSI_COMMAND_FAIL_AVERAGE, "bsiCommandFailAverage");
+        xmlFieldLookup.registerPair(FieldType.BSI_COMMAND_FAIL_MAXIMUM, "bsiCommandFailMaximum");
+        xmlFieldLookup.registerPair(FieldType.BSI_COMMAND_FAIL_MINIMUM, "bsiCommandFailMinimum");
+        xmlFieldLookup.registerPair(FieldType.BSI_COMMAND_NUMBER, "bsiCommandNumber");
+        xmlFieldLookup.registerPair(FieldType.BSI_COMMAND_PASS_AVERAGE, "bsiCommandPassAverage");
+        xmlFieldLookup.registerPair(FieldType.BSI_COMMAND_PASS_MAXIMUM, "bsiCommandPassMaximum");
+        xmlFieldLookup.registerPair(FieldType.BSI_COMMAND_PASS_MINIMUM, "bsiCommandPassMinimum");
+        xmlFieldLookup.registerPair(FieldType.BSI_OPERATION_CODE, "bsiOperationCode");
+        xmlFieldLookup.registerPair(FieldType.BSI_COMMAND_TIME_SLOT, "bsiCommandTimeSlot");
+        xmlFieldLookup.registerPair(FieldType.BSI_COMMAND_TOTAL, "bsiCommandTotal");
+        xmlFieldLookup.registerPair(FieldType.BSI_COMMANDS_PASSED, "bsiCommandsPassed");
+        xmlFieldLookup.registerPair(FieldType.BSI_COMMANDS_FAILED, "bsiCommandsFailed");
+        xmlFieldLookup.registerPair(FieldType.RPD_DEMOD_NUMBER, "rpdDemodNumber");
+        xmlFieldLookup.registerPair(FieldType.NON_RESPONDING_COUNT, "nonRespondingCount");
+        xmlFieldLookup.registerPair(FieldType.RESPONDING_COUNT, "respondingCount");
+        xmlFieldLookup.registerPair(FieldType.RADD_ID, "deviceIndex");
+        xmlFieldLookup.registerPair(FieldType.BSI_INDEX, "bsiIndex");
+        xmlFieldLookup.registerPair(FieldType.DEVICE_ID, "deviceId");
+        xmlFieldLookup.registerPair(FieldType.CMTS_ID, "cmtsId");
+        xmlFieldLookup.registerPair(FieldType.TERMINAL_IP_ADDRESS, "terminalIPAddress");
+        xmlFieldLookup.registerPair(FieldType.UNKNOWN_TERMINAL_IP_ADDRESS, "unknownTerminalIPAddress");
+        xmlFieldLookup.registerPair(FieldType.RESPONSE_STATUS, "responseStatus");
+        xmlFieldLookup.registerPair(FieldType.RADD_DEV_NAME, "raddDeviceName");
+        xmlFieldLookup.registerPair(FieldType.CMTS_DEVICE_NAME, "cmtsDeviceName");
+        xmlFieldLookup.registerPair(FieldType.CONTROL_STREAM_DEVICE_NAME, "controlStreamDeviceName");
+        xmlFieldLookup.registerPair(FieldType.CONTROL_STREAM_DEVICE_ID, "controlStreamDeviceId");
+        xmlFieldLookup.registerPair(FieldType.DSG_STREAM, "dsgStream");
+        xmlFieldLookup.registerPair(FieldType.EPOCH_START, "epochStart");
+        xmlFieldLookup.registerPair(FieldType.FAILED_PURCHASE_AUTHORIZATION, "failedPurchaseAuthorization");
+        xmlFieldLookup.registerPair(FieldType.PROGRAM_HANDLE, "programHandle");
+        xmlFieldLookup.registerPair(FieldType.PURCHASE_SOURCE, "purchaseSource");
+        xmlFieldLookup.registerPair(FieldType.POLL_DATE, "pollDate");
+        xmlFieldLookup.registerPair(FieldType.BSI_UPLOADED, "bsiUploaded");
+        xmlFieldLookup.registerPair(FieldType.PROGRAM_NAME, "programName");
+        xmlFieldLookup.registerPair(FieldType.PURCHASE_AUTHENTICATION_STATUS, "purchaseAuthenticationStatus");
+        xmlFieldLookup.registerPair(FieldType.NUMBER_OF_DAYS, "numberOfDays");
+        xmlFieldLookup.registerPair(FieldType.START_DATE_AND_TIME, "startDateTime");
+        xmlFieldLookup.registerPair(FieldType.RESPONSE_COUNT, "responseCount");
+        xmlFieldLookup.registerPair(FieldType.PACKAGE_END, "packageEnd");
+        xmlFieldLookup.registerPair(FieldType.PACKAGE_START, "packageStart");
+        xmlFieldLookup.registerPair(FieldType.PACKAGE_PERIOD, "packagePeriod");
+        xmlFieldLookup.registerPair(FieldType.COMPONENT_TYPE, "componentType");
+        xmlFieldLookup.registerPair(FieldType.CALCULATED_SOFTWARE_OBJECT_NAME, "objectName");
+        xmlFieldLookup.registerPair(FieldType.CALCULATED_SOFTWARE_OBJECT_VERSION, "objectVersion");
+        xmlFieldLookup.registerPair(FieldType.CALCULATED_SOFTWARE_OBJECT_STATUS, "objectStatus");
+        xmlFieldLookup.registerPair(FieldType.LAST_N_DAYS, "lastNDays");
+        xmlFieldLookup.registerPair(FieldType.FILTERED_BY_CODE_OBJECTS, "filteredByCodeObjects");
+        xmlFieldLookup.registerPair(FieldType.ASSIGNED_CODE_OBJECTS, "assignedCodeObjects");
+        xmlFieldLookup.registerPair(FieldType.OBJECT_ID, "objectId");
+        xmlFieldLookup.registerPair(FieldType.SERVICE_TIER, "serviceTier");
+        xmlFieldLookup.registerPair(FieldType.SERVICE_ID, "serviceId");
+        xmlFieldLookup.registerPair(FieldType.EPOCH_END, "epchEnd");
+        xmlFieldLookup.registerPair(FieldType.PROGRAM_INTERSTITIAL_PERIOD, "programInterstitialPeriod");
+        xmlFieldLookup.registerPair(FieldType.AUTO_DISCOVERY_COUNT, "autoDiscoveryCount");
+        xmlFieldLookup.registerPair(FieldType.NON_AUTO_DISCOVERY_COUNT, "nonAutoDiscoveryCount");
+        xmlFieldLookup.registerPair(FieldType.TIME_SOURCE, "timeSource");
+        xmlFieldLookup.registerPair(FieldType.PROGRAM_ID, "programId");
+        xmlFieldLookup.registerPair(FieldType.BSI_COMMAND_TIME_SLOT_BEGIN, "bsiCommandTimeSlotBegin");
+        xmlFieldLookup.registerPair(FieldType.BSI_COMMAND_TIME_SLOT_END, "bsiCommandTimeSlotEnd");
+        xmlFieldLookup.registerPair(FieldType.QUEUE_DEPTH_COUNT, "queueDepthCount");
+        xmlFieldLookup.registerPair(FieldType.CONTROL_STREAM_STATE, "controlStreamState");
+        xmlFieldLookup.registerPair(FieldType.MULTIPLEX_SOURCE_ID, "multiplexSourceId");
+        xmlFieldLookup.registerPair(FieldType.MULTIPLEX_SOURCE_NAME, "multiplexSourceName");
+        xmlFieldLookup.registerPair(FieldType.MPEG_SERVICE_NUMBER, "mpegServiceNumber");
+        xmlFieldLookup.registerPair(FieldType.FILTERED_BY_SOURCE, "filteredBySource");
+        xmlFieldLookup.registerPair(FieldType.HIGH_LEVEL_ASSIGNMENT_TYPE, "highLevelAssignment");
+        xmlFieldLookup.registerPair(FieldType.ADDRESS_TYPE, "addressType");
+        xmlFieldLookup.registerPair(FieldType.DESCRIPTION, "description");
+        xmlFieldLookup.registerPair(FieldType.OBJECT_ID, "objectId");
+        xmlFieldLookup.registerPair(FieldType.ASSIGNMENT_START_DATE, "assignmentStartDate");
+        xmlFieldLookup.registerPair(FieldType.ASSIGNMENT_STOP_DATE, "assignmentStopDate");
+        xmlFieldLookup.registerPair(FieldType.CODE_DOWNLOAD_SOFTWARE_OBJECT_VERSION, "codeDownloadSoftwareObjectVersion");
+        xmlFieldLookup.registerPair(FieldType.CODE_DOWNLOAD_SOFTWARE_OBJECT_NAME, "codeDownloadSoftwareObjectName");
+        xmlFieldLookup.registerPair(FieldType.CODE_DOWNLOAD_SOFTWARE_OBJECT_GROUP, "codeDownloadSoftwareObjectGroup");
+        xmlFieldLookup.registerPair(FieldType.OBJECT_NAME, "softwareObjectName");
+        xmlFieldLookup.registerPair(FieldType.TERMINAL_ACTIVE, "terminalActive");
+        xmlFieldLookup.registerPair(FieldType.OPERATION_NAME, "operationName");
+        xmlFieldLookup.registerPair(FieldType.OPERATION_TYPE, "operationType");
+        xmlFieldLookup.registerPair(FieldType.INSERTION_RATE, "insertionRate");
+        xmlFieldLookup.registerPair(FieldType.OBJECT_VERSION, "softwareObjectVersion");
+        xmlFieldLookup.registerPair(FieldType.UPSTREAM_PATH_INDEX, "upstreamPathIndex");
+        xmlFieldLookup.registerPair(FieldType.CALC_MAX_RESPONSE_AMPLITUDE, "maxResponseAmplitude");
+        xmlFieldLookup.registerPair(FieldType.CALC_MIN_RESPONSE_AMPLITUDE, "minResponseAmplitude");
+        xmlFieldLookup.registerPair(FieldType.CALC_AVG_RESPONSE_AMPLITUDE, "avgResponseAmplitude");
+        xmlFieldLookup.registerPair(FieldType.MAX_AMPLITUDE, "maxAmplitude");
+        xmlFieldLookup.registerPair(FieldType.MIN_AMPLITUDE, "minAmplitude");
+        xmlFieldLookup.registerPair(FieldType.INTERACTIVE_RETURN_PATH_ID, "interactiveReturnPathId");
+        xmlFieldLookup.registerPair(FieldType.OPERATION_STATUS, "operationStatus");
+        xmlFieldLookup.registerPair(FieldType.LOGICAL_CHANNEL_MAP_ID, "logicalChannelMapId");
+        xmlFieldLookup.registerPair(FieldType.OBJECT_STATUS, "softwareObjectStatus");
+        xmlFieldLookup.registerPair(FieldType.CONDITIONAL_EXPRESSION, "conditionalExpression");
+        xmlFieldLookup.registerPair(FieldType.DESTINATION_TYPE, "destinationType");
+        xmlFieldLookup.registerPair(FieldType.TYPE_DETAIL, "typeDetail");
+        xmlFieldLookup.registerPair(FieldType.ON_PLANT_COUNT, "onPlantCount");
+        xmlFieldLookup.registerPair(FieldType.OFF_PLANT_COUNT, "offPlantCount");
+        xmlFieldLookup.registerPair(FieldType.IP_START_ADDRESS, "ipStartAddress");
+        xmlFieldLookup.registerPair(FieldType.IP_END_ADDRESS, "ipEndAddress");
+        xmlFieldLookup.registerPair(FieldType.POLL_DATE, "pollDate");
+        xmlFieldLookup.registerPair(FieldType.POLL_NAME, "pollName");
+        xmlFieldLookup.registerPair(FieldType.PURCHASE_DATE, "purchaseDate");
+        xmlFieldLookup.registerPair(FieldType.POLL_START, "pollStart");
+        xmlFieldLookup.registerPair(FieldType.POLL_END, "pollEnd");
+        xmlFieldLookup.registerPair(FieldType.PURCHASE_START, "purchaseStart");
+        xmlFieldLookup.registerPair(FieldType.PURCHASE_END, "purchaseEnd");
+        xmlFieldLookup.registerPair(FieldType.NUM_POLLED, "numberPolled");
+        xmlFieldLookup.registerPair(FieldType.NUM_RESPONDED, "numberResponded");
+        xmlFieldLookup.registerPair(FieldType.PURCHASE_COUNT, "purchaseCount");
+        xmlFieldLookup.registerPair(FieldType.PURCHASE_DATE_TYPE, "purchaseDateType");
+        xmlFieldLookup.registerPair(FieldType.PURCHASE_DEVICE_TYPE, "purchaseDeviceType");
+        xmlFieldLookup.registerPair(FieldType.PURCHASE_STATUS, "purchaseStatus");
+        xmlFieldLookup.registerPair(FieldType.PURCHASE_STATUS_UPLOADED, "purchaseStatusUploaded");
+        xmlFieldLookup.registerPair(FieldType.PURCHASE_STATUS_CLEARED, "purchaseStatusCleared");
+        xmlFieldLookup.registerPair(FieldType.PURCHASE_STATUS_NOT_UPLOADED, "purchaseStatusNotUploaded");
+        xmlFieldLookup.registerPair(FieldType.PURCHASE_STATUS_FAILED, "purchaseStatusFailed");
+        xmlFieldLookup.registerPair(FieldType.SERVICE_NUMBER, "serviceNumber");
+        xmlFieldLookup.registerPair(FieldType.ROUTED, "routed");
+        xmlFieldLookup.registerPair(FieldType.PROGRAM_START_TIME, "programStartTime");
+        xmlFieldLookup.registerPair(FieldType.PROGRAM_END_TIME, "programEndTime");
+        xmlFieldLookup.registerPair(FieldType.SERVICE_QUEUE_LAST_STATUS_CHANGE_DATE, "serviceQueueLastStatusChange");
+        xmlFieldLookup.registerPair(FieldType.SERVICE_QUEUE_SEVERITY, "serviceQueueSeverity");
+        xmlFieldLookup.registerPair(FieldType.CHANNEL_NUMBER, "channelNumber");
+        xmlFieldLookup.registerPair(FieldType.SERVICE_TYPE_ID, "serviceTypeId");
+        xmlFieldLookup.registerPair(FieldType.CALCULATED_POLL_RESPONSE_STATUS_RESULT, "pollResponseStatusResult");
+        xmlFieldLookup.registerPair(FieldType.SERVICE_NAME, "serviceName");
+        xmlFieldLookup.registerPair(FieldType.OM_DEVICE_NAME, "omDeviceName");
+    }
+
+    /**
+     * @return a singleton instance.
+     */
+    public static XmlFieldTypeLookup getInstance()
+    {
+        return INSTANCE;
+    }
+
+    /**
+     * Looks up the XML element tag based on a field type.
+     * 
+     * @param fieldType field type.
+     * @return XML element tag string.
+     */
+    public String getXmlElementTag(final FieldType fieldType)
+    {
+        return xmlFieldLookup.getLookupValue(fieldType);
+    }
+
+    /**
+     * Looks up corresponding field type based on the tag.
+     * 
+     * @param xmlElementTag XML element tag string.
+     * @return field type.
+     */
+    public FieldType getFieldType(final String xmlElementTag)
+    {
+        return xmlFieldLookup.getEnumValue(xmlElementTag);
+    }
+}

@@ -1,0 +1,82 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.timer.manager;
+
+import java.util.Date;
+import java.util.Map;
+
+import com.ccadllc.firebird.dss.common.datatypes.MeteringType;
+import com.ccadllc.firebird.dss.server.common.PeriodicDataType;
+import com.ccadllc.firebird.dss.server.realtime.timer.manager.PeriodicState;
+
+/**
+ * Interface describing the JMX instrumented data for periodics.
+ */
+public interface PeriodicInstrumentationMXBean
+{
+    /**
+     * @return the current status of the periodic
+     */
+    PeriodicState getState();
+
+    /**
+     * @return type of the data to be periodically inserted on the stream
+     */
+    PeriodicDataType getPeriodicDataType();
+
+    /**
+     * @return total number of sectioned blocks for the corresponding data
+     */
+    int getNumberOfBlocks();
+
+    /**
+     * @return start date time to schedule this periodic
+     */
+    Date getStartTime();
+
+    /**
+     * @return stop date time for this periodic
+     */
+    Date getStopTime();
+
+    /**
+     * @return the delay between two insertions
+     */
+    int getInsertionRate();
+
+    /**
+     * @return a copy of the properties associated with this periodic
+     */
+    Map<String, String> getProperties();
+
+    /**
+     * @return the metering type that this periodic should be inserted at
+     */
+    MeteringType getMeteringType();
+
+    /**
+     * @return the stream ID associated with the periodic
+     */
+    Long getStreamId();
+
+    /**
+     * @return the start time of the interval for the periodic, <code>null</code> if insertion has never occurred
+     */
+    Date getLastIntervalStartTime();
+
+    /**
+     * @param lastIntervalStartTime when the periodic interval last occurred
+     */
+    void setLastIntervalStartTime(Date lastIntervalStartTime);
+
+    /**
+     * @return the number of the last block inserted out of the total number in the periodic block set
+     */
+    int getLastBlockInserted();
+
+    /**
+     * @param lastBlockInserted the number of the last block inserted out of the total number in the periodic block set
+     */
+    void setLastBlockInserted(int lastBlockInserted);
+}

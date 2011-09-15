@@ -1,0 +1,8 @@
+1289852250878	Rename local variable 'keylistIdNode'
+1290008379793	Rename local variable 'banks'
+1290095372438	Rename field 'rsaLevel2AuthenticationPublicKeyMessage'
+1290095828071	Rename local variable 'DOMAIN_ID'
+1290095871410	Rename local variable 'DKS_ID'
+1290095883102	Rename local variable 'AUTHENTICATOR'
+1290095896173	Rename local variable 'KEYLIST_TIMESTAMP'
+1290095905650	Rename local variable 'FILE_ID'

@@ -1,0 +1,13 @@
+<!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd">
+<suite thread-count="5" verbose="1" name="Failed suite [session-manager-example]" junit="false" annotations="JDK">
+  <test name="com.ccadllc.example.session.TestSessionTest(failed)" junit="false" annotations="JDK">
+    <classes>
+      <class name="com.ccadllc.example.session.TestSessionTest">
+        <methods>
+          <include name="setUp"/>
+          <include name="testSession"/>
+        </methods>
+      </class>
+    </classes>
+  </test>
+</suite>

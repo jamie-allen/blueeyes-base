@@ -1,0 +1,16 @@
+package com.ccadllc.example.session;
+
+import com.ccadllc.commons.session.AbstractAsynchronousSession;
+import com.ccadllc.commons.session.SessionFailureException;
+
+public class TestSession extends AbstractAsynchronousSession
+{
+
+    @Override
+    protected void onStart() throws SessionFailureException
+    {
+        // TODO Auto-generated method stub
+        
+    }
+
+}

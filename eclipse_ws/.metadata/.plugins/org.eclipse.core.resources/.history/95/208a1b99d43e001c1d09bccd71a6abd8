@@ -1,0 +1,7 @@
+<project-modules id="moduleCoreId">
+  <wb-module deploy-name="ccad-dac-pmp">
+    <wb-resource deploy-path="/" source-path="src/main/java"/>
+    <wb-resource deploy-path="/" source-path="src/main/resources"/>
+    <wb-resource deploy-path="/" source-path="target/jaxws/java"/>
+  </wb-module>
+</project-modules>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:util="http://www.springframework.org/schema/util"
+    xmlns:osgi="http://www.springframework.org/schema/osgi"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+           http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd
+           http://www.springframework.org/schema/osgi http://www.springframework.org/schema/osgi/spring-osgi.xsd">
+
+    <!-- Exported OSGi services -->
+
+    <osgi:service interface="com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager" ref="defaultStreamManager"/>
+    <osgi:service interface="org.osgi.service.event.EventHandler" ref="defaultStreamManager">
+        <osgi:service-properties>
+            <entry key="event.topics" value-ref="eventTopics" />
+        </osgi:service-properties>
+    </osgi:service>
+
+    <osgi:service interface="org.osgi.service.cm.ConfigurationListener" ref="streamManagerConfigurationListener"/>
+
+    <util:constant id="eventTopics" static-field="com.ccadllc.firebird.dss.server.realtime.stream.manager.impl.DefaultStreamManager.EVENT_TOPICS"/>
+
+    <!-- Imported OSGi services -->
+
+    <osgi:reference id="realtimeSnapshotManager" interface="com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager" />
+    <osgi:reference id="transportManager" interface="com.ccadllc.firebird.dss.server.realtime.transport.manager.TransportManager"/>
+    <osgi:reference id="configManager" interface="com.ccadllc.firebird.dss.server.configuration.manager.ConfigManager" />
+
+</beans>

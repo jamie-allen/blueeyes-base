@@ -1,0 +1,98 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<!-- Copyright 2009 Combined Conditional Access Development, LLC. -->
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<body>
+<h1>External Route Manager</h1>
+
+<h2>Summary</h2>
+<p>Provides a facility for establishing a dedicated UDP route (which references a specified PID) through which external systems
+(such as the RADD) can forward datagrams for multiplexing into DSS stream output.</p>
+
+<h2>Design</h2>
+<p>The external route manager has no external interface.  It receives route creation, update and deletion OSGi events by
+registering with the {@link com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager}.  Once an
+external route is created, a controller opens a port and listens for UDP datagrams.  When a datagram is received, it is
+separated into Mpeg2 packets, routed by PID, assembled into data blocks and forwarded to the 
+{@link com.ccadllc.firebird.server.realtime.stream.manager.StreamManager} to be sent to each destination for that stream.</p>
+
+<p>The external route manager consists of the following components:</p>
+
+<ul>
+<li>{@link com.ccadllc.firebird.server.realtime.external.route.manager.ExternalRouteManager} handles the OSGi events from
+the {@link com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager}, manages a
+{@link com.ccadllc.firebird.server.realtime.external.route.manager.RouteController} for each route that is established, and
+maintains a mapping of port to {@link com.ccadllc.firebird.server.realtime.external.route.manager.RouteController} so that
+those routes can be updated and deleted.  When the class is initialized, it loads all 
+{@link com.ccadllc.firebird.dss.server.common.RouteSnapshot} instances from the
+{@link com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager} and sets up 
+{@link com.ccadllc.firebird.server.realtime.external.route.manager.RouteController} instances for each UDP persisted route.</li>
+<li>{@link com.ccadllc.firebird.server.realtime.external.route.manager.ExternalRouteManagerApplicationContextListener} listens
+for when the Spring application context has been refreshed, such as when the bundle is started, or when the
+{@link com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager} has been restarted.  It then tells the
+{@link com.ccadllc.firebird.server.realtime.external.route.manager.ExternalRouteManager} to initialize itself.</li>
+<li>{@link com.ccadllc.firebird.server.realtime.external.route.manager.RouteController} manages the UDP port through Apache Mina
+and forwards acceptable Mpeg2 packets to the filter chain for the packet's PID so that the packet can be forwarded to the
+appropriate stream.</li>
+<li>{@link com.ccadllc.firebird.server.realtime.external.route.manager.RouteControllerHandler} is a specialization of the
+{@link org.apache.mina.core.service.IoHandlerAdapter} callback for message reception.  When a datagram is received, it is split 
+into Mpeg2 packets, and if the Mpeg2 packet header sync byte is valid and the adaptation field is unused, it is sent back to the 
+{@link com.ccadllc.firebird.server.realtime.external.route.manager.RouteController} to be routed by PID.</li>
+<li>{@link com.ccadllc.firebird.server.realtime.external.route.manager.PidChainController} manages the filter chain for a
+specific PID, so that updates to the streams associated with a PID can be performed.</li>
+<li>{@link com.ccadllc.firebird.server.realtime.external.route.manager.Mpeg2BlockTransformer} assembles data blocks from
+Mpeg2 packets.</li>
+<li>{@link com.ccadllc.firebird.server.realtime.external.route.manager.Inserter} forwards data blocks to the
+{@link com.ccadllc.firebird.server.realtime.stream.manager.StreamManager} for each stream associated with a PID.</li>
+</ul>
+
+<h2>Bundle Use</h2>
+<p>{@link com.ccadllc.firebird.dss.server.realtime.external.route.manager} is exported with this bundle and is what the 
+{@link com.ccadllc.firebird.dss.server.provisioning.facade.ProvisioningFacade} uses to get access to the route manager.</p>
+
+<h2>JMX Support</h2>
+<p>JMX instrumentation for routes are provided in this bundle for all routes, regardless of protocol or data type.  This 
+instrumentation includes:</p>
+<ul>
+    <li>port</li>
+    <li>routeId</li>
+    <li>pidMappings (if this is an Mpeg2 packet route)</li>
+    <li>streamIds (if this is a block data route)</li>
+    <li>properties (if this is a UDP route)</li>
+</ul>
+</p>Statistics about data handled by each route are also collected.  These statistics include:</p>
+<ul>
+<li>Number of Mpeg2 packets handled for PID to stream mappings (Mpeg2 packet data only)</li>
+<li>Number of Mpeg2 packets rejected for not having a stream mapping for a PID (Mpeg2 packet data only)</li>
+<li>Number of Mpeg2 packets handled for transformation to data blocks, by PID (Mpeg2 packet data only)</li>
+<li>Number of Mpeg2 packets rejected while being transformed into data blocks, by PID (Mpeg2 packet data only)</li>
+<li>Number of blocks handled (Block data only)</li>
+</ul>
+<p>JMX lookups are provided in this bundle for TCP routes (note - UDP lookups are handled by 
+{@link com.ccadllc.firebird.dss.server.realtime.snapshot.manager.impl.RealTimeSnapshotUdpRouteLookup}).  TCP lookups include:</p>
+<ul>
+    <li>{@com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.TcpRouteLookup#getTcpRouteIdsForStreamId}</li>
+    <li>{@com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.TcpRouteLookup#getTcpRouteIdsForMappedPid}</li>
+</ul>
+<p>JMX Notifications are provided in this bundle for routes handling Mpeg2 packet data.  These notifications include:</p>
+<ul>
+<li>Rejection of UDP datagram because it is not divisible by Mpeg2 packet size when it was previously not rejecting</li>
+<li>Acceptance of UDP datagram because it is divisible by Mpeg2 packet size when it was previously rejecting</li>
+<li>Rejection of Mpeg2 packet because adaptation field is in use when previous packet was not rejected</li>
+<li>Acceptance of Mpeg2 packet because adaptation field is not in use when previous packet was rejected</li>
+<li>Creation of stream mappings for a PID</li>
+<li>Removal of stream mappings for a PID</li>
+<li>Rejection of Mpeg2 packet because no stream mapping found for its PID, if previously was not rejecting for that PID</li>
+<li>Rejection of Mpeg2 packet during block transformation when it was previously not rejecting</li>
+<ul>
+<li>Data block in spanned packet fills the entire packet, but the start bit is set</li>
+<li>Packet start bit says block starts in this packet, but none was found</li>
+<li>Pointer field offset value is invalid</li>
+<li>Section length in data block is less than or equal to 0</li>
+</ul>
+<li>Acceptance of Mpeg2 packet during block transformation when it previousl packet was rejected</li>
+</ul>
+<p>To access this JMX data and operations, open a JMX console application (such as JConsole or VisualVM), select the application
+runtime, navigate to the MBean view, and select the <code>DSS</code> namespace.  By selecting the operations tab, you will be able 
+to invoke each of the operations by entering the appropriate parameter values and pressing the button for it.</p>
+</body>
+</html>

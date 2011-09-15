@@ -1,0 +1,260 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dkssimulator;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.net.URI;
+import java.util.Collections;
+import java.util.List;
+import java.util.UUID;
+
+import javax.xml.soap.MessageFactory;
+import javax.xml.soap.SOAPConstants;
+import javax.xml.soap.SOAPException;
+import javax.xml.transform.stream.StreamResult;
+
+import com.ccadllc.commons.spring.oxm.Message;
+import com.ccadllc.commons.spring.oxm.MessageMarshaller;
+import com.ccadllc.commons.util.HexByteStringFormatter;
+import com.ccadllc.commons.util.Option;
+import com.ccadllc.commons.util.Two;
+import com.ccadllc.firebird.vms.common.digicipher.domain.UnitAddress;
+import com.ccadllc.firebird.vms.dks.ddip.Authenticator;
+import com.ccadllc.firebird.vms.dks.ddip.BaseRightsVector;
+import com.ccadllc.firebird.vms.dks.ddip.DdipStatusCode;
+import com.ccadllc.firebird.vms.dks.ddip.DdipStatusException;
+import com.ccadllc.firebird.vms.dks.ddip.DtaEcmInfo;
+import com.ccadllc.firebird.vms.dks.ddip.EcmInfo;
+import com.ccadllc.firebird.vms.dks.ddip.ProgramTier;
+import com.ccadllc.firebird.vms.dks.ddip.RightsVector;
+import com.ccadllc.firebird.vms.dks.ddip.RsaLevel2AuthenticationKeyParity;
+import com.ccadllc.firebird.vms.dks.ddip.RsaLevel2AuthenticationPublicKeyMessage;
+import com.ccadllc.firebird.vms.dks.ddip.SharedKeyRecoveryInfo;
+import com.ccadllc.firebird.vms.dks.ddip.impl.CategoryRekey;
+import com.ccadllc.firebird.vms.dks.ddip.impl.ConfigureDscRequestMessage;
+import com.ccadllc.firebird.vms.dks.ddip.impl.DdipRequestMessage;
+import com.ccadllc.firebird.vms.dks.ddip.impl.DdipResponseMessage;
+import com.ccadllc.firebird.vms.dks.ddip.impl.DeeAddressRequestMessage;
+import com.ccadllc.firebird.vms.dks.ddip.impl.DksRecoveryRequestMessage;
+import com.ccadllc.firebird.vms.dks.ddip.impl.DscAuthorizationRequestMessage;
+import com.ccadllc.firebird.vms.dks.ddip.impl.EcmRequestMessage;
+import com.ccadllc.firebird.vms.dks.ddip.impl.ResponseStatus;
+import com.ccadllc.firebird.vms.dks.ddip.impl.RsaPublicKeyRequestMessage;
+import com.ccadllc.firebird.vms.dks.ddip.impl.SecurityDomainConfigRequestMessage;
+import com.ccadllc.firebird.vms.dks.ddip.impl.SharedKeyRequestMessage;
+import com.ccadllc.firebird.vms.dks.ddip.impl.UnitAuthorizationRequestMessage;
+import com.ccadllc.firebird.vms.dks.ddip.impl.UpdateCategoryKeyRequestMessage;
+
+import com.google.common.collect.Lists;
+import org.apache.commons.httpclient.HostConfiguration;
+import org.apache.commons.httpclient.HttpClient;
+import org.springframework.beans.factory.BeanClassLoaderAware;
+import org.springframework.oxm.Marshaller;
+import org.springframework.oxm.Unmarshaller;
+import org.springframework.oxm.XmlMappingException;
+import org.springframework.ws.WebServiceMessage;
+import org.springframework.ws.client.WebServiceTransportException;
+import org.springframework.ws.client.core.WebServiceTemplate;
+import org.springframework.ws.soap.saaj.SaajSoapMessageFactory;
+import org.springframework.ws.transport.http.CommonsHttpMessageSender;
+
+/**
+ * This is a test class to send HTTP SOAP messages to a DKS Simulator instance.  It is not a JUnit or
+ * TestNG test, as it should not be executed in a continuous integration build environment.
+ */
+public class DksSimulatorTest
+{
+    private static final byte[] RSA_PUBLIC_KEY_MESSAGE = new byte[] {0x1, 0xA, 0x7, 0xF};
+    private static final RsaLevel2AuthenticationPublicKeyMessage PK_MESSAGE = new RsaLevel2AuthenticationPublicKeyMessage(RSA_PUBLIC_KEY_MESSAGE, 125L, true, RsaLevel2AuthenticationKeyParity.M, false);
+    private static final byte[] SHARED_KEY_RECOVERY_INFO_BYTES = new byte[] {0xE, 0xB, 0x4, 0xD};
+    private static final SharedKeyRecoveryInfo RECOVERY_INFO = new SharedKeyRecoveryInfo(SHARED_KEY_RECOVERY_INFO_BYTES);
+    private static final RightsVector RIGHTS_VECTOR = new RightsVector(new byte[] {0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB, 0xC, 0xD, 0xE, 0xF, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB, 0xC, 0xD, 0xE, 0xF, 0x1, 0x2});
+    private static final DtaEcmInfo DTA_ECM_INFO = new DtaEcmInfo(Integer.valueOf(14).shortValue(), Option.some(RIGHTS_VECTOR), Lists.newArrayList(140, 2356, 12), 135,true);
+    private static final List<String> BASE_RIGHTS = Lists.newArrayList(
+        Integer.valueOf(DTA_ECM_INFO.getBaseRights().get(0)).toString(),
+        Integer.valueOf(DTA_ECM_INFO.getBaseRights().get(1)).toString(),
+        Integer.valueOf(DTA_ECM_INFO.getBaseRights().get(2)).toString());
+
+//    private static final URI LOCAL = URI.create(String.format("https://%s:%d/dks/svDdip", "10.52.207.56", 443));
+    private static final URI LOCAL = URI.create(String.format("http://%s:%d/dks/svDdip", "10.52.207.56", 8035));
+    private final WebServiceTemplate webServiceTemplate;
+
+    public DksSimulatorTest()
+    {
+        webServiceTemplate = new WebServiceTemplate();
+        configureWebServiceTemplate();
+    }
+
+    private void configureWebServiceTemplate()
+    {
+        final HostConfiguration config = new HostConfiguration();
+        config.setHost("http://10.52.207.56/dks/", 8035);
+        final HttpClient httpClient = new HttpClient();
+        httpClient.setHostConfiguration(config);
+        final CommonsHttpMessageSender sender = new CommonsHttpMessageSender(httpClient);
+        MessageFactory mFactory = null;
+        try
+        {
+            mFactory = MessageFactory.newInstance(SOAPConstants.SOAP_1_1_PROTOCOL);
+        }
+        catch (final SOAPException e)
+        {
+            System.err.println("Exception creating MessageFactory!");
+            e.printStackTrace();
+            System.exit(-1);
+        }
+        final SaajSoapMessageFactory factory = new SaajSoapMessageFactory(mFactory);
+        WebServiceMessage message = null;
+        message = factory.createWebServiceMessage();
+        System.out.println("Web service message: " + message.getPayloadResult().toString());
+        webServiceTemplate.setMessageFactory(factory);
+        webServiceTemplate.setMessageSender(sender);
+        final MessageMarshaller mMarshaller = new MessageMarshaller(DdipRequestMessage.class.getPackage().getName());
+        mMarshaller.setNamespace("http://www.motorola.com/namespaces/dks/xsd/ddip/2_0");
+        ((BeanClassLoaderAware) mMarshaller).setBeanClassLoader(getClass().getClassLoader());
+        final Marshaller marshaller = mMarshaller;
+        final Unmarshaller unmarshaller = mMarshaller;
+
+        webServiceTemplate.setMarshaller(marshaller);
+        webServiceTemplate.setUnmarshaller(unmarshaller);
+    }
+
+    public static void main(final String[] args)
+    {
+        final DksSimulatorTest test = new DksSimulatorTest();
+        test.testConfigureDscRequest();
+        test.testDscAuthorizationRequest();
+        test.testDeeAddressRequest();
+        test.testDksRecoveryRequest();
+        test.testEcmRequest();
+        test.testRsaPublicKeyRequest();
+        test.testSecurityDomainConfigRequest();
+        test.testSharedKeyRequest();
+        test.testUnitAuthorizationRequest();
+        test.testUpdateCategoryKeyRequest();
+    }
+
+    public void testConfigureDscRequest()
+    {
+        final ConfigureDscRequestMessage request = new ConfigureDscRequestMessage("John Doe", "5 Walnut Grove Dr", "ccad@ccad.org", "215-667-6500");
+        send(LOCAL, request);
+    }
+
+    public void testDeeAddressRequest()
+    {
+        final DeeAddressRequestMessage request = new DeeAddressRequestMessage(UUID.randomUUID());
+        send(LOCAL, request);
+    }
+
+    public void testDksRecoveryRequest()
+    {
+        final DksRecoveryRequestMessage request = new DksRecoveryRequestMessage(UUID.randomUUID(), new Two<RsaLevel2AuthenticationPublicKeyMessage>(PK_MESSAGE, PK_MESSAGE), RECOVERY_INFO);
+        send(LOCAL, request);
+    }
+
+    public void testDscAuthorizationRequest()
+    {
+        final DscAuthorizationRequestMessage request = new DscAuthorizationRequestMessage(UUID.randomUUID(), Option.some(new Authenticator(new byte[] {0x1, 0x2, 0x3})));
+        send(LOCAL, request);
+    }
+
+    public void testEcmRequest()
+    {
+         final List<ProgramTier> tiers = Lists.newArrayList(
+            new ProgramTier(123, Integer.valueOf(2).shortValue()),
+            new ProgramTier(456, Integer.valueOf(3).shortValue()),
+            new ProgramTier(789, Integer.valueOf(2).shortValue()));
+        final EcmRequestMessage request = new EcmRequestMessage(UUID.randomUUID(), Integer.valueOf(10).shortValue(),
+            new EcmInfo.Builder().serviceId(1).programEpochNumber(Integer.valueOf(1).shortValue()).epochBeginWkeNumber(2).epochDuration(10800).programControlByte2(Integer.valueOf(123).shortValue()).overlayControlByte(Integer.valueOf(7).shortValue()).tiers(tiers).workingKeyPeriod(Integer.valueOf(125).shortValue()).build(),
+            new DtaEcmInfo(Integer.valueOf(10).shortValue(), Option.some(RIGHTS_VECTOR), Collections.<Integer>emptyList(), 124, true));
+        send(LOCAL, request);
+    }
+
+    public void testRsaPublicKeyRequest()
+    {
+        final RsaPublicKeyRequestMessage request = new RsaPublicKeyRequestMessage(UUID.randomUUID(), Option.some(true), Option.<RsaLevel2AuthenticationKeyParity>none(), Option.some(true));
+        send(LOCAL, request);
+    }
+
+    public void testSecurityDomainConfigRequest()
+    {
+        final SecurityDomainConfigRequestMessage request = new SecurityDomainConfigRequestMessage(UUID.randomUUID());
+        send(LOCAL, request);
+    }
+
+    public void testSharedKeyRequest()
+    {
+        final SharedKeyRequestMessage request = new SharedKeyRequestMessage(UUID.randomUUID(), true, Option.some(true));
+        send(LOCAL, request);
+    }
+
+    public void testUnitAuthorizationRequest()
+    {
+        final UnitAuthorizationRequestMessage request = new UnitAuthorizationRequestMessage(UUID.randomUUID(), new UnitAddress(new byte[] {0x1, 0x2, 0x3, 0x4, 0x5}), new byte[] {0x1, 0x2, 0x3}, new BaseRightsVector(new RightsVector[] {RIGHTS_VECTOR, RIGHTS_VECTOR, RIGHTS_VECTOR, RIGHTS_VECTOR, RIGHTS_VECTOR, RIGHTS_VECTOR, RIGHTS_VECTOR, RIGHTS_VECTOR, RIGHTS_VECTOR, RIGHTS_VECTOR}), new Two<Byte>(new Byte((byte)0x1), new Byte((byte)0x2)), true);
+        send(LOCAL, request);
+    }
+
+    public void testUpdateCategoryKeyRequest()
+    {
+        final UpdateCategoryKeyRequestMessage request = new UpdateCategoryKeyRequestMessage(UUID.randomUUID(), new CategoryRekey(new UnitAddress(new byte[] {0x1, 0x2, 0x3, 0x4, 0x5}), 123, Integer.valueOf(124).shortValue(), new byte[] {0x4, 0x9, 0xF, 0x8}));
+        send(LOCAL, request);
+    }
+
+    /**
+     * Sends the request to the DKS webservice.
+     *
+     * @param <T> response type
+     * @param dks dks
+     * @param request request
+     * @return response
+     */
+    @SuppressWarnings("unchecked")
+    private <T extends DdipResponseMessage> T send(final URI serviceRef, final Message request)
+    {
+        try
+        {
+            final T response = (T) webServiceTemplate.marshalSendAndReceive(serviceRef.toString(), request);
+            validateResponse(serviceRef, response.getResponseStatus());
+            return response;
+        }
+        catch (final WebServiceTransportException wste)
+        {
+            System.err.println("WebServiceTransportException occurred! Reason: " + wste.getMostSpecificCause());
+            wste.printStackTrace();
+        }
+
+        return null;
+    }
+
+    private void validateResponse(final URI serviceRef, final Option<ResponseStatus> responseStatus)
+    {
+        if (responseStatus.isDefined() && responseStatus.get().getStatusNumber() > 0)
+        {
+            final ResponseStatus status = responseStatus.get();
+            throw new DdipStatusException(serviceRef, DdipStatusCode.fromNumericValue(status.getStatusNumber()), status.getGeneralStatusText(), status.getExtendedStatusData());
+        }
+        else
+        {
+            System.out.println("Received valid response.");
+        }
+    }
+
+    private String marshal(final Message request)
+    {
+        final ByteArrayOutputStream stream = new ByteArrayOutputStream();
+        final StreamResult result = new StreamResult(stream);
+        try
+        {
+            new MessageMarshaller(DdipRequestMessage.class.getPackage().getName()).marshal(request, result);
+            return result.getOutputStream().toString();
+        }
+        catch (final XmlMappingException e)
+        {
+            throw new RuntimeException(e);
+        }
+        catch (final IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+}

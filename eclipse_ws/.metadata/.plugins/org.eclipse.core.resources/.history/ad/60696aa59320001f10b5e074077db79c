@@ -1,0 +1,53 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.commons.util;
+
+import static org.hamcrest.MatcherAssert.*;
+import static org.hamcrest.Matchers.*;
+
+import org.testng.annotations.Test;
+
+@Test
+public class IntegerRangeTest
+{
+    public void simple()
+    {
+        final DefaultIntegerRange range = new DefaultIntegerRange(0, 1);
+        assertThat(range.getStart(), is(0));
+        assertThat(range.getEnd(), is(1));
+    }
+
+    public void sameStartAndEnd()
+    {
+        final DefaultIntegerRange range = new DefaultIntegerRange(1, 1);
+        assertThat(range.getStart(), is(1));
+        assertThat(range.getEnd(), is(1));
+    }
+    
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void startGreaterThanEnd()
+    {
+        new DefaultIntegerRange(1, 0);
+    }
+    
+    public void contains()
+    {
+        final DefaultIntegerRange range = new DefaultIntegerRange(0, 2);
+        assertThat(range.contains(-1), is(false));
+        assertThat(range.contains(0), is(true));
+        assertThat(range.contains(1), is(true));
+        assertThat(range.contains(2), is(true));
+        assertThat(range.contains(3), is(false));
+    }
+    
+    public void overlaps()
+    {
+        final DefaultIntegerRange range = new DefaultIntegerRange(0, 2);
+        assertThat(range.overlaps(range), is(true));
+        assertThat(range.overlaps(new DefaultIntegerRange(-2, -1)), is(false));
+        assertThat(range.overlaps(new DefaultIntegerRange(0, 0)), is(true));
+        assertThat(range.overlaps(new DefaultIntegerRange(-1, 1)), is(true));
+        assertThat(range.overlaps(new DefaultIntegerRange(1, 3)), is(true));
+        assertThat(range.overlaps(new DefaultIntegerRange(2, 2)), is(true));
+        assertThat(range.overlaps(new DefaultIntegerRange(3, 4)), is(false));
+    }
+}

@@ -1,0 +1,68 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerUnitTestUtility.getStubbedNotifier;
+import static org.easymock.EasyMock.createControl;
+
+import java.util.Collections;
+import java.util.Map;
+
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+
+import org.easymock.EasyMock;
+import org.easymock.IMocksControl;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.context.event.ContextRefreshedEvent;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+/**
+ * Tests the <code>ExternalRouteManagerApplicationContextListener</code> class.
+ */
+@Test
+public class UdpRouteManagerApplicationContextListenerTest
+{
+    private UdpRouteManager externalRouteManager;
+    private RouteControllerFactory mockRouteControllerFactory;
+    private RealTimeSnapshotManager mockRealTimeSnapshotManager;
+    private StreamManager mockStreamManager;
+    private IMocksControl mocks;
+    private UdpRouteManagerApplicationContextListener externalRouteManagerApplicationContextListener;
+    private ApplicationContext mockApplicationContext;
+
+    @BeforeMethod
+    public void setUp()
+    {
+        mocks = createControl();
+        mockRealTimeSnapshotManager = mocks.createMock(RealTimeSnapshotManager.class);
+        mockRouteControllerFactory = mocks.createMock(RouteControllerFactory.class);
+        final Map<Long, RouteSnapshot> routes = Collections.emptyMap();
+        EasyMock.expect(mockRealTimeSnapshotManager.getRoutes()).andStubReturn(routes);
+        mockStreamManager = mocks.createMock(StreamManager.class);
+        externalRouteManager = new UdpRouteManager(mockRouteControllerFactory, mockRealTimeSnapshotManager, mockStreamManager, getStubbedNotifier());
+        mockApplicationContext = mocks.createMock(ApplicationContext.class);
+        externalRouteManagerApplicationContextListener = new UdpRouteManagerApplicationContextListener(externalRouteManager);
+        mocks.replay();
+    }
+
+    @AfterMethod
+    public void tearDown()
+    {
+        mocks.verify();
+    }
+
+    public void testContextRefreshedEventResultsInOsgiEventBeingFired()
+    {
+        externalRouteManager.init();
+        externalRouteManagerApplicationContextListener.onApplicationEvent(new ContextRefreshedEvent(mockApplicationContext));
+    }
+
+    public void testOtherEventsDoNotResultInOsgiEventBeingFired()
+    {
+        externalRouteManagerApplicationContextListener.onApplicationEvent(new ContextClosedEvent(mockApplicationContext));
+    }
+}

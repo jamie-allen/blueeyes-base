@@ -1,0 +1,70 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter;
+
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerUnitTestUtility.getStubbedNotifier;
+
+import java.util.Arrays;
+
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.impl.Mpeg2Packet;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilter;
+
+import org.easymock.EasyMock;
+import org.junit.Assert;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+@Test
+public class UdpDatagramToMpeg2TransformerTest
+{
+    private static final byte FILLER_BYTE = (byte)0xFF;
+
+    private UdpDatagramToMpeg2Transformer transformer;
+
+    private PacketFilter mockSink;
+
+    @BeforeMethod
+    public void setUp()
+    {
+        mockSink = EasyMock.createMock(PacketFilter.class);
+        transformer = new UdpDatagramToMpeg2Transformer(mockSink, getStubbedNotifier(), "abc");
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testNullNotificationManager()
+    {
+        new UdpDatagramToMpeg2Transformer(mockSink, null, "abc");
+    }
+
+    public void testUdpDatagramWhenDivisibleByMpeg2PacketSize()
+    {
+        EasyMock.expect(mockSink.insert(EasyMock.aryEq(aDatagram(Mpeg2Packet.PACKET_SIZE_IN_BYTES)))).andReturn(true).times(2);
+        EasyMock.replay(mockSink);
+        Assert.assertTrue(transformer.insert(aDatagram(Mpeg2Packet.PACKET_SIZE_IN_BYTES * 2)));
+        EasyMock.verify(mockSink);
+    }
+
+    public void testUdpDatagramWhenNotDivisibleByMpeg2PacketSize()
+    {
+        EasyMock.replay(mockSink);
+        Assert.assertFalse(transformer.insert(aDatagram(200)));
+        EasyMock.verify(mockSink);
+    }
+
+    public void testUdpDatagramWhenSinkReturnsFalse()
+    {
+        final byte[] datagram = aDatagram(Mpeg2Packet.PACKET_SIZE_IN_BYTES);
+        EasyMock.expect(mockSink.insert(EasyMock.aryEq(datagram))).andReturn(true);
+        EasyMock.expect(mockSink.insert(EasyMock.aryEq(datagram))).andReturn(false);
+        EasyMock.expect(mockSink.insert(EasyMock.aryEq(datagram))).andReturn(true);
+        EasyMock.replay(mockSink);
+        Assert.assertFalse(transformer.insert(aDatagram(Mpeg2Packet.PACKET_SIZE_IN_BYTES * 3)));
+        EasyMock.verify(mockSink);
+    }
+
+    private byte[] aDatagram(final int length)
+    {
+        final byte[] datagram = new byte[length];
+        Arrays.fill(datagram, FILLER_BYTE);
+        return datagram;
+    }
+}

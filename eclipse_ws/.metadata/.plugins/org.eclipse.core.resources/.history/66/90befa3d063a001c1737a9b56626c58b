@@ -1,0 +1,98 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html
+    xmlns="http://www.w3.org/1999/xhtml"
+    xmlns:ui="http://java.sun.com/jsf/facelets"
+    xmlns:h="http://java.sun.com/jsf/html"
+    xmlns:f="http://java.sun.com/jsf/core"
+    xmlns:c="http://java.sun.com/jstl/core"
+    xmlns:t="http://myfaces.apache.org/tomahawk"
+    xmlns:ccad="http://ccad/webui/components"
+    xmlns:acegijsf="http://sourceforge.net/projects/jsf-comp/acegijsf">
+    <body>
+        <ui:composition template="/WEB-INF/templates/main-layout.xhtml">
+            <ui:define name="content">
+                <t:stylesheet path="/styles/channels/lineups/lineups.css" />
+                    <h:form>
+
+                    <ccad:messages/>
+lalalalalala
+                    <t:saveState value="#{lineupsOverview.lineupsTable}"/>
+
+                    <ccad:table
+                        delegate="#{lineupsOverview.lineupsTable}"
+                        pageable="true"
+                        searchable="true"
+                        addable="#{authorize['ROLE_CONTENT_MANAGER']}"
+                        editable="true"
+                        deleteable="false"
+                        singleSelect="false"
+                        inlineEditable="false"
+                        selectable="true"
+                        >
+                        <ccad:column fieldName="name"  >
+                            #{tableEntry.name}
+                        </ccad:column>
+                        <ccad:column fieldName="configurationStatusAsString">
+                            <h:outputText rendered="#{not tableEntry.configurationStatusLinkable}"
+                                value="#{tableEntry.configurationStatusAsString}"/>
+                            <t:commandLink rendered="#{tableEntry.configurationStatusLinkable}"
+                                action="#{lineupStatusHandler.onConfigurationStatusClicked}"
+                                value="#{tableEntry.configurationStatusAsString}">
+                                <t:updateActionListener
+                                    property="#{lineupStatusHandler.lineupClicked}"
+                                    value="#{tableEntry}"/>
+                            </t:commandLink>
+                        </ccad:column>
+                        <ccad:column fieldName="deploymentStatusAsString">
+                            <h:outputText rendered="#{not tableEntry.deploymentStatusLinkable}"
+                                value="#{tableEntry.deploymentStatusAsString}"/>
+                            <t:commandLink rendered="#{tableEntry.deploymentStatusLinkable}"
+                                action="#{lineupStatusHandler.onDeploymentStatusClicked}"
+                                value="#{tableEntry.deploymentStatusAsString}">
+                                <t:updateActionListener
+                                    property="#{lineupStatusHandler.lineupClicked}"
+                                    value="#{tableEntry}"/>
+                            </t:commandLink>
+                        </ccad:column>
+                        <ccad:column fieldName="operationalStatusAsString">
+                            #{tableEntry.operationalStatusAsString}
+                        </ccad:column>
+                     </ccad:table>
+                    </h:form>
+            </ui:define>
+            <ui:define name="additionalTableButtons">
+                <h:commandButton
+                    value="#{messages.deployButton}"
+                    action="#{lineupsOverview.onDeployButton}"
+                    disabled="#{not lineupsOverview.lineupsTable.tableEntriesExist or not authorize['ROLE_CONTENT_MANAGER']}"
+                    styleClass="button" />
+                <h:commandButton
+                    value="#{messages.compareButton}"
+                    action="#{lineupsOverview.onCompareButton}"
+                    disabled="#{not lineupsOverview.lineupsTable.tableEntriesExist}"
+                    styleClass="button" />
+                <h:commandButton
+                    value="#{messages.deleteButton}"
+                    action="#{lineupsOverview.onDeleteButton}"
+                    disabled="#{not lineupsOverview.lineupsTable.tableEntriesExist or not authorize['ROLE_CONTENT_MANAGER']}"
+                    styleClass="button" />
+                <h:commandButton
+                    value="#{messages.recalculateSourceResolutionsButton}"
+                    action="#{lineupsOverview.onRecalculateSourceResolutionsButton}"
+                    disabled="#{not lineupsOverview.lineupsTable.tableEntriesExist or not authorize['ROLE_CONTENT_MANAGER']}"
+                    styleClass="wideButton"/>
+                <h:commandButton
+                    value="#{messages.refreshButton}"
+                    action="refresh"
+                    immediate="true"
+                    styleClass="button"
+                    disabled="#{not authorize['ROLE_CONTENT_MANAGER']}" />
+                <h:commandButton
+                    value="#{messages.refactorButton}"
+                    action="#{lineupsOverview.onRefactorButton}"
+                    disabled="#{not lineupsOverview.lineupsTable.tableEntriesExist or not authorize['ROLE_CONTENT_MANAGER']}"
+                    styleClass="Button"/>
+            </ui:define>
+        </ui:composition>
+    </body>
+</html>

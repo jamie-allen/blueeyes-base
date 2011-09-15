@@ -1,0 +1,26 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.stream.manager;
+
+import com.ccadllc.firebird.dss.common.datatypes.TransmissionType;
+
+/**
+ * Manages preparation, insertion and eventual sending of blocks to specific destinations on streams.
+ */
+public interface StreamManager
+{
+    /**
+     * Inserts a block to the destination via the stream and coordinates any needed packetization.
+     *
+     * @param block block to insert on the stream
+     * @param streamId of the stream to which the blocks will be sent
+     * @param transmissionType type of stream
+     */
+    void insert(byte[] block, Long streamId, TransmissionType transmissionType);
+
+    /**
+     * Initializes the StreamManager.
+     *
+     * <p>This should only be called once after construction of this object.</p>
+     */
+    void init();
+}

@@ -1,0 +1,243 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.topology.core;
+
+import java.lang.reflect.Method;
+import java.util.Collections;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
+import net.jcip.annotations.Immutable;
+
+import org.apache.commons.lang.builder.EqualsBuilder;
+import org.apache.commons.lang.builder.HashCodeBuilder;
+import org.apache.commons.lang.builder.ToStringBuilder;
+import org.springframework.util.ReflectionUtils;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Iterables;
+
+@Immutable
+public class ElementaryStreamDescription
+{
+    private final UUID id;
+    private final String name;
+    private final ElementaryStreamType type;
+    private final TrafficShapingProfile trafficShapingProfile;
+    // TODO: JLA
+    protected ServingLocationQName location = ServingLocationQName.ORPHANED;
+//    private final ServingLocationQName location;
+    private final ImmutableMap<String, String> properties;
+
+    protected ElementaryStreamDescription(final Builder<?> builder)
+    {
+        Preconditions.checkNotNull(builder.name, "name");
+
+        id = builder.id;
+        name = builder.name;
+        type = builder.type;
+
+        Preconditions.checkArgument(builder.trafficShapingProfile != null || type != null, "Must specify either a traffic shaping profile or an ElementaryStreamType");
+        trafficShapingProfile = builder.trafficShapingProfile != null ? builder.trafficShapingProfile : type.getTrafficShapingProfile();
+
+        location = builder.location;
+
+        final ImmutableMap.Builder<String, String> propsBuilder = ImmutableMap.builder();
+        if (type != null)
+        {
+            propsBuilder.putAll(type.getProperties());
+        }
+        propsBuilder.putAll(builder.properties);
+        properties = propsBuilder.build();
+    }
+
+    public UUID getId()
+    {
+        return id;
+    }
+
+    public String getName()
+    {
+        return name;
+    }
+
+    public ElementaryStreamType getType()
+    {
+        return type;
+    }
+
+    public TrafficShapingProfile getTrafficShapingProfile()
+    {
+        return trafficShapingProfile;
+    }
+
+    public ServingLocationQName getLocation()
+    {
+        return location;
+    }
+
+    /** @deprecated Use {@link #getLocation()} instead.  Will be removed in 2.0. */
+    @Deprecated
+    public Set<ServingLocationQName> getLocations()
+    {
+        return Collections.emptySet();
+    }
+
+    public Map<String, String> getProperties()
+    {
+        return properties;
+    }
+
+    @Override
+    public int hashCode()
+    {
+        return HashCodeBuilder.reflectionHashCode(this);
+    }
+
+    @Override
+    public boolean equals(final Object obj)
+    {
+        return EqualsBuilder.reflectionEquals(this, obj);
+    }
+
+    @Override
+    public String toString()
+    {
+        return ToStringBuilder.reflectionToString(this);
+    }
+
+    // CHECKSTYLE:OFF
+    public abstract static class Builder<SELF extends Builder<SELF>>
+    {
+        protected UUID id = UUID.randomUUID();
+        protected String name;
+        protected ElementaryStreamType type;
+        protected TrafficShapingProfile trafficShapingProfile;
+        protected ServingLocationQName location;
+        protected Map<String, String> properties = Collections.emptyMap();
+        // CHECKSTYLE:ON
+
+        public SELF id(final UUID id)
+        {
+            this.id = id;
+            return self();
+        }
+
+        public SELF name(final String name)
+        {
+            this.name = name;
+            return self();
+        }
+
+        public SELF fromType(final ElementaryStreamType type)
+        {
+            this.type = type;
+            return self();
+        }
+
+        public SELF trafficShapingProfile(final TrafficShapingProfile shaping)
+        {
+            this.trafficShapingProfile = shaping;
+            return self();
+        }
+
+        /** @deprecated Use {@link #location(ServingLocationQName)} instead.  Will be removed in 2.0. */
+        @Deprecated
+        public SELF locations(final Set<ServingLocationQName> locations)
+        {
+            if (locations.isEmpty())
+            {
+                this.location = null;
+            }
+            else
+            {
+                this.location = Iterables.getOnlyElement(locations);
+            }
+            return self();
+        }
+
+        public SELF location(final ServingLocationQName location)
+        {
+            this.location = location;
+            return self();
+        }
+
+        public SELF properties(final Map<String, String> properties)
+        {
+            this.properties = properties;
+            return self();
+        }
+
+        public abstract ElementaryStreamDescription build();
+
+        @SuppressWarnings("unchecked")
+        protected SELF self()
+        {
+            return (SELF)this;
+        }
+    }
+
+    private static class LeafBuilder extends Builder<LeafBuilder>
+    {
+        @Override
+        public ElementaryStreamDescription build()
+        {
+            return new ElementaryStreamDescription(this);
+        }
+    }
+
+    public static Builder<?> builder()
+    {
+        return new LeafBuilder();
+    }
+
+    /**
+     * Creates a builder initialized such that it matches the attributes of this instance.
+     *
+     * @return new builder
+     */
+    public Builder<?> toBuilder()
+    {
+        return newBuilder()
+            .id(id)
+            .name(name)
+            .fromType(type)
+            .trafficShapingProfile(trafficShapingProfile)
+            .location(location)
+            .properties(properties);
+    }
+
+    /**
+     * Constructs a new builder for the same class as this instance.
+     *
+     * <p>Sub-classes must have a static no-arg method named {@code builder} that returns a sub-class
+     * of {@link Builder}.</p>
+     *
+     * @return new, uninitialized builder
+     */
+    protected final Builder<?> newBuilder()
+    {
+        try
+        {
+            final Method method = getClass().getMethod("builder");
+            final Object builderObj = ReflectionUtils.invokeMethod(method, null);
+            if (builderObj instanceof Builder<?>)
+            {
+                return (Builder<?>)builderObj;
+            }
+            else
+            {
+                throw new IllegalStateException(String.format("Found builder method but it returned incompatible type %s.", builderObj.getClass().getName()));
+            }
+        }
+        catch (final SecurityException e)
+        {
+            throw new RuntimeException("Unexpected exception.", e);
+        }
+        catch (final NoSuchMethodException e)
+        {
+            throw new IllegalStateException(String.format("Class %s does not have no-arg method named builder.", getClass().getName()));
+        }
+    }
+}

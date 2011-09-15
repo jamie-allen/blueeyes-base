@@ -1,0 +1,22 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.management;
+
+/**
+ * Supports lookup of TCP routes via MXBeans.
+ */
+public interface TcpRouteLookupMXBean
+{
+    /**
+     * @param unique stream identifier on which to search
+     * @return unique identifier of the TCP Routes if found, empty if none
+     */
+    Long[] getTcpRouteIdsForStreamId(String streamId);
+
+    /**
+     * @param pid on which to search
+     * @return unique identifier of the TCP Routes if found, empty if none
+     */
+    Long[] getTcpRouteIdsForMappedPid(Integer pid);
+}

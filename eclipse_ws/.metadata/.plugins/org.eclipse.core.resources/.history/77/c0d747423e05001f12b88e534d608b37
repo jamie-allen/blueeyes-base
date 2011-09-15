@@ -1,0 +1,158 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.topology.core;
+
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
+
+/** Provides utility methods for working with serving locations and references to network locations. */
+public final class ServingLocationUtils
+{
+    /** Prevents instantiation. */
+    private ServingLocationUtils()
+    {
+        // Nothing to do
+    }
+
+    /**
+     * Gets the serving location at the specified path.
+     *
+     * @param root root of location tree to search
+     * @param path path to retrieve
+     * @return location at specified path or null if not found
+     */
+    @SuppressWarnings("unchecked")
+    public static <T extends ServingLocation> T getLocationByPath(final T root, final ServingLocationQName path)
+    {
+        final Iterable<String> components = path == null? Collections.<String>emptyList().iterator() : path.getNameComponents();
+        final Iterator<String> componentIterator = components.iterator();
+        T currentLocation = root;
+        while (componentIterator.hasNext() && currentLocation != null)
+        {
+            final String descendant = componentIterator.next();
+            currentLocation = (T)currentLocation.getChildByLocalName(descendant);
+        }
+        return currentLocation;
+    }
+
+    /**
+     * Gets the location with the specified ID.
+     *
+     * @param root root of location tree to search
+     * @param id id of location to retrieve
+     * @return location at specified path or null if not found
+     */
+    @SuppressWarnings("unchecked")
+    public static <T extends ServingLocation> T getLocationById(final T root, final UUID id)
+    {
+        if (root.getId().equals(id))
+        {
+            return root;
+        }
+        else
+        {
+            for (final ServingLocation child : root.getChildren())
+            {
+                final T match = getLocationById((T)child, id);
+                if (match != null)
+                {
+                    return match;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Gets the root of the specified location.
+     *
+     * @param location location to get root of
+     * @return root of location; non-null
+     */
+    @SuppressWarnings("unchecked")
+    public static <T extends ServingLocation> T getRoot(final T location)
+    {
+        Preconditions.checkNotNull(location);
+        return (T)(location.getParent() == null ? location : getRoot(location.getParent()));
+    }
+
+    public static Set<ServingLocationQName> getLeaves(final Iterable<ServingLocationQName> locations, final TopologyModel model)
+    {
+        final Set<ServingLocation> leaves = Sets.newHashSet();
+        for (final ServingLocationQName location : locations)
+        {
+            leaves.addAll(getLeaves(model.getServingLocation(location)));
+        }
+        final Set<ServingLocationQName> leafNames = Sets.newHashSet();
+        for (final ServingLocation location : leaves)
+        {
+            leafNames.add(location.getQualifiedName());
+        }
+        return leafNames;
+    }
+
+    public static Set<ServingLocation> getLeaves(final ServingLocation location)
+    {
+        if (location.getChildren().isEmpty())
+        {
+            return Sets.newHashSet(location);
+        }
+        else
+        {
+            final Set<ServingLocation> leaves = Sets.newHashSet();
+            for (final ServingLocation child : location.getChildren())
+            {
+                leaves.addAll(getLeaves(child));
+            }
+            return leaves;
+        }
+    }
+
+    public static ServingLocationQName determineCommonParent(final Iterable<ServingLocationQName> locations)
+    {
+        final Iterator<ServingLocationQName> iterator = locations.iterator();
+
+        if (iterator.hasNext())
+        {
+            ServingLocationQName longestCommonPrefix = iterator.next();
+            while (iterator.hasNext())
+            {
+                longestCommonPrefix = determineCommonParent(longestCommonPrefix, iterator.next());
+            }
+            return longestCommonPrefix;
+        }
+        else
+        {
+            return null;
+        }
+    }
+
+    public static ServingLocationQName determineCommonParent(final ServingLocationQName left, final ServingLocationQName right)
+    {
+        int pos = 0;
+        final List<String> leftComponents = Lists.newArrayList(left.getNameComponents());
+        final List<String> rightComponents = Lists.newArrayList(right.getNameComponents());
+        final StringBuilder builder = new StringBuilder();
+        while (pos < leftComponents.size() && pos < rightComponents.size() && leftComponents.get(pos).equals(rightComponents.get(pos)))
+        {
+            builder.append(ServingLocationQName.SEPARATOR).append(leftComponents.get(pos));
+            ++pos;
+        }
+
+        final String locationString = builder.toString();
+        if (locationString.isEmpty())
+        {
+            return ServingLocationQName.ROOT;
+        }
+        else
+        {
+            return ServingLocationQName.of(locationString);
+        }
+    }
+}

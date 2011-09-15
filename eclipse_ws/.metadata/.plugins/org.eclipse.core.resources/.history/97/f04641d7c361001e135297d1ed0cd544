@@ -1,0 +1,55 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import java.util.Collections;
+import java.util.Map;
+
+import com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType;
+import com.ccadllc.firebird.dss.server.common.DefaultRouteSnapshot;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.RouteInstrumentation;
+
+import org.testng.Assert;
+import org.testng.annotations.Test;
+
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Multimaps;
+
+@Test
+public class RouteInstrumentationTest
+{
+    public void testMultipleStreamsReturnedFromPidStreamMappings() throws Exception
+    {
+        final Multimap<Integer, Long> pidMappings = Multimaps.newHashMultimap();
+        pidMappings.put(1, 10L);
+        pidMappings.put(1, 11L);
+        pidMappings.put(1, 12L);
+        pidMappings.put(1, 13L);
+        pidMappings.put(1, 14L);
+        pidMappings.put(2, 12L);
+        pidMappings.put(2, 15L);
+        pidMappings.put(2, 16L);
+        final RouteSnapshot route = new DefaultRouteSnapshot(TransportProtocolType.UDP, 1L, 5001, pidMappings, Collections.<String, String>emptyMap());
+        final RouteInstrumentation routeInstrumentation = new RouteInstrumentation(route);
+
+        final Map<Integer, Long[]> returnedMappings = routeInstrumentation.getPidMappings();
+
+        // Returned string should have the following values, but not in order: "10, 11, 12, 13, 14"
+        final Long[] returnedMappingsFor1 = returnedMappings.get(1);
+        Assert.assertEquals(returnedMappingsFor1.length, 5);
+        Assert.assertFalse(returnedMappingsFor1.indexOf("10") == -1);
+        Assert.assertFalse(returnedMappingsFor1.indexOf("11") == -1);
+        Assert.assertFalse(returnedMappingsFor1.indexOf("12") == -1);
+        Assert.assertFalse(returnedMappingsFor1.indexOf("13") == -1);
+        Assert.assertFalse(returnedMappingsFor1.indexOf("14") == -1);
+        Assert.assertEquals(returnedMappingsFor1.lastIndexOf(','), 14);
+
+        // Returned string should have the following values, but not in order: "12, 15, 16"
+        final String returnedMappingsFor2 = returnedMappings.get(2);
+        Assert.assertEquals(returnedMappings.get(2).length(), 10);
+        Assert.assertFalse(returnedMappingsFor2.indexOf("12") == -1);
+        Assert.assertFalse(returnedMappingsFor2.indexOf("15") == -1);
+        Assert.assertFalse(returnedMappingsFor2.indexOf("16") == -1);
+        Assert.assertEquals(returnedMappingsFor2.lastIndexOf(','), 6);
+    }
+}

@@ -1,0 +1,28 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dkssimulator.webservice.impl
+
+import com.ccadllc.commons.scala.Logging
+import java.util.UUID
+
+class DSCSupervisor extends Logging {
+
+  // TODO: ConcurrentHashMap
+  private var dscMap = Map[UUID, String]()
+
+  def handleMessage(fact: Facts.Fact) {
+    logInfo("handleMessage(" + fact + ")")
+    fact match {
+      case Facts.ReceivedConfigureDscRequest(dscId, msg) => logInfo("Handling ConfigureDscRequest for DSC: " + dscId); dscMap = dscMap+(dscId -> "place holder for DSC realizer")
+      case Facts.ReceivedDeeAddressRequest(dscId, msg) => logInfo("Handling DeeAddressRequest for DSC: " + dscId)
+      case Facts.ReceivedDksRecoveryRequest(dscId, msg) => logInfo("Handling DksRecoveryRequest for DSC: " + dscId)
+      case Facts.ReceivedDscAuthorizationRequest(dscId, msg) => logInfo("Handling DscAuthorizationRequest for DSC: " + dscId)
+      case Facts.ReceivedEcmRequest(dscId, msg) => logInfo("Handling EcmRequest for DSC: " + dscId)
+      case Facts.ReceivedRsaPublicKeyRequest(dscId, msg) => logInfo("Handling RsaPublicKeyRequest for DSC: " + dscId)
+      case Facts.ReceivedSecurityDomainConfigRequest(dscId, msg) => logInfo("Handling SecurityDomainConfigRequest for DSC: " + dscId)
+      case Facts.ReceivedSharedKeyRequest(dscId, msg) => logInfo("Handling SharedKeyRequest for DSC: " + dscId)
+      case Facts.ReceivedUnitAuthorizationRequest(dscId, msg) => logInfo("Handling UnitAuthorizationRequest for DSC: " + dscId)
+      case Facts.ReceivedUpdateCategoryKeyRequest(dscId, msg) => logInfo("Handling UpdateCategoryKeyRequest for DSC: " + dscId)
+      case _ => "Not handling"
+    }
+  }
+}

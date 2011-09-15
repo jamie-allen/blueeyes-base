@@ -1,0 +1,22 @@
+package com.ccadllc.example.session;
+
+import com.ccadllc.commons.session.AbstractAsynchronousSessionTestSupport;
+
+import org.testng.annotations.Test;
+
+public class TestSessionTest extends AbstractAsynchronousSessionTestSupport<TestSession>
+{
+
+    @Override
+    protected TestSession createSession()
+    {
+        return new TestSession(20);
+    }
+
+    @Test
+    public void testSession()
+    {
+        startSessionAndWaitForCompletion();
+
+    }
+}

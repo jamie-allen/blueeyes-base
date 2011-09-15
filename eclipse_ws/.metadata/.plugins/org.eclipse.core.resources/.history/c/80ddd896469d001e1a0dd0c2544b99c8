@@ -1,0 +1,483 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dssrm.provisioning.impl;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.any;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
+
+import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.UUID;
+
+import com.ccadllc.commons.util.MapUtility;
+import com.ccadllc.firebird.dss.common.datatypes.MeteringType;
+import com.ccadllc.firebird.vms.dssrm.core.BlockSetMatchers;
+import com.ccadllc.firebird.vms.dssrm.core.BlockSetDescription;
+import com.ccadllc.firebird.vms.dssrm.core.PeriodicData;
+import com.ccadllc.firebird.vms.dssrm.core.PeriodicDescription;
+import com.ccadllc.firebird.vms.dssrm.core.PeriodicMatchers;
+import com.ccadllc.firebird.vms.dssrm.provisioning.BlockSetEntity;
+import com.ccadllc.firebird.vms.dssrm.provisioning.BlockSetRepository;
+import com.ccadllc.firebird.vms.dssrm.provisioning.DefaultDataStreamServerResourceManager;
+import com.ccadllc.firebird.vms.dssrm.provisioning.PeriodicEntity;
+import com.ccadllc.firebird.vms.dssrm.provisioning.PeriodicRepository;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.TopologyModel;
+import com.ccadllc.firebird.vms.topology.core.TopologyService;
+
+import org.easymock.EasyMock;
+import org.easymock.IMocksControl;
+import org.hamcrest.Matcher;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.DataProvider;
+import org.testng.annotations.Test;
+
+import com.google.common.base.Function;
+import com.google.common.collect.Iterators;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Map;
+
+@Test
+public class DefaultDataStreamServerResourceManagerTest
+{
+    static final byte[][] EXPECTED_BLOCK_DATA = new byte[][] {{0x00}};
+    static final UUID EXPECTED_BLOCKSET_ID = UUID.randomUUID();
+    static final String EXPECTED_SCRIPT = "some stuff";
+
+    private DefaultDataStreamServerResourceManager dssrm;
+    private PeriodicRepository periodicRepository;
+    private BlockSetRepository blockSetRepository;
+    private TopologyService topologyService;
+    private IMocksControl mocks;
+    private final PeriodicDescription.Builder description = new PeriodicDescription.Builder().streamId(UUID.randomUUID()).metering(MeteringType.FRONT_LOADED).insertEvery(5);
+    private final BlockSetDescription.Builder blockSetDescription = new BlockSetDescription.Builder().addBlockDescriptor(2,5);
+//    private final BlockSetDescription blockSetSummary = new BlockSetDescription(UUID.randomUUID(), MapUtility.<String, String>toMap("keyOne", "valueOne"));
+
+    @BeforeMethod
+    public void setUp()
+    {
+        dssrm = new DefaultDataStreamServerResourceManager();
+        mocks = EasyMock.createControl();
+        periodicRepository = mocks.createMock(PeriodicRepository.class);
+        blockSetRepository = mocks.createMock(BlockSetRepository.class);
+        dssrm.setPeriodicRepository(periodicRepository);
+        dssrm.setBlockSetRepository(blockSetRepository);
+        topologyService = mocks.createMock(TopologyService.class);
+        dssrm.setTopologyservice(topologyService);
+    }
+
+    @Test(dataProvider = "periodicData")
+    public void testAddPeriodicForStreamThatDoesExistInTopology(final PeriodicDescription periodic, final PeriodicData data)
+    {
+        final TopologyModel stubModel = mocks.createMock(TopologyModel.class);
+        final ElementaryStream mockStream = mocks.createMock(ElementaryStream.class);
+        EasyMock.expect(stubModel.getElementaryStreamById((UUID) EasyMock.notNull())).andStubReturn(mockStream);
+        EasyMock.expect(topologyService.getLiveModel()).andReturn(stubModel);
+        periodicRepository.persist((PeriodicEntity) EasyMock.notNull());
+
+        mocks.replay();
+        dssrm.addPeriodic(periodic, data);
+        mocks.verify();
+    }
+
+    @Test(dataProvider = "periodicData", expectedExceptions = NullPointerException.class)
+    public void testAddPeriodicforStreamThatDoesNotExistInTopology(final PeriodicDescription periodic, final PeriodicData data)
+    {
+        final TopologyModel stubModel = mocks.createMock(TopologyModel.class);
+        EasyMock.expect(stubModel.getElementaryStreamById((UUID) EasyMock.notNull())).andStubReturn(null);
+        EasyMock.expect(topologyService.getLiveModel()).andReturn(stubModel);
+
+        mocks.replay();
+        dssrm.addPeriodic(periodic, data);
+        mocks.verify();
+    }
+
+    public void testDeletePeriodicForAPeriodicThatExists()
+    {
+        final UUID periodicId = UUID.randomUUID();
+        final PeriodicEntity stubEntity = new PeriodicEntity(description.id(periodicId).build(), PeriodicData.fromBlocks(EXPECTED_BLOCK_DATA));
+        EasyMock.expect(periodicRepository.get(periodicId)).andReturn(stubEntity);
+        periodicRepository.delete(stubEntity);
+
+        mocks.replay();
+        dssrm.deletePeriodic(periodicId);
+        mocks.verify();
+    }
+
+    public void testDeletePeriodicForAPeriodicThatDoesNotExist()
+    {
+        final UUID periodicId = UUID.randomUUID();
+        new PeriodicEntity(description.id(periodicId).build(), PeriodicData.fromBlocks(EXPECTED_BLOCK_DATA));
+        EasyMock.expect(periodicRepository.get(periodicId)).andReturn(null);
+
+        mocks.replay();
+        dssrm.deletePeriodic(periodicId);
+        mocks.verify();
+
+    }
+
+    @DataProvider(name = "periodicData")
+    public Object[][] getPeriodicData()
+    {
+        return new Object[][] {
+            {description.id(UUID.randomUUID()).build(), PeriodicData.fromBlocks(EXPECTED_BLOCK_DATA)},
+            {description.id(UUID.randomUUID()).build(), PeriodicData.fromBlockSetId(EXPECTED_BLOCKSET_ID)},
+            {description.id(UUID.randomUUID()).build(), PeriodicData.fromJRubyScript(EXPECTED_SCRIPT)}
+        };
+    }
+
+    @Test(dataProvider = "blockSetData")
+    public void testAddBlockSetSuccessful(final BlockSetDescription blockSet, final InputStream blockSetData) throws IOException
+    {
+        blockSetRepository.persist((BlockSetEntity) EasyMock.notNull());
+
+        mocks.replay();
+        dssrm.addBlockSet(blockSet, blockSetData);
+        mocks.verify();
+    }
+
+    public void testDeleteBockSetForABlockSetThatExists() throws IOException
+    {
+        final UUID blockSetId = UUID.randomUUID();
+        final BlockSetEntity stubEntity = new BlockSetEntity(blockSetDescription.id(blockSetId).build(), aBlockSetInputStream());
+        EasyMock.expect(blockSetRepository.get(blockSetId)).andReturn(stubEntity);
+        blockSetRepository.delete(stubEntity);
+
+        mocks.replay();
+        dssrm.deleteBlockSet(blockSetId);
+        mocks.verify();
+    }
+
+    public void testDeleteBockSetForABlockSetThatDoesNotExist() throws IOException
+    {
+        final UUID blockSetId = UUID.randomUUID();
+        new BlockSetEntity(blockSetDescription.id(blockSetId).build(), aBlockSetInputStream());
+        EasyMock.expect(blockSetRepository.get(blockSetId)).andReturn(null);
+
+        mocks.replay();
+        dssrm.deleteBlockSet(blockSetId);
+        mocks.verify();
+    }
+
+    @DataProvider(name = "blockSetData")
+    public Object[][] getBlockSetData()
+    {
+        Map<String, String> properties = Maps.newHashMap();
+        properties.put("key1", "value1");
+
+        List<com.ccadllc.firebird.vms.dssrm.core.BlockDescriptor> descriptors = Lists.newArrayList();
+        descriptors.add(new com.ccadllc.firebird.vms.dssrm.core.BlockDescriptor(2, 5));
+
+        BlockSetDescription blockSetDescription = new BlockSetDescription.Builder()
+                .id(UUID.randomUUID())
+                .addBlockDescriptors(descriptors)
+                .addProperties(properties).build();
+
+        final byte[] blobByteArray = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09};
+        final InputStream blobInputStream = new ByteArrayInputStream(blobByteArray);
+
+
+        return new Object[][] {
+            {blockSetDescription, blobInputStream}
+        };
+    }
+    public void testQueryForPeriodicByIdReturnsAPeriodic()
+    {
+        final UUID expectedPeriodicId = UUID.randomUUID();
+        final PeriodicDescription periodicDescription = description.id(expectedPeriodicId).build();
+        final PeriodicData periodicData = PeriodicData.fromBlockSetId(EXPECTED_BLOCKSET_ID);
+        EasyMock.expect(periodicRepository.getAll()).andReturn(Lists.newArrayList(new PeriodicEntity(periodicDescription, periodicData)));
+
+        mocks.replay();
+        assertThat(dssrm.queryForPeriodic(PeriodicMatchers.hasId(expectedPeriodicId)), notNullValue());
+        mocks.verify();
+    }
+
+    @Test(expectedExceptions = NoSuchElementException.class)
+    public void testQueryForPeriodicByIdDoesNotReturnAPeriodic()
+    {
+        final PeriodicDescription periodicDescription = description.id(UUID.randomUUID()).build();
+        final PeriodicData periodicData = PeriodicData.fromBlockSetId(EXPECTED_BLOCKSET_ID);
+        EasyMock.expect(periodicRepository.getAll()).andReturn(Lists.newArrayList(new PeriodicEntity(periodicDescription, periodicData)));
+
+        mocks.replay();
+        dssrm.queryForPeriodic(PeriodicMatchers.hasId(UUID.randomUUID()));
+        mocks.verify();
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testQueryForPeriodicByIdReturnsMoreThanOnePeriodicThrowsException()
+    {
+        final PeriodicDescription periodicDescription = description.streamId(UUID.randomUUID()).build();
+        final PeriodicEntity entity = aPeriodicEntity(periodicDescription);
+        EasyMock.expect(periodicRepository.getAll()).andReturn(Lists.newArrayList(entity, entity));
+
+        mocks.replay();
+        dssrm.queryForPeriodic(any(PeriodicDescription.class));
+        mocks.verify();
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testQueryForPeriodicWithNullMatcherThrowsAnError()
+    {
+        dssrm.queryForPeriodic(null);
+    }
+
+    public void testQueryForPeriodicByStreamIdReturnsAPeriodic()
+    {
+        final UUID expectedStreamId = UUID.randomUUID();
+        final PeriodicDescription periodicDescription = description.streamId(expectedStreamId).build();
+        EasyMock.expect(periodicRepository.getAll()).andReturn(Lists.newArrayList(aPeriodicEntity(periodicDescription)));
+
+        mocks.replay();
+        assertThat(dssrm.queryForPeriodic(PeriodicMatchers.hasStreamId(expectedStreamId)), notNullValue());
+        mocks.verify();
+    }
+
+    @Test(expectedExceptions = NoSuchElementException.class)
+    public void testQueryForPeriodicByStreamIdDoesNotReturnAPeriodic()
+    {
+        final PeriodicDescription periodicDescription = description.streamId(UUID.randomUUID()).build();
+        EasyMock.expect(periodicRepository.getAll()).andReturn(Lists.newArrayList(aPeriodicEntity(periodicDescription)));
+
+        mocks.replay();
+        dssrm.queryForPeriodic(PeriodicMatchers.hasStreamId(UUID.randomUUID()));
+    }
+
+    @Test(expectedExceptions = NoSuchElementException.class)
+    public void testQueryForPeriodicByStreamIdReturnsNoPeriodicsThrowsException()
+    {
+        final List<PeriodicEntity> entities = Lists.newArrayList();
+        EasyMock.expect(periodicRepository.getAll()).andReturn(entities);
+
+        mocks.replay();
+        dssrm.queryForPeriodic(any(PeriodicDescription.class));
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testQueryForPeriodicByStreamIdReturnsMoreThanOnePeriodicThrowsException()
+    {
+        final PeriodicDescription periodicDescription = description.streamId(UUID.randomUUID()).build();
+        final PeriodicEntity entity = aPeriodicEntity(periodicDescription);
+        EasyMock.expect(periodicRepository.getAll()).andReturn(Lists.newArrayList(entity, entity));
+
+        mocks.replay();
+        dssrm.queryForPeriodic(any(PeriodicDescription.class));
+    }
+
+    @Test(dataProvider = "queryPeriodicDataByProperty")
+    public void testQueryForPeriodicsByPropertyKeyAndValueReturnsExpectedPeriodics(final List<PeriodicDescription> descriptions, final Matcher<PeriodicDescription> matcher, final int expectedResultCount)
+    {
+        final List<PeriodicEntity> periodics = Lists.transform(descriptions, periodicDescriptionTransformer());
+        EasyMock.expect(periodicRepository.getAll()).andReturn(periodics);
+
+        mocks.replay();
+        assertThat(Iterators.size(dssrm.queryForPeriodics(matcher).iterator()), is(expectedResultCount));
+        mocks.verify();
+    }
+
+    @Test(dataProvider = "queryPeriodicDataByKeys")
+    public void testQueryForPeriodicsByPropertyKeys(final List<PeriodicDescription> descriptions, final Matcher<PeriodicDescription> matcher, final int expectedResultCount)
+    {
+        final List<PeriodicEntity> periodics = Lists.transform(descriptions, periodicDescriptionTransformer());
+        EasyMock.expect(periodicRepository.getAll()).andReturn(periodics);
+
+        mocks.replay();
+        assertThat(Iterators.size(dssrm.queryForPeriodics(matcher).iterator()), is(expectedResultCount));
+        mocks.verify();
+    }
+
+    public void testQueryForBlockSetByIdReturnsABlockSet()
+    {
+        final List<BlockSetDescription> blockSetDescriptions = blockSetWithRandomUUIDs();
+        final List<BlockSetEntity> blockSetEntities = Lists.transform(blockSetDescriptions, blockSetDescriptionTransformer());
+        EasyMock.expect(blockSetRepository.getAll()).andReturn(blockSetEntities);
+
+        mocks.replay();
+        assertThat(dssrm.queryForBlockSet(BlockSetMatchers.hasId(blockSetDescriptions.get(0).getId())), notNullValue());
+        mocks.verify();
+    }
+
+    @Test(expectedExceptions = NoSuchElementException.class)
+    public void testQueryForBlockSetByIdDoesNotReturnABlockSet()
+    {
+        final List<BlockSetEntity> blockSetEntities = Lists.transform(blockSetWithRandomUUIDs(), blockSetDescriptionTransformer());
+        EasyMock.expect(blockSetRepository.getAll()).andReturn(blockSetEntities);
+
+        mocks.replay();
+        assertThat(dssrm.queryForBlockSet(BlockSetMatchers.hasId(UUID.randomUUID())), notNullValue());
+        mocks.verify();
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testQueryForBlockSetByIdReturnsMoreThanOneBlockSetThrowsException()
+    {
+        final UUID sameId = UUID.randomUUID();
+        final List<BlockSetDescription> descriptions = Lists.newArrayList(
+            aBlockSetDescription(sameId, MapUtility.<String, String>toMap("keyOne", "valueOne")),
+            aBlockSetDescription(sameId, MapUtility.<String, String>toMap("keyTwo", "valueTwo")),
+            aBlockSetDescription(UUID.randomUUID(), MapUtility.<String, String>toMap("keyOne", "valueOne", "keyThree", "valueThree"))
+        );
+        final List<BlockSetEntity> blockSetEntities = Lists.transform(descriptions, blockSetDescriptionTransformer());
+        EasyMock.expect(blockSetRepository.getAll()).andReturn(blockSetEntities);
+
+        mocks.replay();
+        dssrm.queryForBlockSet(BlockSetMatchers.hasId(sameId));
+    }
+
+    @Test(dataProvider = "queryBlockSetDataByProperty")
+    public void testQueryForBlockSetByPropertyKeyAndValueReturnsExpectedBlockSets(final List<BlockSetDescription> blockSetDescriptions, final Matcher<BlockSetDescription> matcher, final int expectedResultCount)
+    {
+        final List<BlockSetEntity> blockSetEntities = Lists.transform(blockSetDescriptions, blockSetDescriptionTransformer());
+        EasyMock.expect(blockSetRepository.getAll()).andReturn(blockSetEntities);
+
+        mocks.replay();
+        dssrm.queryForBlockSets(matcher);
+    }
+
+    @Test(dataProvider = "queryBlockSetDataByKeys")
+    public void testQueryForBlockSetByPropertyKeys(final List<BlockSetDescription> blockSetDescriptions, final Matcher<BlockSetDescription> matcher, final int expectedResultCount)
+    {
+        final List<BlockSetEntity> blockSetEntities = Lists.transform(blockSetDescriptions, blockSetDescriptionTransformer());
+        EasyMock.expect(blockSetRepository.getAll()).andReturn(blockSetEntities);
+
+        mocks.replay();
+        assertThat(Iterators.size(dssrm.queryForBlockSets(matcher).iterator()), is(expectedResultCount));
+        mocks.verify();
+    }
+
+    @DataProvider(name = "queryPeriodicDataByProperty")
+    public Object[][] getQueryPeriodicDataByProperty()
+    {
+        final List<PeriodicDescription> descriptions = periodicsWithKeyValuePairsAndRandomUUIDs();
+
+        return new Object[][] {
+            {descriptions, PeriodicMatchers.hasPropertyValue("keyOne", "valueOne"), 1},
+            {descriptions, PeriodicMatchers.hasPropertyValue("keyTwo", "valueTwo"), 2},
+            {descriptions, PeriodicMatchers.hasPropertyValue("keyThree", "valueTwo"), 0},
+            {descriptions, null, 4}
+        };
+    }
+
+    @DataProvider(name = "queryPeriodicDataByKeys")
+    public Object[][] getQueryPeriodicDataByKeys()
+    {
+        final List<PeriodicDescription> descriptions = periodicsWithKeyValuePairsAndRandomUUIDs();
+
+        return new Object[][] {
+            {descriptions, PeriodicMatchers.hasPropertyKey("keyOne"), 1},
+            {descriptions, PeriodicMatchers.hasPropertyKey("keyTwo"), 3},
+            {descriptions, PeriodicMatchers.hasPropertyKey("keyThree"), 0}
+        };
+    }
+
+    @DataProvider(name = "queryBlockSetDataByProperty")
+    public Object[][] getQueryBlockSetDataByProperty()
+    {
+        final List<BlockSetDescription> blockSetDescriptions = blockSetWithRandomUUIDs();
+
+        return new Object[][] {
+            // TODO: this first test fails because the matcher doesn't seem to work.
+            //       The problem is that the matcher takes a BlockSetSummary
+            //       instance, which does not have properties.
+            {blockSetDescriptions, BlockSetMatchers.hasPropertyValue("keyOne", "valueOne"), 2},
+            {blockSetDescriptions, BlockSetMatchers.hasPropertyValue("keyFive", "valueTwo"), 0},
+            {blockSetDescriptions, null, 3}
+        };
+    }
+
+    @DataProvider(name = "queryBlockSetDataByKeys")
+    public Object[][] getQueryBlockSetDataByKeys()
+    {
+        final List<BlockSetDescription> blockSetDescriptions = blockSetWithRandomUUIDs();
+
+        return new Object[][] {
+            // TODO: this first test fails because the matcher doesn't seem to work
+            //       The problem is that the matcher takes a BlockSetSummary
+            //       instance, which does not have properties.
+            {blockSetDescriptions, BlockSetMatchers.hasPropertyKey("keyThree"), 1},
+            {blockSetDescriptions, BlockSetMatchers.hasPropertyKey("keyFive"), 0},
+            {blockSetDescriptions, null, 3}
+        };
+    }
+
+    private List<PeriodicDescription> periodicsWithKeyValuePairsAndRandomUUIDs()
+    {
+        return Lists.newArrayList(
+            aDescriptionBuilder().id(UUID.randomUUID()).addProperty("keyOne", "valueOne").build(),
+            aDescriptionBuilder().id(UUID.randomUUID()).addProperty("keyTwo", "valueTwo").build(),
+            aDescriptionBuilder().id(UUID.randomUUID()).addProperty("keyTwo", "valueTwo").build(),
+            aDescriptionBuilder().id(UUID.randomUUID()).addProperty("keyTwo", "valueThree").build()
+        );
+    }
+
+    private List<BlockSetDescription> blockSetWithRandomUUIDs()
+    {
+        return Lists.newArrayList(
+            aBlockSetDescription(UUID.randomUUID(), MapUtility.<String, String>toMap("keyOne", "valueOne")),
+            aBlockSetDescription(UUID.randomUUID(), MapUtility.<String, String>toMap("keyTwo", "valueTwo")),
+            aBlockSetDescription(UUID.randomUUID(), MapUtility.<String, String>toMap("keyOne", "valueOne", "keyThree", "valueThree"))
+        );
+    }
+
+    private PeriodicEntity aPeriodicEntity(final PeriodicDescription description)
+    {
+        final PeriodicData periodicData = PeriodicData.fromBlockSetId(EXPECTED_BLOCKSET_ID);
+        return new PeriodicEntity(description, periodicData);
+    }
+
+    private Function<PeriodicDescription, PeriodicEntity> periodicDescriptionTransformer()
+    {
+        return new Function<PeriodicDescription, PeriodicEntity>()
+        {
+            public PeriodicEntity apply(final PeriodicDescription from)
+            {
+                return new PeriodicEntity(from, PeriodicData.fromBlockSetId(EXPECTED_BLOCKSET_ID));
+            }
+        };
+    }
+
+    private Function<BlockSetDescription, BlockSetEntity> blockSetDescriptionTransformer()
+    {
+        return new Function<BlockSetDescription, BlockSetEntity>()
+        {
+            public BlockSetEntity apply(final BlockSetDescription from)
+            {
+                // TODO - find a way to throw an exception from function.
+                BlockSetEntity blockSetEntity = null;
+                try
+                {
+                    blockSetEntity = new BlockSetEntity(from, aBlockSetInputStream());
+                }
+                catch (IOException ioe)
+                {
+
+                }
+                return blockSetEntity;
+            }
+        };
+    }
+
+    private PeriodicDescription.Builder aDescriptionBuilder()
+    {
+        return new PeriodicDescription.Builder().streamId(UUID.randomUUID()).metering(MeteringType.FRONT_LOADED).insertEvery(5);
+    }
+
+    private BlockSetDescription aBlockSetDescription(final UUID uuid, final Map<String, String> properties)
+    {
+        return new BlockSetDescription.Builder().id(uuid).addBlockDescriptors(Lists.newArrayList(new com.ccadllc.firebird.vms.dssrm.core.BlockDescriptor(1,10))).addProperties(properties).build();
+    }
+
+    private InputStream aBlockSetInputStream()
+    {
+        final byte[] buf = {(byte)0x00, (byte)0x01, (byte)0x02, (byte)0x03, (byte)0x04, (byte)0x05, (byte)0x06, (byte)0x07, (byte)0x08, (byte)0x09 };
+        return new ByteArrayInputStream(buf);
+    }
+
+
+}

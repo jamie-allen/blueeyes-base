@@ -1,0 +1,113 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.provisioning.facade.impl;
+
+import java.io.IOException;
+
+/**
+ * MX Bean declaration for the DSS manual testing tool.
+ */
+public interface DssManualTestToolMXBean
+{
+    /**
+     * @param pidMappings pid to standalone stream mappings for the route; must be entered as space-delimited key/value pairs; multiple entries must be separated by a space
+     * @param port for the route
+     * @return the unique identifier of the route
+     */
+    long establishUdpMpeg2RouteWithPidMappings(String pidMappings, int port) throws IOException;
+
+    /**
+     * @param transportStreamIds of the transport streams for the route; multiple entries must be entered as space-delimited numeric values
+     * @param port for the route
+     * @return the unique identifier of the route
+     */
+    long establishUdpMpeg2RouteWithTransportStreamIds(String transportStreamIds, int port) throws IOException;
+
+    /**
+     * @param streamIds of the standalone streams for the route; multiple entries must be entered as space-delimited numeric values
+     * @param port for the route
+     * @return the unique identifier of the route
+     */
+    long establishUdpBlockRoute(String streamIds, int port) throws IOException;
+
+    /**
+     * @param pidMappings pid to standalone stream mappings for the route; must be entered as space-delimited key/value pairs; multiple entries must be separated by a space
+     * @return the unique identifier of the route
+     */
+    long establishTcpMpeg2RouteWithPidMappings(String pidMappings) throws IOException;
+
+    /**
+     * @param transportStreamIds of the transport streams for the route; multiple entries must be entered as space-delimited numeric values
+     * @return the unique identifier of the route
+     */
+    long establishTcpMpeg2RouteWithTransportStreamIds(String transportStreamIds) throws IOException;
+
+    /**
+     * @param streamIds of the standalone streams for the route; multiple entries must be entered as space-delimited numeric values
+     * @return the unique identifier of the route
+     */
+    long establishTcpBlockRoute(String streamIds) throws IOException;
+
+    /**
+     * @param destinations of the transport stream; entries must be entered as space-delimited IP address and port values; multiple entries must be separated by a space
+     * @param networkPid of the transport stream
+     * @param reservedPidRanges of the transport stream; entries must be entered as space-delimited low and high range values; multiple entries must be separated by a space
+     * @param reservedProgramNumberRanges of the transport stream; entries must be entered as space-delimited low and high range values; multiple entries must be separated by a space
+     * @return the unique identifier of the transport stream
+     */
+    int createMpeg2TransportStream(String destinations, int networkPid, String reservedPidRanges, String reservedProgramNumberRanges);
+
+    /**
+     * @param transportStreamId for the ancillary stream
+     * @param pid of the ancillary stream
+     * @param maxAverageRate quality of service value for the ancillary stream
+     * @param maxBurstSize quality of service value for the ancillary stream
+     * @param maxShapingLatency quality of service value for the ancillary stream
+     * @return the unique identifier of the ancillary stream
+     */
+    long addAncillaryStream(int transportStreamId, int pid, int maxAverageRate, int maxBurstSize, int maxShapingLatency);
+
+    /**
+     * @param transportStreamId for the component stream
+     * @param programNumber for the component stream
+     * @param componentStreamType of the component stream
+     * @param maxAverageRate quality of service value for the component stream
+     * @param maxBurstSize quality of service value for the component stream
+     * @param maxShapingLatency quality of service value for the component stream
+     * @return the unique identifier of the component stream
+     */
+    long addComponentStream(int transportStreamId, int programNumber, int componentStreamType,
+        int maxAverageRate, int maxBurstSize, int maxShapingLatency);
+
+    /**
+     * @param transportStreamId for the program
+     * @param programNumber to be used when adding the program; value can be null if the program number is to be derived by the domain
+     * @return the program number of the added program
+     */
+    int addProgram(int transportStreamId, Integer programNumber);
+
+    /**
+     * @param transportStreamId of the program to delete
+     * @param programNumber of the program to delete
+     */
+    void deleteProgram(int transportStreamId, int programNumber);
+
+    /**
+     * @param transportStreamId of the transport stream to delete
+     */
+    void deleteTransportStream(int transportStreamId);
+
+    /**
+     * Adds a periodic.  Note that the periodic created will have a start time of now, a stop time of never, a fixed
+     * transmission cycle of 5 and a fixed metering type of front-loaded.
+     *
+     * @param streamId of the stream through which the periodic data will be sent
+     * @param blockData to be sent by the periodic
+     * @return the unique identifier of the periodic
+     */
+    long addPeriodic(long streamId, String blockData);
+
+    /**
+     * @param streamId of the stream to delete
+     */
+    void deleteStream(long streamId);
+}

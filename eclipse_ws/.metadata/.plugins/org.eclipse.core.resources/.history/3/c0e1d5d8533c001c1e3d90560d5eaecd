@@ -1,0 +1,161 @@
+companyName=Combined Conditional Access Development, LLC
+productName=DAC 6000
+copyrightYears=2005-2007
+
+events=Events
+about=About
+logout=Logout
+help=Help
+allRadds=All Radds
+tableNoEntries=No entries.
+navigationHomeCaption=Home
+newDevice=New Device
+
+notAvailable=Not Available
+notAvailableLabel=Not Available
+
+jmsMessageExceptionOccuredSummary=Error occurred sending message.
+jmsMessageExceptionOccuredDetail=Error code received is: {0}.
+jmsMessageTimeoutExceptionOccurSummary=Timed out waiting for server to respond.
+jmsMessageTimeoutExceptionOccurDetail=The server took longer than the maximum amount of time to respond to this message.
+jmsMessageConnectionException=JCH is not running or is not connected to the DAC.
+jmsMessageConnectionException_detail=
+
+navigationHomeFaultCaption=Alarm Summary
+navigationHomePerformanceCaption=Performance
+navigationHomeOperationsCaption=Operations
+
+navigationChannelsCaption=Channels
+navigationChannelsLineupsCaption=Lineups
+navigationChannelsLogicalChannelMapsCaption=Channel Maps
+navigationChannelsPlantsCaption=Plants
+
+navigationConsumerCaption=Consumer
+navigationConsumerTerminalsCaption=Terminals
+navigationConsumerAttributesCaption=Attributes
+navigationConsumerMessagesCaption=Messages
+navigationConsumerOperationsCaption=Operations
+navigationConsumerTerminalConversionsCaption=Terminal Conversions
+
+navigationContentCaption=Content
+navigationContentSourcesCaption=Sources
+navigationContentProvidersCaption=Providers
+navigationContentServicesCaption=Services
+navigationContentProgramsCaption=Programs
+navigationContentPackagesCaption=Packages
+navigationContentUserChannelSetCaption=User Defined Channels
+navigationContentEasCaption=EAS
+navigationContentResourcesCaption=Resources
+navigationContentPreviewCaption=Free Preview
+
+navigationTopologyCaption=Topology
+navigationTopologyDevicesCaption=Devices
+navigationTopologyDeviceLinksCaption=Device Links
+navigationTopologyDeviceLocationsCaption=Device Attributes
+navigationTopologyMulticast16Caption=Multicast16 Sets
+navigationTopologyCarrierDefinitionCaption=Carrier Definitions
+navigationTopologyHeadendsCaption=Headends
+navigationTopologyDownstreamPlantsCaption=DSPs
+navigationTopologyUpstreamPlantsCaption=USPs
+
+navigationCodeDownloadCaption=Code Download
+navigationCodeDownloadObjectsCaption=Objects
+navigationCodeDownloadDecoderCaption=Decoder Conditional
+navigationCodeDownloadCodeSuiteCaption=Code Suite
+navigationCodeDownloadAssignmentsCaption=Assignments
+navigationCodeDownloadWizardCaption=Code Download Wizard
+navigationOcap=OCAP
+
+navigationDataCaption=Data
+navigationDataSavedReportDefinitionsCaption=Saved Reports
+navigationDataReportsCaption=Reports
+navigationDataReportScheduleCaption=Report Schedule
+navigationDataImportCaption=Import
+navigationDataExportCaption=Export
+
+navigationAdministrationCaption=Admin
+navigationAdministrationTimeZoneCaption=Time Zone
+navigationAdministrationAccountManagementCaption=Account Management
+navigationAdministrationGroupsCaption=Groups
+
+navigationAdministrationStylesSchemeSelectionCaption=Styles Scheme Selection
+
+navigationSecurityCaption=Security
+navigationSecurityUnitKeyListStatusCaption=Unit Key List Status
+navigationSecurityGroupConfigurationRequestCaption=GCR
+navigationSecurityAnalogKeysCaption=Analog Keys
+navigationSecurityOperationsCaption=Operations
+
+titleChannelsOverview=Channels
+titleCompareVirtualChannelMaps=Compare Virtual Channel Maps
+titleCompareLineups=Compare Lineups
+
+deployButton=Deploy
+recalculateSourceResolutionsButton=Recalculate Resolutions
+
+rebootButton=Reboot
+
+addNewService=Add Service
+confirmDeleteItemsPrompt=Are you sure you wish to delete these items.
+noDeleteItemsErrorMessage=There are no items selected for deletion.
+deleteItemFailure=A delete operation has failed. ${deleteItem} has not been deleted.
+modifyItemFailure=A modify operation has failed. ${modifyItem} has not been modified.
+
+cannotSaveErrorSummary=Cannot save.
+inEditModeErrorDetails=One or more table entries is being edited. Please save the entry or cancel the changes.
+
+conflicted=Conflicted
+conflictedIconAltText=Conflicted
+notConflictedIconAltText=Not Conflicted
+loadingDataErrorMessage=The data on this page has expired. Please use the navigation buttons above to navigate to another page.
+useNavigationButtonsMessage=Please use the navigation buttons above to navigate to another page.
+noTableEntriesSelectedError=No table entries have been selected.
+lineupIncompleteInfoMessage=This lineup is incomplete possibly due to an incomplete associated channel map.
+lineupPendingMapLinkInfoMessage=This lineup has no associated channel maps.
+lineupNeverDeployedInfoMessage=This lineup has not been deployed.
+lineupRedeployNeededInfoMessage=Changes have been made to this lineup and it needs to be redeployed in order to realize those changes.
+lineupNotDeployableInfoMessage=This lineup is not deployable in its current state.
+lineupNotDeployableNoMapsInfoMessage=There are no channel maps associated with this lineup.
+lineupNotDeployableNoDistributionsInfoMessage=There are no distributions associated with any channel map that is associated with this lineup. Check the configuration statuses on the channel maps below.
+lineupNotDeployableChannelNumberOrSourceConflictInfoMessage=There is a conflicting channel number or unresolved source in a channel map that is associated with this lineup.
+
+ipAddressInvalidValidationMessage=Invalid IP Address ${ipAddress}. Must be in the form XXX.XXX.XXX.XXX, where each grouping of XXX is between 0 and 255.
+unitAddressValidationMessage=Invalid Unit Address ${unitAddress}. Must be in the form XXX-XXXXX-XXXXX-XXX, where the last 3 digits are the CRC-8 checksum.
+tunedChannelValidationRegExp=[AaBb][0-9]{1,3}
+tunedChannelInvalidMessage=Invalid tuned channel number: ${tunedChannel}.
+tunedChannelShouldBeOfFormatMessage=Tuned channel number should be of format A## or B##.
+
+channelMapIncompleteInfoMessage=This channel map is incomplete possibly due to an unresolved source on an associated distribution.
+channelMapPendingDistributionLinkInfoMessage=This map has no distributions associated with it.
+channelMapNeverDeployedInfoMessage=This channel map has not been deployed.
+channelMapRedployNeededInfoMessage=Changes have been made to this channel map and it needs to be redeployed in order to realize those changes.
+channelMapNotDeployableInfoMessage=This channel map is not deployable in its current state.
+channelMapNotDeployableNoDistributionsInfoMessage=There are no distributions associated with this channel map.
+channelMapVirtualChannelConflictInfoMessage=There are conflicting channel numbers in this channel map.
+
+channelsLogicalChannelMapDetailsDistributionsConfigurationStatusUnavailable=Unavailable
+onBusinessSystemRequiredValidation=A service requires that at least one Business System be assigned to it.
+
+com.ccadllc.commons.RepeatCriteria.Days=Days
+com.ccadllc.commons.RepeatCriteria.Hours=Hours
+
+rpd.channel=Channel
+rpd.frequencyRatingInMHz=MHz
+
+defaultDateTimePattern=MM/dd/yyyy hh:mm a
+
+errorMessage.data.cannotChangeExistingEntry=You cannot change an existing entry.  Only new entries can be saved.
+
+invalidByteDotFormatError=Invalid Byte-Dot format. Please use '###.###' format.
+invalidDateTimeFormat=Invalid Date Format
+
+# Graph Layout Text.
+graphGroupingFilterLabel=Grouping:
+graphFilterSetLabel=FilterBy:
+graphRefreshButtonLabel=Refresh
+
+purchaseStartDateLabel=Purchase Start Date
+purchaseEndDateLabel=Purchase End Date
+
+#properties for successful save
+saveSuccessful=Saved${objectName} successfully.

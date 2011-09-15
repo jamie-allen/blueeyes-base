@@ -1,0 +1,15 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dkssimulator.core;
+
+import org.springframework.jmx.export.annotation.ManagedOperation;
+import org.springframework.jmx.export.annotation.ManagedResource;
+
+@ManagedResource(objectName="DKS Simulator:type=Configuration", description="Manager of all configurable data in the DKS Simulator")
+public class DksSimulatorJmxFacade
+{
+    @ManagedOperation(description = "Resets the DEE address list to the original eight active unit addresses, and sets the current position back to 0.")
+    public void resetDees() 
+    {
+        DeeManager.resetDees();
+    }
+}

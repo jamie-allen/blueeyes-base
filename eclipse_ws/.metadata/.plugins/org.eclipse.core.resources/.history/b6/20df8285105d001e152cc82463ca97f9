@@ -1,0 +1,76 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter;
+
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.createRouteMxBeanName;
+
+import java.util.concurrent.atomic.AtomicLong;
+
+import com.ccadllc.firebird.dss.server.common.MBeanServerUtility;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.BlockStatistics;
+import com.ccadllc.firebird.vms.common.packetfiltering.ForwardingPacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilter;
+
+import net.jcip.annotations.ThreadSafe;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+@ThreadSafe
+public final class BlockStatisticsCollector extends ForwardingPacketFilter
+{
+    private final String objectName;
+    private final Object lock = new Object();
+    private final AtomicLong blocksInserted = new AtomicLong();
+
+    private final Logger logger = LoggerFactory.getLogger(BlockStatisticsCollector.class);
+
+    public BlockStatisticsCollector(final PacketFilter sink, final RouteSnapshot route, final String objectNameDescription)
+    {
+        super(sink);
+        objectName = createRouteMxBeanName(route, objectNameDescription);
+        logger.debug(String.format("Registering BlockStatisticsCollector for %s", objectName));
+        MBeanServerUtility.register(new BlockStatistics(this), objectName);
+    }
+
+    @Override
+    public boolean insert(final byte[] block)
+    {
+        final boolean inserted = sink().insert(block);
+
+        synchronized (lock)
+        {
+            incrementBlockInserted();
+        }
+
+        return inserted;
+    }
+
+    @Override
+    public void dispose()
+    {
+        synchronized (lock)
+        {
+            MBeanServerUtility.unregister(objectName);
+            super.dispose();
+        }
+    }
+    public Long getBlocksInserted()
+    {
+        return blocksInserted.get();
+    }
+
+    public void resetCounters()
+    {
+        synchronized (lock)
+        {
+            blocksInserted.set(0L);
+        }
+    }
+
+    private void incrementBlockInserted()
+    {
+        blocksInserted.incrementAndGet();
+        logger.debug("Incrementing blocks inserted, value: {} for collector {}", blocksInserted.get(), objectName);
+    }
+}

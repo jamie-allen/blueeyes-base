@@ -1,0 +1,234 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.vms.dssrm.provisioning;
+
+import java.util.Date;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.EnumType;
+import javax.persistence.Enumerated;
+import javax.persistence.FetchType;
+import javax.persistence.Id;
+import javax.persistence.JoinColumn;
+import javax.persistence.JoinTable;
+import javax.persistence.PostPersist;
+import javax.persistence.PostRemove;
+import javax.persistence.Table;
+
+import com.ccadllc.firebird.core.base.common.util.osgi.TransactionalEventDispatcher;
+import com.ccadllc.firebird.dss.common.datatypes.MeteringType;
+import com.ccadllc.firebird.dss.common.datatypes.RouteDataType;
+import com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType;
+import com.ccadllc.firebird.dss.server.configuration.route.domain.PidMapping;
+import com.ccadllc.firebird.vms.dssrm.core.PeriodicData;
+import com.ccadllc.firebird.vms.dssrm.core.PeriodicDataType;
+import com.ccadllc.firebird.vms.dssrm.core.PeriodicDescription;
+
+import org.hibernate.annotations.Cascade;
+import org.hibernate.annotations.CollectionOfElements;
+import org.hibernate.annotations.MapKey;
+import org.hibernate.annotations.Type;
+import org.springframework.beans.factory.annotation.Configurable;
+import org.springframework.util.CollectionUtils;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
+
+/**
+ * Represents a UDP route in the DSSRM.
+ */
+@Entity(name = "DssrmUdpRoute")
+@Table(name = "dssrm_udp_route")
+@Configurable
+public class UdpRouteEntity
+{
+    /** Key for storing the route snapshot when sending an event to the event admin service. */
+    public static final transient String ROUTE_SNAPSHOT_KEY = "routeSnapshot";
+
+    private transient TransactionalEventDispatcher eventDispatcher;
+
+    @Id
+    @Type(type = "com.ccadllc.firebird.core.database.persistence.UUIDUserType")
+    private final UUID id;
+
+    @Column(name = "handle")
+    @Type(type = "com.ccadllc.firebird.core.database.persistence.UUIDUserType")
+    private final UUID handle;
+
+    @Column(name = "stream_id", nullable = false)
+    @Type(type = "com.ccadllc.firebird.core.database.persistence.UUIDUserType")
+    private final UUID streamId;
+
+    @Column(name = "port", nullable = false)
+    private final int port;
+
+    @Column(name = "transport_protocol_type", nullable = false)
+    @Enumerated(EnumType.STRING)
+    private TransportProtocolType transportProtocolType;
+
+    @Column(name = "route_data_type", nullable = false)
+    @Enumerated(EnumType.STRING)
+    private RouteDataType routeDataType;
+
+    @CollectionOfElements(fetch = FetchType.EAGER)
+    @Cascade({org.hibernate.annotations.CascadeType.ALL })
+    @JoinTable(name = "route_pid_mapping", joinColumns = {@JoinColumn(name = "route_id") })
+    private final Set<PidMapping> pidMappings = Sets.newHashSet();
+
+    @CollectionOfElements(fetch = FetchType.EAGER)
+    @JoinTable(name = "route_stream", joinColumns = {@JoinColumn(name = "route_id") })
+    @Column(name = "stream_id")
+    private final Set<Long> streamIds = Sets.newHashSet();
+
+    @CollectionOfElements(fetch = FetchType.EAGER)
+    @JoinTable(name = "route_property", joinColumns = { @JoinColumn(name = "route_id") })
+    @MapKey(columns = { @Column(name = "key") })
+    @Column(name = "value")
+    private final Map<String, String> properties = Maps.newHashMap();
+
+    @SuppressWarnings("unused")
+    protected UdpRouteEntity()
+    {
+        id = null;
+        dataType = null;
+        data = null;
+        handle = null;
+        streamId = null;
+        meteringType = null;
+        insertionRate = 0;
+        startTime = null;
+        stopTime = null;
+    }
+
+    public UdpRouteEntity(final PeriodicDescription description, final PeriodicData data)
+    {
+        Preconditions.checkNotNull(description);
+        Preconditions.checkNotNull(data);
+        id = description.getId();
+        meteringType = description.getMetering();
+        insertionRate = description.getInsertionRate();
+        startTime = description.getStartTime();
+        stopTime = description.getStopTime();
+        streamId = description.getStreamId();
+
+        if (!CollectionUtils.isEmpty(description.getProperties()))
+        {
+            properties.putAll(description.getProperties());
+        }
+
+        switch (data.getDataType())
+        {
+            case DATA_BLOCKS:
+                this.data = PeriodicDataUtility.convertByteArrayToString((byte[][])data.getData());
+                handle = null;
+                break;
+            case FUNCTION:
+                this.data = (String)data.getData();
+                handle = null;
+                break;
+            case STREAMED_BLOCK_SET:
+                // TODO: should we verify blockset UUID exists in blockset database table?
+                handle = (UUID)data.getData();
+                this.data = null;
+                break;
+            default:
+                throw new IllegalArgumentException("Periodic data is of an unknown type");
+        }
+        dataType = data.getDataType();
+    }
+
+    public void setEventDispatcher(final TransactionalEventDispatcher eventDispatcher)
+    {
+        this.eventDispatcher = eventDispatcher;
+    }
+
+    public UUID getId()
+    {
+        return id;
+    }
+
+    public int getInsertionRate()
+    {
+        return insertionRate;
+    }
+
+    public MeteringType getMeteringType()
+    {
+        return meteringType;
+    }
+
+    public UUID getStreamId()
+    {
+        return streamId;
+    }
+
+    public PeriodicDataType getDataType()
+    {
+        return dataType;
+    }
+
+    public String getData()
+    {
+        return data;
+    }
+
+    public UUID getHandle()
+    {
+        return handle;
+    }
+
+    public Date getStartTime()
+    {
+        return startTime;
+    }
+
+    public Date getStopTime()
+    {
+        return stopTime;
+    }
+
+    @PostPersist
+    public void persisted()
+    {
+        eventDispatcher.postEvent(new Events.PeriodicShouldExistEvent(snapshot()));
+    }
+
+    @PostRemove
+    public void removed()
+    {
+        eventDispatcher.postEvent(new Events.PeriodicShouldNotExistEvent(snapshot()));
+    }
+
+    public Map<String, String> getProperties()
+    {
+        return properties;
+    }
+
+    public PeriodicSnapshot snapshot()
+    {
+        final PeriodicData dataPeriodic;
+        switch (dataType)
+        {
+            case FUNCTION:
+                dataPeriodic = PeriodicData.fromJRubyScript(data);
+                break;
+            case STREAMED_BLOCK_SET:
+                dataPeriodic = PeriodicData.fromBlockSetId(handle);
+                break;
+            case DATA_BLOCKS:
+                // TODO this is duplicated code in PeriodicDataUtility, which we should move to a common location!
+                dataPeriodic = PeriodicData.fromBlocks(PeriodicDataUtility.convertStringToByteArray(data));
+                break;
+            default:
+                throw new UnsupportedOperationException("An unrecognized periodic data type was detected.");
+        }
+        return new PeriodicSnapshot(new PeriodicDescription.Builder().id(id).streamId(streamId)
+            .metering(meteringType).insertEvery(insertionRate).build(), dataPeriodic);
+    }
+}

@@ -1,0 +1,51 @@
+/*
+ * Copyright 2008 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.stream.manager.impl;
+
+import net.jcip.annotations.Immutable;
+
+import com.google.common.base.Preconditions;
+
+/** Default implementation of {@code Mpeg2Encoder}. */
+@Immutable
+public final class DefaultMpeg2Encoder implements Mpeg2Encoder
+{
+    @Override
+    public byte[] encode(final Mpeg2Packet packet)
+    {
+        Preconditions.checkNotNull(packet);
+        Preconditions.checkArgument(packet.getPayload().length == Mpeg2Packet.PAYLOAD_SIZE_IN_BYTES, "Malformed packet -- payload must be exactly 184 bytes.");
+
+        // 4 byte MPEG-2 packet header format: x represents a bit, if not specified, bit set to 0
+        // xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx
+        // |-sync--|  | |------pid-----|   -- |--|
+        //            |                     |   4-bit continuity counter
+        //            |                   2-bit adaptation field control
+        //         1-bit payload unit start indicator
+        //
+        // Turn checkstyle off so magic numbers aren't flagged
+        // CHECKSTYLE:OFF
+        final int payloadUnitStartIndicatorInPosition = (packet.isPayloadUnitStartIndicator() ? 1 : 0) << 14;
+        final int pidInPosition = packet.getPid();
+        final int middleTwoBytes = 0x0000FFFF & (payloadUnitStartIndicatorInPosition | pidInPosition);
+        final int adaptationFieldControlInPosition = 1 << 4;
+        final int continuityCounterInPosition = packet.getContinuityCounter();
+        final byte lastByte = (byte)(0x000000FF & (adaptationFieldControlInPosition | continuityCounterInPosition));
+
+        final byte[] encoded = new byte[Mpeg2Packet.PACKET_SIZE_IN_BYTES];
+        encoded[0] = Mpeg2Packet.SYNC_BYTE;
+        encoded[1] = (byte)(0x000000FF & (middleTwoBytes >> 8));
+        encoded[2] = (byte)(0x000000FF & middleTwoBytes);
+        encoded[3] = lastByte;
+
+        final byte[] payload = packet.getPayload();
+        for (int i = 0; i < payload.length; ++i)
+        {
+            encoded[i + 4] = payload[i];
+        }
+        // CHECKSTYLE:ON
+
+        return encoded;
+    }
+}

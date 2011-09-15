@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Rename local variable &apos;UUIds&apos; in &apos;com.ccadllc.firebird.vms.test.controllers.ControllerUtility.convertStringToUUIDs(...)&apos; to &apos;uuids&apos;&#x0A;- Original project: &apos;ccad-firebird-vms-test-controllers&apos;&#x0A;- Original element: &apos;com.ccadllc.firebird.vms.test.controllers.ControllerUtility.convertStringToUUIDs(String).UUIds&apos;&#x0A;- Renamed element: &apos;UUIds&apos;&#x0A;- Update references to refactored element" description="Rename local variable &apos;UUIds&apos;" id="org.eclipse.jdt.ui.rename.local.variable" input="/src\/main\/java&lt;com.ccadllc.firebird.vms.test.controllers{ControllerUtility.java[ControllerUtility~convertStringToUUIDs~QString;@UUIds!2850!2897!2866!2870!QSet\&lt;QUUID;&gt;;" name="uuids" references="true" stamp="1276719071838" version="1.0"/>
+</session>

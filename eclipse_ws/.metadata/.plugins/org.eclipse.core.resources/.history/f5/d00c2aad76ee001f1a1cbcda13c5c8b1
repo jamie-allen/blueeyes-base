@@ -1,0 +1,41 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.core.base.common.util;
+
+import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang.WordUtils;
+
+/**
+ * Utility methods for humanizing text strings.
+ */
+public final class TextParsingUtility
+{
+    // Private constructor to prevent instantiation
+    private TextParsingUtility()
+    {
+    }
+
+    /**
+     * This method takes an upper case string separated by underscores. It removes the underscores and converts all the whitespace
+     * separated words in the string into capitalized words, that is each word is made up of a title case character and then a
+     * series of lower case characters.
+     *
+     * @param upperCaseString the upper case string to humanize.
+     * @return humanized string.
+     */
+    public static String humanizeUpperCaseTextString(final String upperCaseString)
+    {
+        final String[] splitUpperCaseStringArray = StringUtils.splitByWholeSeparator(upperCaseString, "_");
+        final String toUpperCaseString = StringUtils.join(splitUpperCaseStringArray, " ");
+        return WordUtils.capitalizeFully(toUpperCaseString);
+    }
+
+    public static boolean validateBooleanStringValue(final String booleanValue)
+    {
+        if (booleanValue.toUpperCase().equals(Boolean.TRUE.toString()) || booleanValue.toUpperCase().equals(Boolean.FALSE.toString()))
+        {
+            return Boolean.valueOf(booleanValue);
+        }
+
+        throw new IllegalArgumentException(String.format("Value %s does not translate to valid Boolean true or false value.", booleanValue));
+    }
+}

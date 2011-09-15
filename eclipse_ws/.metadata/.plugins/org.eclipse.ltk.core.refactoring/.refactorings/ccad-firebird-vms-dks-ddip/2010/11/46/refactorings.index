@@ -1,0 +1,6 @@
+1289510521495	Extract method 'verifySecurityDomain'
+1289511584721	Rename local variable 'keyActive'
+1289511597603	Rename local variable 'keyValid'
+1289511965954	Rename local variable 'sharedKey'
+1289573640562	Rename local variable 'generateNewSharedKeyNode'
+1289585010044	Rename local variable 'activeNode'

@@ -1,0 +1,291 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerUnitTestUtility.createPidStreamMappings;
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerUnitTestUtility.createStreamIdsList;
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerUnitTestUtility.createTcpMpeg2RouteSnapshot;
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerUnitTestUtility.createUdpBlockRouteSnapshot;
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerUnitTestUtility.createUdpMpeg2RouteSnapshot;
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerUnitTestUtility.getStubbedNotifier;
+import static org.easymock.EasyMock.createControl;
+import static org.easymock.EasyMock.expect;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+
+import java.io.IOException;
+import java.util.Dictionary;
+import java.util.Hashtable;
+import java.util.List;
+import java.util.Map;
+
+import com.ccadllc.firebird.dss.server.common.OsgiEventPropertyKeys;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.JmxRouteNotificationManager;
+import com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+
+import org.easymock.EasyMock;
+import org.easymock.IMocksControl;
+import org.osgi.service.event.Event;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+import org.testng.v6.Maps;
+
+@Test
+public class UdpRouteManagerTest
+{
+    private IMocksControl mocks;
+    private StreamManager mockStreamManager;
+    private RealTimeSnapshotManager mockRealTimeSnapshotManager;
+    private RouteControllerFactory mockRouteControllerFactory;
+    private UdpRouteManager udpRouteManager;
+
+    @BeforeMethod
+    public void setUp() throws IOException
+    {
+        mocks = createControl();
+        mockStreamManager = mocks.createMock(StreamManager.class);
+        mockRealTimeSnapshotManager = mocks.createMock(RealTimeSnapshotManager.class);
+        mockRouteControllerFactory = mocks.createMock(RouteControllerFactory.class);
+        mocks.makeThreadSafe(true);
+        createUdpRouteManager(mockRealTimeSnapshotManager, mockStreamManager);
+    }
+
+    @AfterMethod
+    public void tearDown()
+    {
+        mocks.reset();
+    }
+
+    public void testSnapshotManagerRefreshEventWhen_NoRoutesReceived() throws Exception
+    {
+        final Map<Long, RouteSnapshot> map = Maps.newHashMap();
+        expect(mockRealTimeSnapshotManager.getRoutes()).andReturn(map).anyTimes();
+        mocks.replay();
+
+        final Event event = createEvent(RealTimeSnapshotManager.SNAPSHOT_MANAGER_REFRESH_EVENT);
+        assertThat(getRouteControllersCache().size(), is(0));
+        udpRouteManager.handleEvent(event);
+        assertThat(getRouteControllersCache().size(), is(0));
+        mocks.verify();
+    }
+
+    public void testSnapshotManagerRefreshEventWhen_SeveralRoutesReceived() throws Exception
+    {
+        final UdpRouteController routeController = mocks.createMock(UdpRouteController.class);
+        EasyMock.expect(mockRouteControllerFactory.createUdpRouteControllerAndExposeManagementInfo((RouteSnapshot)EasyMock.notNull(), (StreamManager)EasyMock.notNull(), (JmxRouteNotificationManager)EasyMock.notNull()))
+            .andReturn(routeController).times(getAllRoutes().size());
+        expect(mockRealTimeSnapshotManager.getRoutes()).andReturn(getAllRoutes()).anyTimes();
+        mocks.replay();
+
+        final Event event = createEvent(RealTimeSnapshotManager.SNAPSHOT_MANAGER_REFRESH_EVENT);
+        assertThat(getRouteControllersCache().size(), is(0));
+        udpRouteManager.handleEvent(event);
+        assertThat(getRouteControllersCache().size(), is(4));
+        mocks.verify();
+    }
+
+    public void testRouteEstablishEventWhen_RouteControllerForRouteDoesNotAlreadyExist() throws Exception
+    {
+        final RouteSnapshot route = createUdpMpeg2RouteSnapshot(1L, 5001, createPidStreamMappings());
+        final UdpRouteController routeController = mocks.createMock(UdpRouteController.class);
+        EasyMock.expect(mockRouteControllerFactory.createUdpRouteControllerAndExposeManagementInfo(EasyMock.eq(route), (StreamManager)EasyMock.notNull(), (JmxRouteNotificationManager)EasyMock.notNull()))
+            .andReturn(routeController);
+
+        mocks.replay();
+        final Event event = createEvent(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_ESTABLISH_EVENT, route);
+        assertThat(getRouteControllersCache().size(), is(0));
+        udpRouteManager.handleEvent(event);
+        assertThat(getRouteControllersCache().size(), is(1));
+        mocks.verify();
+    }
+
+    public void testRouteEstablishEventWhen_RouteControllerForRouteAlreadyExists() throws Exception
+    {
+        final RouteSnapshot route = createUdpMpeg2RouteSnapshot(1L, 5001, createPidStreamMappings());
+        final UdpRouteController routeController = mocks.createMock(UdpRouteController.class);
+        EasyMock.expect(mockRouteControllerFactory.createUdpRouteControllerAndExposeManagementInfo(EasyMock.eq(route), (StreamManager)EasyMock.notNull(), (JmxRouteNotificationManager)EasyMock.notNull()))
+            .andReturn(routeController);
+
+        mocks.replay();
+        final Event event = createEvent(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_ESTABLISH_EVENT, route);
+        udpRouteManager.handleEvent(event);
+        assertThat(getRouteControllersCache().size(), is(1));
+
+        udpRouteManager.handleEvent(event);
+        assertThat(getRouteControllersCache().size(), is(1));
+        mocks.verify();
+    }
+
+    public void testRouteEstablishEventWhen_RouteDataTypeIsBlock() throws Exception
+    {
+        final RouteSnapshot route = createUdpBlockRouteSnapshot(1L, 5001, createStreamIdsList());
+        final UdpRouteController routeController = mocks.createMock(UdpRouteController.class);
+        EasyMock.expect(mockRouteControllerFactory.createUdpRouteControllerAndExposeManagementInfo(EasyMock.eq(route), (StreamManager)EasyMock.notNull(), (JmxRouteNotificationManager)EasyMock.notNull()))
+            .andReturn(routeController);
+
+        mocks.replay();
+        final Event event = createEvent(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_ESTABLISH_EVENT, route);
+        assertThat(getRouteControllersCache().size(), is(0));
+        udpRouteManager.handleEvent(event);
+        assertThat(getRouteControllersCache().size(), is(1));
+        mocks.verify();
+    }
+
+    public void testRouteUpdateEventWhen_RouteDataTypeIsMpeg2() throws Exception
+    {
+        final RouteSnapshot route = createUdpMpeg2RouteSnapshot(1L, 5001, createPidStreamMappings());
+        final UdpRouteController routeController = mocks.createMock(UdpRouteController.class);
+        EasyMock.expect(mockRouteControllerFactory.createUdpRouteControllerAndExposeManagementInfo(EasyMock.eq(route), (StreamManager)EasyMock.notNull(), (JmxRouteNotificationManager)EasyMock.notNull()))
+            .andReturn(routeController);
+        routeController.update(EasyMock.eq(route));
+
+        mocks.replay();
+        final Event establishEvent = createEvent(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_ESTABLISH_EVENT, route);
+        udpRouteManager.handleEvent(establishEvent);
+        assertThat(getRouteControllersCache().size(), is(1));
+
+        final Event updateEvent = createEvent(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_UPDATE_EVENT, route);
+        udpRouteManager.handleEvent(updateEvent);
+        assertThat(getRouteControllersCache().size(), is(1));
+        mocks.verify();
+    }
+
+    public void testRouteUpdateEventWhen_RouteDataTypeIsBlocks() throws Exception
+    {
+        final RouteSnapshot route = createUdpBlockRouteSnapshot(1L, 5001, createStreamIdsList());
+        final UdpRouteController routeController = mocks.createMock(UdpRouteController.class);
+        EasyMock.expect(mockRouteControllerFactory.createUdpRouteControllerAndExposeManagementInfo(EasyMock.eq(route), (StreamManager)EasyMock.notNull(), (JmxRouteNotificationManager)EasyMock.notNull()))
+            .andReturn(routeController);
+        routeController.update(EasyMock.eq(route));
+
+        mocks.replay();
+        final Event establishEvent = createEvent(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_ESTABLISH_EVENT, route);
+        udpRouteManager.handleEvent(establishEvent);
+        assertThat(getRouteControllersCache().size(), is(1));
+
+        final Event updateEvent = createEvent(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_UPDATE_EVENT, route);
+        udpRouteManager.handleEvent(updateEvent);
+        assertThat(getRouteControllersCache().size(), is(1));
+        mocks.verify();
+    }
+
+    public void testRouteUpdateEventWhen_RouteProtocolTypeIsNotUdp() throws Exception
+    {
+        mocks.replay();
+        final Event updateEvent = createEvent(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_UPDATE_EVENT, createTcpMpeg2RouteSnapshot(1L, 5001, createPidStreamMappings()));
+        assertThat(getRouteControllersCache().size(), is(0));
+        udpRouteManager.handleEvent(updateEvent);
+        assertThat(getRouteControllersCache().size(), is(0));
+        mocks.verify();
+    }
+
+    public void testRouteUpdateEventWhen_RouteControllerForRouteDoesNotAlreadyExists() throws Exception
+    {
+        mocks.replay();
+        final Event updateEvent = createEvent(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_UPDATE_EVENT, createUdpMpeg2RouteSnapshot(1L, 5001, createPidStreamMappings()));
+        udpRouteManager.handleEvent(updateEvent);
+        assertThat(getRouteControllersCache().size(), is(0));
+        mocks.verify();
+    }
+
+    public void testRouteRemoveEventWhen_RouteControllerForRouteAlreadyExistsAndRouteDataTypeIsMpeg2() throws Exception
+    {
+        final RouteSnapshot route = createUdpMpeg2RouteSnapshot(1L, 5001, createPidStreamMappings());
+        final UdpRouteController routeController = mocks.createMock(UdpRouteController.class);
+        EasyMock.expect(mockRouteControllerFactory.createUdpRouteControllerAndExposeManagementInfo(EasyMock.eq(route), (StreamManager)EasyMock.notNull(), (JmxRouteNotificationManager)EasyMock.notNull()))
+            .andReturn(routeController);
+        routeController.shutdown();
+
+        mocks.replay();
+        final Event establishEvent = createEvent(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_ESTABLISH_EVENT, route);
+        assertThat(getRouteControllersCache().size(), is(0));
+        udpRouteManager.handleEvent(establishEvent);
+        assertThat(getRouteControllersCache().size(), is(1));
+
+        final Event removeEvent = createEvent(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_REMOVE_EVENT, route);
+        udpRouteManager.handleEvent(removeEvent);
+        assertThat(getRouteControllersCache().size(), is(0));
+        mocks.verify();
+    }
+
+    public void testRouteRemoveEventWhen_RouteControllerForRouteDoesNotAlreadyExist() throws Exception
+    {
+        final Event removeEvent = createEvent(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_REMOVE_EVENT, createUdpMpeg2RouteSnapshot(1L, 5001, createPidStreamMappings()));
+        assertThat(getRouteControllersCache().size(), is(0));
+        udpRouteManager.handleEvent(removeEvent);
+        assertThat(getRouteControllersCache().size(), is(0));
+    }
+
+    public void testRouteRemoveEventWhen_RouteDataTypeIsBlocks() throws Exception
+    {
+        final RouteSnapshot route = createUdpBlockRouteSnapshot(1L, 5001, createStreamIdsList());
+        final UdpRouteController routeController = mocks.createMock(UdpRouteController.class);
+        EasyMock.expect(mockRouteControllerFactory.createUdpRouteControllerAndExposeManagementInfo(EasyMock.eq(route), (StreamManager)EasyMock.notNull(), (JmxRouteNotificationManager)EasyMock.notNull()))
+            .andReturn(routeController);
+        routeController.shutdown();
+
+        mocks.replay();
+        final Event establishEvent = createEvent(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_ESTABLISH_EVENT, route);
+        assertThat(getRouteControllersCache().size(), is(0));
+        udpRouteManager.handleEvent(establishEvent);
+        assertThat(getRouteControllersCache().size(), is(1));
+
+        final Event removeEvent = createEvent(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_REMOVE_EVENT, route);
+        udpRouteManager.handleEvent(removeEvent);
+        assertThat(getRouteControllersCache().size(), is(0));
+        mocks.verify();
+    }
+
+    public void testRouteRemoveEventWhen_RouteProtocolTypeIsNotUdp() throws Exception
+    {
+        final RouteSnapshot route = createUdpMpeg2RouteSnapshot(1L, 5001, createPidStreamMappings());
+        final Event event = createEvent(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_ESTABLISH_EVENT, route);
+
+        final UdpRouteController routeController = mocks.createMock(UdpRouteController.class);
+        EasyMock.expect(mockRouteControllerFactory.createUdpRouteControllerAndExposeManagementInfo(EasyMock.eq(route), (StreamManager)EasyMock.notNull(), (JmxRouteNotificationManager)EasyMock.notNull()))
+            .andReturn(routeController);
+        mocks.replay();
+        udpRouteManager.handleEvent(event);
+        assertThat(getRouteControllersCache().size(), is(1));
+
+        final Event removeEvent = createEvent(RealTimeSnapshotManager.UDP_ROUTE_SNAPSHOT_REMOVE_EVENT, createTcpMpeg2RouteSnapshot(1L, 5001, createPidStreamMappings()));
+        udpRouteManager.handleEvent(removeEvent);
+        assertThat(getRouteControllersCache().size(), is(1));
+        mocks.verify();
+    }
+
+    private void createUdpRouteManager(final RealTimeSnapshotManager realTimeSnapshotManager, final StreamManager streamManager)
+    {
+        udpRouteManager = new UdpRouteManager(mockRouteControllerFactory, realTimeSnapshotManager, streamManager, getStubbedNotifier());
+    }
+
+    private Map<Long, RouteSnapshot> getAllRoutes()
+    {
+        final Map<Long, RouteSnapshot> routeMap = Maps.newHashMap();
+        routeMap.put(1L, createUdpMpeg2RouteSnapshot(1L, 5001, createPidStreamMappings()));
+        routeMap.put(2L, createUdpBlockRouteSnapshot(2L, 5002, createStreamIdsList()));
+        routeMap.put(4L, createUdpMpeg2RouteSnapshot(4L, 5003, createPidStreamMappings()));
+        routeMap.put(5L, createUdpMpeg2RouteSnapshot(5L, 5004, createPidStreamMappings()));
+        return routeMap;
+    }
+
+    private List<UdpRouteController> getRouteControllersCache()
+    {
+        return udpRouteManager.getRouteControllers();
+    }
+
+    private Event createEvent(final String eventType, final RouteSnapshot route)
+    {
+        final Dictionary<String, RouteSnapshot> dictionary = new Hashtable<String, RouteSnapshot>();
+        dictionary.put(OsgiEventPropertyKeys.ROUTE_SNAPSHOT_KEY, route);
+        return new Event(eventType, dictionary);
+    }
+
+    private Event createEvent(final String eventType)
+    {
+        return new Event(eventType, null);
+    }
+}
+

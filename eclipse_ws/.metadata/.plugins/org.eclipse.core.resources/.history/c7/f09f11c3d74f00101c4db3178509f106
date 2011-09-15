@@ -1,0 +1,249 @@
+/*
+ * Copyright 2010 Combined Conditional Access Development, LLC.
+ */
+
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+
+import java.nio.ByteBuffer;
+import java.util.Arrays;
+import java.util.Collections;
+
+import com.ccadllc.firebird.dss.common.datatypes.RouteDataType;
+import com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.common.SnapshotUtility;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.RouteNotificationHelper;
+
+import org.apache.mina.core.buffer.IoBuffer;
+import org.apache.mina.core.session.DummySession;
+import org.apache.mina.core.session.IoSession;
+import org.apache.mina.filter.codec.ProtocolDecoderOutput;
+import org.easymock.EasyMock;
+import org.easymock.IMocksControl;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+import com.google.common.collect.HashMultimap;
+
+@Test
+public class BlockHeaderDecoderTest
+{
+    private static final byte TYPE1 = (byte)0x50;
+    private static final int SIZE_OF_CONTROL_FLAGS = 1;
+    private static final int SIZE_OF_PID_VALUE = 2;
+    private BlockHeaderDecoder blockHeaderDecoder;
+
+    private IMocksControl mocks;
+    private IoSession session;
+    private ProtocolDecoderOutput output;
+    private RouteNotificationHelper routeNotificationHelper;
+
+    @BeforeMethod
+    public void setUp() throws Exception
+    {
+        mocks = EasyMock.createControl();
+        session = new DummySession();
+        output = mocks.createMock(ProtocolDecoderOutput.class);
+        routeNotificationHelper = EasyMock.createNiceMock(RouteNotificationHelper.class);
+        blockHeaderDecoder = new BlockHeaderDecoder(aRouteSnapshot(), routeNotificationHelper);
+    }
+
+    @AfterMethod
+    public void tearDown() throws Exception
+    {
+        if (blockHeaderDecoder != null)
+        {
+            blockHeaderDecoder.dispose(session);
+            blockHeaderDecoder = null;
+        }
+        session.close(true);
+    }
+    protected byte[] getTestBlockWithHeaderData(final byte headerType, final byte headerLength, final int dataLength, final byte flags, final Integer pid)
+    {
+        // Note: headerLength >= 3 if not pid, >= 5 with pid.
+        final byte[] data = new byte[dataLength];
+        Arrays.fill(data, (byte)0x64);
+        final byte[] block = new byte[data.length + headerLength + 2];
+        int i = 0;
+        block[i++] = headerType;
+        block[i++] = headerLength;
+        block[i++] = (byte)((dataLength >> 8) & 0xFF);
+        block[i++] = (byte)(dataLength & 0x00FF);
+        block[i++] = flags;
+        if (pid != null)
+        {
+            block[i++] = (byte)((pid >> 8) & 0xFF);
+            block[i++] = (byte)(pid & 0xFF);
+        }
+        System.arraycopy(data, 0, block, 2 + headerLength, data.length);
+        return block;
+    }
+    protected byte[] expectedOutForBlockWithHeaderData(final byte headerType, final byte headerLength, final int dataLength, final byte flags, final Integer pid)
+    {
+        // Note: headerLength >= 3 if not pid, >= 5 with pid.
+        final byte[] blockData = new byte[dataLength];
+        Arrays.fill(blockData, (byte)0x64);
+        final ByteBuffer bytes = ByteBuffer.allocate(SIZE_OF_CONTROL_FLAGS + ((pid != null) ? SIZE_OF_PID_VALUE : 0) + dataLength);
+        bytes.put(flags);
+        if (pid != null)
+        {
+            bytes.putShort((short)(pid & 0x1FFF));
+        }
+        bytes.put(blockData);
+        return bytes.array();
+    }
+
+    public void testValidBlockHeader() throws Exception
+    {
+        final IoBuffer in = IoBuffer.wrap(getTestBlockWithHeaderData(TYPE1, (byte)0x05, 1, (byte)0x80, 1503));
+        //output.write(expectedOutForBlockWithHeaderData(TYPE1, (byte)0x05, 1, (byte)0x80, 1503));
+        final byte[] expectedData = expectedOutForBlockWithHeaderData(TYPE1, (byte)0x05, 1, (byte)0x80, 1503);
+        output.write(EasyMock.aryEq(expectedData));
+        mocks.replay();
+        blockHeaderDecoder.decode(session, in, output);
+        mocks.verify();
+    }
+
+    public void testBlockHeaderWithExtraFlags() throws Exception
+    {
+        final IoBuffer in = IoBuffer.wrap(getTestBlockWithHeaderData(TYPE1, (byte)0x05, 10, (byte)0x83, 1503));
+        final byte[] expectedData = expectedOutForBlockWithHeaderData(TYPE1, (byte)0x05, 10, (byte)0x80, 1503);
+        output.write(EasyMock.aryEq(expectedData));
+        mocks.replay();
+        blockHeaderDecoder.decode(session, in, output);
+        mocks.verify();
+    }
+
+    public void testBlockHeaderWithExtraHeaderBytes() throws Exception
+    {
+        final IoBuffer in = IoBuffer.wrap(getTestBlockWithHeaderData(TYPE1, (byte)0x0A, 10, (byte)0x80, 1503));
+        final byte[] expectedData = expectedOutForBlockWithHeaderData(TYPE1, (byte)0x0A, 10, (byte)0x80, 1503);
+        output.write(EasyMock.aryEq(expectedData));
+        mocks.replay();
+        blockHeaderDecoder.decode(session, in, output);
+        mocks.verify();
+    }
+
+    public void testBlockHeaderWithoutPid() throws Exception
+    {
+        final IoBuffer in = IoBuffer.wrap(getTestBlockWithHeaderData(TYPE1, (byte)0x03, 10, (byte)0, null));
+        final byte[] expectedData = expectedOutForBlockWithHeaderData(TYPE1, (byte)0x03, 10, (byte)0, null);
+        output.write(EasyMock.aryEq(expectedData));
+        mocks.replay();
+        blockHeaderDecoder.decode(session, in, output);
+        mocks.verify();
+    }
+
+    public void testPidValueBeyond13BitsIsChoppedTo13Bits() throws Exception
+    {
+        final IoBuffer in = IoBuffer.wrap(getTestBlockWithHeaderData(TYPE1, (byte)0x05, 10, (byte)0x80, 16383));
+        final byte[] expectedData = expectedOutForBlockWithHeaderData(TYPE1, (byte)0x05, 10, (byte)0x80, 8191);
+        output.write(EasyMock.aryEq(expectedData));
+        mocks.replay();
+        blockHeaderDecoder.decode(session, in, output);
+        mocks.verify();
+    }
+
+    public void testDciiMessageWithMultipleBlocks() throws Exception
+    {
+        final byte[] inputMessages = new byte[] {};
+
+    }
+
+    @Test(expectedExceptions = Exception.class)
+    public void testBlockHeaderWithUnknownHeaderType() throws Exception
+    {
+        final IoBuffer in = IoBuffer.wrap(getTestBlockWithHeaderData((byte)0x51, (byte)0x05, 10, (byte)0x80, 1503));
+        mocks.replay();
+        blockHeaderDecoder.decode(session, in, output);
+        mocks.verify();
+    }
+
+    @Test(expectedExceptions = Exception.class)
+    public void testBlockHeaderWithTooSmallHeaderLengthForNoPid() throws Exception
+    {
+        final IoBuffer in = IoBuffer.wrap(getTestBlockWithHeaderData(TYPE1, (byte)0x02, 10, (byte)0, null));
+        mocks.replay();
+        blockHeaderDecoder.decode(session, in, output);
+        mocks.verify();
+    }
+
+    @Test(expectedExceptions = Exception.class)
+    public void testBlockHeaderWithTooSmallHeaderLengthForWithPid() throws Exception
+    {
+        final IoBuffer in = IoBuffer.wrap(getTestBlockWithHeaderData(TYPE1, (byte)0x04, 10, (byte)0x80, 1503));
+        mocks.replay();
+        blockHeaderDecoder.decode(session, in, output);
+        mocks.verify();
+    }
+
+    public void testIncompleteWithOnlyHeaderType() throws Exception
+    {
+        final byte[] block = new byte[1];
+        block[0] = TYPE1;
+
+        final IoBuffer inIncomplete = IoBuffer.wrap(block);
+        mocks.replay();
+        final boolean firstDecode = blockHeaderDecoder.doDecode(session, inIncomplete, output);
+        assertThat(firstDecode, is(false));
+        mocks.verify();
+    }
+
+    public void testIncompleteHeader() throws Exception
+    {
+        final byte headerLength = (byte)0x05;
+        final short dataLength = 1;
+        final byte[] block = new byte[4];
+        block[0] = TYPE1;
+        block[1] = headerLength;
+        block[2] = (byte)((dataLength >> 8) & 0xFF);
+        block[3] = (byte)(dataLength & 0x00FF);
+
+        final IoBuffer inIncomplete = IoBuffer.wrap(block);
+        mocks.replay();
+        final boolean firstDecode = blockHeaderDecoder.doDecode(session, inIncomplete, output);
+        assertThat(firstDecode, is(false));
+        mocks.verify();
+    }
+
+    public void testIncompletePayload() throws Exception
+    {
+        final byte headerLength = (byte)0x05;
+        final short dataLength = 2;
+        final byte flags = (byte)0x80;
+        final Integer pid = 1503;
+        final byte[] data = new byte[1];
+        Arrays.fill(data, (byte)0x64);
+        final byte[] block = new byte[data.length + headerLength + 2];
+        int i = 0;
+        block[i++] = TYPE1;
+        block[i++] = headerLength;
+        block[i++] = (byte)((dataLength >> 8) & 0xFF);
+        block[i++] = (byte)(dataLength & 0x00FF);
+        block[i++] = flags;
+        if (pid != null)
+        {
+            block[i++] = (byte)((pid >> 8) & 0xFF);
+            block[i++] = (byte)(pid & 0xFF);
+        }
+        System.arraycopy(data, 0, block, 2 + headerLength, data.length);
+
+        final IoBuffer inIncomplete = IoBuffer.wrap(block);
+        mocks.replay();
+        final boolean firstDecode = blockHeaderDecoder.doDecode(session, inIncomplete, output);
+        assertThat(firstDecode, is(false));
+        mocks.verify();
+    }
+
+    private RouteSnapshot aRouteSnapshot()
+    {
+        return SnapshotUtility.createPidMappedRouteSnapshot(TransportProtocolType.UDP, RouteDataType.BLOCKS,
+            1L, 6000, HashMultimap.<Integer, Long>create(), Collections.<String, String>emptyMap());
+    }
+}
+

@@ -1,0 +1,6 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+/**
+ * Public API for managing multiple types of stream implemementations.
+ */
+package com.ccadllc.firebird.dss.server.realtime.stream.manager;
+

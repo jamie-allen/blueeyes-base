@@ -1,0 +1,75 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.temp.stream.manager.impl;
+
+import static com.ccadllc.firebird.dss.server.configuration.manager.ConfigManager.MTU_SIZE;
+import static com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager.SNAPSHOT_MANAGER_REFRESH_EVENT;
+import static com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager.STREAM_SNAPSHOT_DELETED_EVENT;
+import static com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager.STREAM_SNAPSHOT_UPDATED_EVENT;
+
+import java.io.IOException;
+import java.util.Date;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentMap;
+
+import javax.annotation.PreDestroy;
+import javax.management.Attribute;
+
+import com.ccadllc.commons.util.concurrent.CallbackSupportingScheduledExecutorService;
+import com.ccadllc.firebird.dss.common.datatypes.TransmissionType;
+import com.ccadllc.firebird.dss.server.common.MBeanServerUtility;
+import com.ccadllc.firebird.dss.server.common.OsgiEventPropertyKeys;
+import com.ccadllc.firebird.dss.server.common.PacketFilterChainController;
+import com.ccadllc.firebird.dss.server.common.StreamSnapshot;
+import com.ccadllc.firebird.dss.server.configuration.manager.ConfigManager;
+import com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager;
+import com.ccadllc.firebird.dss.server.realtime.temp.stream.manager.StreamManager;
+import com.ccadllc.firebird.dss.server.realtime.transport.manager.TransportManager;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilterFactory;
+
+import net.jcip.annotations.GuardedBy;
+import net.jcip.annotations.Immutable;
+
+import org.osgi.service.event.Event;
+import org.osgi.service.event.EventHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.MapMaker;
+
+/** Default implementation of a <code>StreamManager</code>. */
+@Immutable
+public final class DefaultStreamManager implements StreamManager, EventHandler
+{
+    /** Lock used when manipulating any filter chain controller instances in the map. */
+    private final Object lock = new Object();
+
+    public DefaultStreamManager()
+    {
+
+    }
+
+    public void init()
+    {
+        logger.debug("Initializing DefaultStreamManager.");
+    }
+
+    /**
+     * Using the executor thread detaches this process from the periodic or route thread that initiated the block send.
+     */
+    @Override
+    public void insert(final byte[] block, final Long streamId, final TransmissionType transmissionType)
+    {
+        executor.submit(new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                // Passes the data down to the appropriate filter chain controller for the stream,
+                // which controls the packet  filter chain.  If a controller does not exist for a
+                // stream, then a new one is created and added to the collection.
+            }
+        });
+    }
+}

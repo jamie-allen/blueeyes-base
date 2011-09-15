@@ -1,0 +1,113 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.stream.manager.impl;
+
+import java.net.InetSocketAddress;
+import java.util.Date;
+import java.util.Map;
+import java.util.Set;
+
+import javax.management.NotificationBroadcasterSupport;
+
+import com.ccadllc.firebird.dss.common.datatypes.StreamType;
+import com.ccadllc.firebird.dss.common.datatypes.TransmissionType;
+import com.ccadllc.firebird.dss.server.common.StreamSnapshot;
+
+import net.jcip.annotations.ThreadSafe;
+
+import com.google.common.base.Function;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
+
+/**
+ * JMX Bean instrumenting information about streams.
+ */
+@ThreadSafe
+public final class StreamInstrumentation extends NotificationBroadcasterSupport implements StreamInstrumentationMXBean
+{
+    private final Long streamId;
+    private final Integer pid;
+    private final Set<InetSocketAddress> streamDestinations;
+    private final TransmissionType transmissionType;
+    private final StreamType type;
+    private final int maxAverageRate;
+    private final int maxBurstSize;
+    private final int maxShapingLatency;
+    private final Map<String, String> properties;
+    private volatile Date lastInsertionTime;
+
+    public StreamInstrumentation(final StreamSnapshot stream)
+    {
+        streamId = stream.getId();
+        pid = stream.getPid();
+        streamDestinations = Sets.newHashSet(stream.getDestinations());
+        transmissionType = stream.getTransmissionType();
+        type = stream.getType();
+        maxAverageRate = stream.getMaxAverageRate();
+        maxBurstSize = stream.getMaxBurstSize();
+        maxShapingLatency = stream.getMaxShapingLatency();
+        properties = Maps.newHashMap(stream.getProperties());
+    }
+
+    public Long getStreamId()
+    {
+        return streamId;
+    }
+
+    public Integer getPid()
+    {
+        return pid;
+    }
+
+    public int getMaxAverageRate()
+    {
+        return maxAverageRate;
+    }
+
+    public int getMaxBurstSize()
+    {
+        return maxBurstSize;
+    }
+
+    public int getMaxShapingLatency()
+    {
+        return maxShapingLatency;
+    }
+
+    public Set<String> getDestinations()
+    {
+        return Sets.newHashSet(Iterables.transform(streamDestinations, new Function<InetSocketAddress, String>()
+            {
+                @Override
+                public String apply(final InetSocketAddress from)
+                {
+                    return from.toString();
+                }
+            }));
+    }
+
+    public TransmissionType getTransmissionType()
+    {
+        return transmissionType;
+    }
+
+    public StreamType getType()
+    {
+        return type;
+    }
+
+    public Map<String, String> getProperties()
+    {
+        return properties;
+    }
+
+    public void setLastInsertionTime(final Date lastInsertionTime)
+    {
+        this.lastInsertionTime = lastInsertionTime;
+    }
+
+    public Date getLastInsertionTime()
+    {
+        return lastInsertionTime;
+    }
+}

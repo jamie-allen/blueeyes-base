@@ -1,0 +1,83 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.MPEG2_JMX_DISPLAY_NAME;
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.ROUTE_NOTIFICATIONS_MESSAGE_PREFIX;
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.TCP_JMX_DISPLAY_NAME;
+
+import java.io.IOException;
+
+import java.util.concurrent.ScheduledExecutorService;
+
+import com.ccadllc.firebird.dss.server.common.MBeanServerUtility;
+import com.ccadllc.firebird.dss.server.common.RouteJmxUtility;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter.Mpeg2AdaptationFieldValidator;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter.Mpeg2PacketStatisticsCollector;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter.PidToStreamMapper;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.JmxRouteNotificationManager;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.TcpMpeg2RouteInstrumentation;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+import com.ccadllc.firebird.vms.common.packetfiltering.CompositePacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilter;
+
+import net.jcip.annotations.ThreadSafe;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
+
+import org.apache.mina.transport.socket.nio.NioProcessor;
+
+/**
+ * {@code RouteController} for TCP routes handling MPEG packet data.
+ */
+@ThreadSafe
+public class TcpMpeg2RouteController extends AbstractTcpRouteController
+{
+    private final PidToStreamMapper mapper;
+    private final String notificationsPrefixString;
+    private final StreamManager streamManager;
+    private final JmxRouteNotificationManager jmxRouteNotificationManager;
+
+    public TcpMpeg2RouteController(
+            final RouteSnapshot route,
+            final StreamManager streamManager,
+            final JmxRouteNotificationManager jmxRouteNotificationManager,
+            final TcpRouteSessionClosedEventDispatcher tcpRouteSessionClosedEventDispatcher,
+            final TcpRouteSessionCreatedEventDispatcher tcpRouteSessionCreatedEventDispatcher,
+            final ScheduledExecutorService executor,
+            final NioProcessor processor) throws IOException
+    {
+        super(route, streamManager, jmxRouteNotificationManager, tcpRouteSessionClosedEventDispatcher, tcpRouteSessionCreatedEventDispatcher, executor, processor);
+        notificationsPrefixString = String.format(ROUTE_NOTIFICATIONS_MESSAGE_PREFIX,
+            route.getId(), TCP_JMX_DISPLAY_NAME, MPEG2_JMX_DISPLAY_NAME);
+
+        mapper = new PidToStreamMapper(route, streamManager, jmxRouteNotificationManager, notificationsPrefixString);
+        final PacketFilter pidMappingStatistics = new Mpeg2PacketStatisticsCollector(mapper, route, "PidMappingStatistics");
+        final PacketFilter adaptationFieldValidator = new Mpeg2AdaptationFieldValidator(pidMappingStatistics,
+            jmxRouteNotificationManager, notificationsPrefixString);
+        setChain(new CompositePacketFilter(ImmutableList.of(adaptationFieldValidator, pidMappingStatistics, mapper)));
+
+        this.streamManager = streamManager;
+        this.jmxRouteNotificationManager = jmxRouteNotificationManager;
+        openTcpPort(route.getPort(), new TcpRouteCodecFactory(null, new TcpMpeg2RouteDecoder()), new TcpMpeg2RouteControllerHandler(this, getChain()));
+    }
+
+    @Override
+    void updateValidations(final RouteSnapshot route)
+    {
+        Preconditions.checkNotNull(route);
+        Preconditions.checkNotNull(route.getPidMappings());
+
+    }
+
+    @Override
+    void updateInternal(final RouteSnapshot route)
+    {
+        mapper.update(route, streamManager, jmxRouteNotificationManager, notificationsPrefixString);
+        MBeanServerUtility.register(new TcpMpeg2RouteInstrumentation(route),
+            RouteJmxUtility.createRouteMxBeanName(route, RouteJmxUtility.ROUTE_INFORMATION_JMX_BEAN_TYPE));
+    }
+}

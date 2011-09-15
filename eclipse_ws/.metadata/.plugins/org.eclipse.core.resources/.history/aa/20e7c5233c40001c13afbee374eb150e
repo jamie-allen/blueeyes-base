@@ -1,0 +1,91 @@
+package com.ccadllc.example.session;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.concurrent.Executors;
+
+import com.ccadllc.commons.session.Session;
+import com.ccadllc.commons.session.SessionTerminationAdapter;
+import com.ccadllc.commons.util.concurrent.CallbackSupportingScheduledExecutorService;
+import com.ccadllc.commons.util.concurrent.Callbacks;
+
+import org.testng.annotations.Test;
+
+public class TestSessionTest
+{
+
+    /**
+     * @see #getExecutor()
+     */
+    private static final CallbackSupportingScheduledExecutorService EXECUTOR = Callbacks.enableCallbackSupportForExecutor(Executors
+        .newScheduledThreadPool(10));
+
+    /**
+     * Executor provided to sessions.
+     * 
+     * @return EXECUTOR
+     */
+    protected CallbackSupportingScheduledExecutorService getExecutor()
+    {
+        return EXECUTOR;
+    }
+
+    /**
+     * Starts the session and waits up to 5 seconds for it to complete.
+     * 
+     * @throws InterruptedException
+     */
+    protected void startSessionNoWaiting(final TestSession testSession, final int threadNum)
+    {
+        testSession.addListener(new SessionTerminationAdapter()
+        {
+            @Override
+            public void terminated(final Session session)
+            {
+                System.out.println("Completed session on thread " + threadNum);
+            }
+        });
+        testSession.start();
+    }
+
+    protected TestSession createSession(final int num)
+    {
+        return new TestSession(num);
+    }
+
+    @Test
+    public void testSession()
+    {
+        final Collection<Runnable> commands = new ArrayList<Runnable>();
+        for (int i = 0; i < 10; ++i)
+        {
+
+            final TestSession testSession = createSession((int)(Math.random() * 100) % 100);
+            testSession.setExecutor(EXECUTOR);
+            final int threadNum = i;
+
+            final Runnable command = new Runnable()
+            {
+                @Override
+                public void run()
+                {
+                    startSessionNoWaiting(testSession, threadNum);
+                }
+            };
+            commands.add(command);
+        }
+        for (final Runnable command : commands)
+        {
+            EXECUTOR.execute(command);
+        }
+
+        try
+        {
+            Thread.sleep(6000);
+        }
+        catch (final InterruptedException e)
+        {
+
+        }
+    }
+}

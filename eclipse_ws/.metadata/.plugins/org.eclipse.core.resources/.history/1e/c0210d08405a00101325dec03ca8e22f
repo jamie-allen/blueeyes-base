@@ -1,0 +1,224 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.topology.web;
+
+import static com.google.common.base.Preconditions.checkArgument;
+
+import java.util.List;
+
+import javax.servlet.http.HttpSession;
+
+import com.ccadllc.firebird.core.web.common.ViewControllerException;
+import com.ccadllc.firebird.vms.topology.changeset.DefaultChange;
+import com.ccadllc.firebird.vms.topology.changeset.DefaultChangeset;
+import com.ccadllc.firebird.vms.topology.core.change.Change;
+import com.ccadllc.firebird.vms.topology.core.change.Changeset;
+import com.ccadllc.firebird.vms.topology.core.change.ChangesetStatus;
+import com.ccadllc.firebird.vms.topology.core.change.ChangesetSummary;
+import com.ccadllc.firebird.vms.topology.web.schema.ChangeDto;
+import com.ccadllc.firebird.vms.topology.web.schema.ChangesDto;
+import com.ccadllc.firebird.vms.topology.web.schema.ChangesetDto;
+import com.ccadllc.firebird.vms.topology.web.schema.Changesets;
+import com.ccadllc.firebird.vms.topology.web.transformers.ChangesetToDtoTransformer;
+import com.ccadllc.firebird.vms.topology.web.transformers.PropertiesTransformer;
+
+import org.springframework.security.access.annotation.Secured;
+import org.springframework.stereotype.Controller;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
+
+import com.google.common.base.Predicate;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
+
+@Controller
+public class ChangesetController extends AbstractTopologyController
+{
+    /**
+     * Retrieves a summary of all changesets in the system.
+     */
+    @RequestMapping("/retrieveChangesetSummaries")
+    @Transactional
+    public Changesets retrieveChangesetSummaries(final HttpSession session) throws Exception
+    {
+        final Iterable<ChangesetSummary> allSummaries = changesetRepository.getAllSummaries();
+
+        final Changesets changesets = new Changesets();
+        final ChangesetToDtoTransformer changesetDtoTransformer = new ChangesetToDtoTransformer(getTopologyModel(session));
+        for (final ChangesetSummary changesetSummary : allSummaries)
+        {
+            changesets.getChangeset().add(changesetDtoTransformer.apply(changesetSummary, false));
+        }
+
+        return changesets;
+    }
+
+    /**
+     * Returns a single, fully populated changeset. Prepares to edit this changeset by keeping the <code>Changeset</code> object in
+     * session. Subsequent calls to this controller will use this changeset, until it is cleared from session.
+     *
+     * @param changesetId the identifier of the changeset
+     */
+    @RequestMapping("/retrieveChangeset")
+    @Transactional
+    public ChangesetDto retrieveChangeset(@RequestParam("changesetId") final long changesetId, final HttpSession session)
+        throws Exception
+    {
+        final Changeset changeset = changesetRepository.get(changesetId);
+        changeset.updateStatus();
+        setCurrentChangeset(session, changeset);
+        setCurrentModifiableChangeset(session, changeset);
+
+        return new ChangesetToDtoTransformer(getTopologyModel(session)).apply(changeset, true);
+    }
+
+    @RequestMapping("/liveChangeset")
+    public ChangesetDto liveChangeset(final HttpSession session) throws Exception
+    {
+        setCurrentChangeset(session, null);
+        setCurrentModifiableChangeset(session, null);
+        return new ChangesetToDtoTransformer(getTopologyModel(session)).apply(currentChangesetForReads(session), true);
+    }
+
+    @RequestMapping(value = "/addChangeset", method = RequestMethod.POST)
+    @Transactional
+    @Secured(TOPOLOGY_ROLE)
+    public ChangesetDto addChangeset(final String name) throws Exception
+    {
+        final boolean dupExists = Iterables.any(changesetRepository.getAllSummaries(), new Predicate<ChangesetSummary>()
+        {
+            @Override
+            public boolean apply(final ChangesetSummary summary)
+            {
+                return summary.getName().equals(name);
+            }
+        });
+
+        if (dupExists)
+        {
+            throw new ViewControllerException("Changeset with name '" + name + "' already exists.");
+        }
+        else
+        {
+            final Changeset changeset = new DefaultChangeset(name);
+            changesetRepository.persist(changeset);
+
+            return new ChangesetToDtoTransformer(changeset.getRealizedModel()).apply(changeset, true);
+        }
+    }
+
+    /**
+     * Deletes a persistent changeset with the given <code>changesetId</code>.
+     */
+    @RequestMapping(value = "/deleteChangeset", method = RequestMethod.POST)
+    @Transactional
+    @Secured(TOPOLOGY_ROLE)
+    public void deleteChangeset(@RequestParam("changesetId") final long changesetId, final HttpSession session) throws Exception
+    {
+        final Changeset changeset = changesetRepository.get(changesetId);
+        if (changeset == null)
+        {
+            throw new ViewControllerException("Changeset does not exist.");
+        }
+
+        if (currentChangesetForReads(session).getId() == changesetId)
+        {
+            liveChangeset(session);
+        }
+        changesetRepository.delete(changeset);
+    }
+
+    @RequestMapping("/removeChanges")
+    @Secured(TOPOLOGY_ROLE)
+    @Transactional
+    public ChangesetDto removeChanges(@RequestParam("changeIds") final long[] changeIds, final HttpSession session) throws Exception
+    {
+        final Changeset currentChangeset = currentChangesetForModification(session);
+        checkArgument(!isLiveChangeset(currentChangeset) && !isStagingChangeset(currentChangeset), "Removing changes from live model not supported.");
+
+        currentChangeset.removeChanges(changeIds);
+        return new ChangesetToDtoTransformer(currentChangeset.getRealizedModel()).apply(currentChangeset, true);
+    }
+
+    @RequestMapping("/proposeChanges")
+    @Secured(TOPOLOGY_ROLE)
+    public ChangesetDto proposeChanges(@RequestParam("changes") final ChangesDto changesDto, final HttpSession session) throws Exception
+    {
+        final List<Change> changes = extractChanges(changesDto);
+        final Changeset currentChangeset = addChangesInTransaction(session, changes);
+        return new ChangesetToDtoTransformer(currentChangeset.getRealizedModel()).apply(currentChangeset, true);
+    }
+
+    /**
+     * Adding in a separate @Transactional method so that Changes have been persisted and have ids.
+     */
+    @Transactional
+    private Changeset addChangesInTransaction(final HttpSession session, final List<Change> changes)
+    {
+        final Changeset currentChangeset = currentChangesetForModification(session);
+        currentChangeset.addChanges(changes.toArray(new Change[changes.size()]));
+        return currentChangeset;
+    }
+
+    /**
+     * Executes the current changeset in session.
+     *
+     * @param deleteChangeset delete the current changeset if execution is successful; does not apply to LiveChangesets
+     */
+    @Transactional
+    @RequestMapping("/executeChangeset")
+    @Secured(TOPOLOGY_ROLE)
+    public ChangesetDto executeChangeset(@RequestParam("deleteChangeset") final boolean deleteChangeset, final HttpSession session) throws Exception
+    {
+        final Changeset currentChangeset = currentChangesetForExecution(session);
+        final StringBuffer sb = new StringBuffer("%%%%%%%% ChangesetController, session changeset:\n");
+        for (final String key : change.getParameters().keySet())
+        {
+            sb.append(String.format("\n\t\t\tProperty: %s, Value: %s", key, change.getParameters().get(key)));
+        }
+        logger.warn(sb.toString());
+        if (isStagingChangeset(currentChangeset))
+        {
+            logger.debug("Executing staged changeset.");
+
+            // Clear out so we just use LiveModel afterwards
+            currentChangeset.execute();
+            setCurrentModifiableChangeset(session, null);
+            return new ChangesetToDtoTransformer(currentChangeset.getRealizedModel()).apply(currentChangeset, true);
+        }
+        else
+        {
+            logger.debug("Executing persistent changeset {}.", currentChangeset.getName());
+
+            final Changeset mergedChangeset = changesetRepository.merge(currentChangeset);
+            final ChangesetStatus status = mergedChangeset.execute();
+            setCurrentChangeset(session, mergedChangeset);
+            setCurrentModifiableChangeset(session, mergedChangeset);
+
+            if (status.isValid() && deleteChangeset)
+            {
+                logger.debug("Deleting changeset {}.", mergedChangeset.getName());
+                changesetRepository.delete(mergedChangeset);
+            }
+
+            return new ChangesetToDtoTransformer(currentChangeset.getRealizedModel()).apply(mergedChangeset, true);
+        }
+    }
+
+    private List<Change> extractChanges(final ChangesDto changesDto)
+    {
+        final List<Change> changes = Lists.newArrayList();
+        for (final ChangeDto changeDto : changesDto.getChange())
+        {
+            changes.add(dtoToChange(changeDto));
+        }
+        return changes;
+    }
+
+    private Change dtoToChange(final ChangeDto changeDto)
+    {
+        return new DefaultChange(changeDto.getType(), changeDto.getVersion().intValue(),
+                                 PropertiesTransformer.toMap(changeDto.getProperty()));
+    }
+}

@@ -1,0 +1,115 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.test.controllers;
+
+import static com.ccadllc.firebird.dss.test.controllers.DssControllerUtility.convertStringToInetSocketAddressDestinations;
+import static com.ccadllc.firebird.dss.test.controllers.DssControllerUtility.convertStringToIntegerIds;
+import static com.ccadllc.firebird.dss.test.controllers.DssControllerUtility.convertStringToListOfNumberRanges;
+import static com.ccadllc.firebird.dss.test.controllers.DssControllerUtility.convertStringToLongIds;
+import static com.ccadllc.firebird.dss.test.controllers.DssControllerUtility.convertStringToPidMap;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+
+import java.net.InetSocketAddress;
+import java.util.List;
+import java.util.Set;
+
+import com.ccadllc.commons.util.Pair;
+
+import org.testng.annotations.Test;
+
+import com.google.common.collect.Multimap;
+
+/**
+ * Tests <code>DssManualTestToolUtility</code>.
+ */
+@Test
+public class DssControllerUtilityTest
+{
+    private static final int PORT1 = 8666;
+    private static final int PORT2 = 8667;
+    private static final String IP_ADDRESS = "127.0.0.1";
+
+    public void testConvertStringToPidMap() throws Exception
+    {
+        final Multimap<Integer, Long> pidMap = convertStringToPidMap("1 1503 2 1504 3 1505");
+        assertThat(pidMap.size(), is(3));
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testConvertStringToPidMapWithInvalidNumberOfValuesInString() throws Exception
+    {
+        convertStringToPidMap("1 1503 2 1504 3");
+    }
+
+    @Test(expectedExceptions = NumberFormatException.class)
+    public void testConvertStringToPidMapWithInvalidPidValueInString() throws Exception
+    {
+        convertStringToPidMap("1 1503 a 1504");
+    }
+
+    @Test(expectedExceptions = NumberFormatException.class)
+    public void testConvertStringToPidMapWithInvalidStreamIdValueInString() throws Exception
+    {
+        convertStringToPidMap("1 1503 2 %");
+    }
+
+    public void testConvertStringToIntegerIds() throws Exception
+    {
+        final Set<Integer> integerIds = convertStringToIntegerIds("1 2 3 4");
+        assertThat(integerIds.size(), is(4));
+    }
+
+    @Test(expectedExceptions = NumberFormatException.class)
+    public void testConvertStringToIntegerIdsWithInvalidValueInString() throws Exception
+    {
+        convertStringToIntegerIds("1 a 3 4");
+    }
+
+    public void testConvertStringToLongIds() throws Exception
+    {
+        final Set<Long> longIds = convertStringToLongIds("1 2 3 4");
+        assertThat(longIds.size(), is(4));
+    }
+
+    @Test(expectedExceptions = NumberFormatException.class)
+    public void testConvertStringToLongIdsWithInvalidValueInString() throws Exception
+    {
+        convertStringToLongIds("1 a 3 4");
+    }
+
+    public void testConvertStringToInetSocketAddressDestinations() throws Exception
+    {
+        final Set<InetSocketAddress> destinations = convertStringToInetSocketAddressDestinations(String.format("%s %d %s %d", IP_ADDRESS, PORT1, IP_ADDRESS, PORT2));
+        assertThat(destinations.size(), is(2));
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testConvertStringToInetSocketAddressDestinationsWithInvalidNumberOfValuesInString() throws Exception
+    {
+        convertStringToInetSocketAddressDestinations(String.format("%s %d %s", IP_ADDRESS, PORT1, IP_ADDRESS));
+    }
+
+    @Test(expectedExceptions = NumberFormatException.class)
+    public void testConvertStringToInetSocketAddressDestinationsWithInvalidPortInString() throws Exception
+    {
+        convertStringToInetSocketAddressDestinations(String.format("%s a", IP_ADDRESS));
+    }
+
+    public void testConvertStringToListOfNumberRanges() throws Exception
+    {
+        final List<Pair<Integer, Integer>> numberRanges = convertStringToListOfNumberRanges("1 2 3 4 5 6");
+        assertThat(numberRanges.size(), is(3));
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testConvertStringToNumberRangesWithInvalidNumberOfValuesInString() throws Exception
+    {
+        convertStringToListOfNumberRanges("1 2 3 4 5");
+    }
+
+    @Test(expectedExceptions = NumberFormatException.class)
+    public void testConvertStringToNumberRangesWithInvalidValueInString() throws Exception
+    {
+        convertStringToListOfNumberRanges("1 a 3 4 5 6");
+    }
+}

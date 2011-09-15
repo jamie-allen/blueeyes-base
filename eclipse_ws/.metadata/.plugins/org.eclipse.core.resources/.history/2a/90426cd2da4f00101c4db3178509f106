@@ -1,0 +1,291 @@
+/*
+ * Copyright 2010 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import java.nio.ByteBuffer;
+import java.util.concurrent.atomic.AtomicLong;
+
+import com.ccadllc.firebird.dss.server.common.MBeanServerUtility;
+import com.ccadllc.firebird.dss.server.common.RouteJmxUtility;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.RouteNotificationHelper;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.RouteRejectingStatisticsMXBean;
+
+import org.apache.mina.core.buffer.IoBuffer;
+import org.apache.mina.core.session.IoSession;
+import org.apache.mina.filter.codec.CumulativeProtocolDecoder;
+import org.apache.mina.filter.codec.ProtocolDecoderOutput;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Decodes headers for block based data on a route.
+ */
+public final class BlockHeaderDecoder extends CumulativeProtocolDecoder implements RouteRejectingStatisticsMXBean
+{
+    private static final short EMPTY_PAYLOAD_LENGTH = (short)0;
+    private static final int HEADER_TYPE1 = 0x50;
+    private static final int MINIMUM_VALUE_OF_HEADER_LENGTH_WITHOUT_CONTROL_FIELDS = 3;
+    private static final int MINIMUM_VALUE_OF_HEADER_LENGTH_WITH_PID_FIELD = 5;
+    private static final int PID_FLAG_MASK = 0x80;
+    private static final Short PID_VALUE_MASK = 0x1FFF;
+    private static final int SIZE_OF_PID_VALUE = 2;
+    private static final int SIZE_OF_CONTROL_FLAGS = 1;
+    private final Logger logger = LoggerFactory.getLogger(BlockHeaderDecoder.class);
+    private final RouteNotificationHelper routeNotificationHelper;
+    private final String descriptorObjectName;
+
+    private final Object lock = new Object();
+
+    private volatile boolean rejecting;
+    private volatile boolean isDisposed;
+    private final String objectName;
+    private final AtomicLong blocksInserted = new AtomicLong();
+    private final AtomicLong blocksRejected = new AtomicLong();
+    private final AtomicLong bytesInserted = new AtomicLong();
+    private final AtomicLong bytesRejected = new AtomicLong();
+
+    public BlockHeaderDecoder(final RouteSnapshot route, final RouteNotificationHelper routeNotificationHelper)
+    {
+        super();
+        this.routeNotificationHelper = routeNotificationHelper;
+        descriptorObjectName = String.format(RouteJmxUtility.ROUTE_DESCRIPTOR_TEMPLATE, route.getTransportProtocolType(), route.getId(), route.getTransportProtocolType(), route.getRouteDataType(), route.getRouteType(), route.getPort());
+        objectName = String.format(RouteJmxUtility.ROUTE_BLOCK_HEADER_DECODER_TEMPLATE, route.getTransportProtocolType(), route.getId());
+        MBeanServerUtility.register(this, objectName);
+    }
+
+    @Override
+    public void dispose(final IoSession session)
+    {
+        synchronized (lock)
+        {
+            if (!isDisposed)
+            {
+                try
+                {
+                    isDisposed = true;
+                    MBeanServerUtility.unregister(objectName);
+                    super.dispose(session);
+                }
+                // CHECKSTYLE:OFF
+                catch (final Exception e)
+                // CHECKSTYLE:ON
+                {
+                    logger.error("Exception occurred disposing of BlockHeaderDecoder instance: {}", e.getMessage());
+                }
+            }
+        }
+    }
+
+    @Override
+    protected boolean doDecode(final IoSession session, final IoBuffer in, final ProtocolDecoderOutput out) throws Exception
+    {
+        synchronized (lock)
+        {
+            ensureNotDisposed();
+            final int startPosition = in.position();
+            final byte headerType = in.get();
+            validateHeaderType(headerType);
+            if (in.hasRemaining())
+            {
+                final byte headerLength = in.get();
+                final int headerPosition = in.position();
+                validateHeaderLengthWithoutControlFields(headerLength);
+                if (in.remaining() >= headerLength)
+                {
+                    final short payloadLength = in.getShort();
+                    logger.debug("header length {} - payload length {}", headerLength, payloadLength);
+                    final byte controlFlags = in.get();
+                    byte outControlFlags = 0;
+                    Short outPid = null;
+                    if ((controlFlags & PID_FLAG_MASK) == PID_FLAG_MASK)
+                    {
+                        validateHeaderLengthWithPid(headerLength, payloadLength);
+                        outControlFlags = (byte)(outControlFlags | PID_FLAG_MASK);
+                        outPid = (short)(in.getShort() & PID_VALUE_MASK);
+                        logger.debug("controlFlag = {} - pid = {}", outControlFlags, outPid);
+                    }
+                    movePositionToStartOfPayload(in, headerLength, headerPosition);
+                    if (payloadLength > 0 && in.remaining() >= payloadLength)
+                    {
+                        writeExtractedHeaderAndPayload(in, out, payloadLength, outControlFlags, outPid);
+                        handleBlockRejectionNotification(false);
+                        updateInserted(payloadLength);
+                        MBeanServerUtility.invoke(descriptorObjectName, "updateReceivedStatistics", new Object[] {payloadLength}, new String[] {"long"});
+                        return true;
+                    }
+                }
+            }
+            movePositionBackToStart(in, startPosition);
+            return false;
+        }
+    }
+
+    public void exceptionCaught(final IoSession session, final Throwable cause) throws Exception {
+        final StringBuffer sBuffer = new StringBuffer(String.format("Caught exception handling input data: %s\n", cause.getMessage()());
+
+        logger.warn(cause.getMessage());
+    }
+
+    private void movePositionBackToStart(final IoBuffer in, final int startPosition)
+    {
+        in.position(startPosition);
+    }
+
+    private void movePositionToStartOfPayload(final IoBuffer in, final byte headerLength, final int headerPosition)
+    {
+        in.position(headerPosition + headerLength);
+    }
+
+    private void writeExtractedHeaderAndPayload(final IoBuffer in, final ProtocolDecoderOutput out, final short payloadLength, final byte outControlFlags, final Short outPid)
+    {
+        // Remember the current position and limit.
+        final int position = in.position();
+        final int limit = in.limit();
+        try
+        {
+            in.limit(position + payloadLength);
+            final byte[] outPayload = new byte[payloadLength];
+            in.slice().get(outPayload);
+            out.write(prepareOutput(payloadLength, outControlFlags, outPid, outPayload));
+        }
+        finally
+        {
+            in.position(position + payloadLength);
+            in.limit(limit);
+        }
+    }
+
+    private byte[] prepareOutput(final short payloadLength, final byte outControlFlags, final Short outPid, final byte[] outPayload)
+    {
+        final ByteBuffer outputBuffer = ByteBuffer.allocate(SIZE_OF_CONTROL_FLAGS + ((outPid != null) ? SIZE_OF_PID_VALUE : 0) + payloadLength);
+
+        outputBuffer.put(outControlFlags);
+        if (outPid != null)
+        {
+            outputBuffer.putShort(outPid);
+        }
+        outputBuffer.put(outPayload);
+        return outputBuffer.array();
+    }
+
+    private void validateHeaderLengthWithPid(final byte headerLength, final short payloadLength) throws Exception
+    {
+        if (headerLength < MINIMUM_VALUE_OF_HEADER_LENGTH_WITH_PID_FIELD)
+        {
+            logger.warn("Header length {} with PID must be at least {}. ", headerLength, MINIMUM_VALUE_OF_HEADER_LENGTH_WITH_PID_FIELD);
+            handleBlockRejectionNotification(true);
+            updateRejected(payloadLength);
+            throw new Exception(String.format("Header length %d with PID must be at least %d. ", headerLength, MINIMUM_VALUE_OF_HEADER_LENGTH_WITH_PID_FIELD));
+        }
+    }
+
+    private void validateHeaderLengthWithoutControlFields(final byte headerLength) throws Exception
+    {
+        if (headerLength < MINIMUM_VALUE_OF_HEADER_LENGTH_WITHOUT_CONTROL_FIELDS)
+        {
+            logger.warn("Header length {} must be at least {}. ", headerLength, MINIMUM_VALUE_OF_HEADER_LENGTH_WITHOUT_CONTROL_FIELDS);
+            handleBlockRejectionNotification(true);
+            updateRejected(EMPTY_PAYLOAD_LENGTH);
+            throw new Exception(String.format("Header length %d must be at least %d. ", headerLength, MINIMUM_VALUE_OF_HEADER_LENGTH_WITHOUT_CONTROL_FIELDS));
+        }
+    }
+
+    private void validateHeaderType(final byte headerType) throws Exception
+    {
+        if (HEADER_TYPE1 != headerType)
+        {
+            logger.warn("Attempted to decode block header data with unknown header type {}", headerType);
+            handleBlockRejectionNotification(true);
+            updateRejected(EMPTY_PAYLOAD_LENGTH);
+            throw new Exception(String.format("Attempted to decode block header data with unknown header type %s", headerType));
+        }
+    }
+
+    private void handleBlockRejectionNotification(final boolean isNowRejecting)
+    {
+        if (routeNotificationHelper.isRejectingStatusChanged(rejecting, isNowRejecting))
+        {
+            routeNotificationHelper.sendRejectionNotification(createRejectingString(isNowRejecting),
+                "BlockHeaderDecoderRejectingBlocks", isNowRejecting);
+        }
+        rejecting = isNowRejecting;
+    }
+
+    private String createRejectingString(final boolean rejecting)
+    {
+        return String.format("BlockHeaderDecoder %s rejecting blocks", (rejecting ? "is" : "is not"));
+    }
+
+    @Override
+    public Long getTotalDataElementsInserted()
+    {
+        return blocksInserted.get();
+    }
+
+    @Override
+    public Long getTotalBytesInserted()
+    {
+        return bytesInserted.get();
+    }
+
+    @Override
+    public Long getNumberOfDataElementsRejected()
+    {
+        return blocksRejected.get();
+    }
+
+    @Override
+    public Long getNumberOfBytesRejected()
+    {
+        return bytesRejected.get();
+    }
+
+    @Override
+    public Long getTotalBytesReceived()
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Long getTotalDataElementsReceived()
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    public void resetCounters()
+    {
+        synchronized (lock)
+        {
+            blocksInserted.set(0L);
+            blocksRejected.set(0L);
+            bytesInserted.set(0L);
+            bytesRejected.set(0L);
+        }
+    }
+
+    private void updateInserted(final long bytes)
+    {
+        blocksInserted.incrementAndGet();
+        bytesInserted.getAndAdd(bytes);
+        logger.debug("Incrementing inserted blocks, value: {} for collector {}", blocksInserted.get(), objectName);
+    }
+
+    private void updateRejected(final short bytes)
+    {
+        blocksRejected.incrementAndGet();
+        bytesRejected.getAndAdd(bytes);
+        logger.debug("Incrementing rejected blocks, value: {} for collector {}", blocksRejected.get(), objectName);
+    }
+
+    private void ensureNotDisposed()
+    {
+        if (isDisposed)
+        {
+            logger.warn("Action called on disposed block header decoder.");
+            throw new IllegalStateException("Object has been disposed.");
+        }
+    }
+}
+

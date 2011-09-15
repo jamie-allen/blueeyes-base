@@ -1,0 +1,31 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.vms.dssrm.provisioning;
+
+import com.ccadllc.firebird.vms.dssrm.core.RouteDescription;
+
+import net.jcip.annotations.Immutable;
+
+import com.google.common.base.Preconditions;
+
+/**
+ * Immutable snapshot of a route and its data.
+ */
+@Immutable
+public final class RouteSnapshot
+{
+    private final RouteDescription description;
+
+    public RouteSnapshot(final RouteDescription description)
+    {
+        Preconditions.checkNotNull(description);
+
+        this.description = description;
+    }
+
+    public RouteDescription getDescription()
+    {
+        return description;
+    }
+}

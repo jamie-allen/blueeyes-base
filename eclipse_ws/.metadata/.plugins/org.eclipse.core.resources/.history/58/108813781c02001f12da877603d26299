@@ -1,0 +1,470 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.topology.service.impl;
+
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Set;
+import java.util.UUID;
+
+import net.jcip.annotations.ThreadSafe;
+
+import org.hamcrest.Matcher;
+
+import com.ccadllc.firebird.core.base.common.util.MatcherPredicate;
+import com.ccadllc.firebird.vms.topology.core.Device;
+import com.ccadllc.firebird.vms.topology.core.DeviceMatchers;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStreamDescription;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStreamMatchers;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStreamTransmissionOptimizationException;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStreamTransmissionOptimizer;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStreamTransmissionPlan;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStreamTypeCatalog;
+import com.ccadllc.firebird.vms.topology.core.PacketizedElementaryStreamDescription;
+import com.ccadllc.firebird.vms.topology.core.ServingLocation;
+import com.ccadllc.firebird.vms.topology.core.ServingLocationMatchers;
+import com.ccadllc.firebird.vms.topology.core.ServingLocationQName;
+import com.ccadllc.firebird.vms.topology.core.ServingLocationUtils;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableDevice;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableServingLocation;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableTopologyModel;
+import com.ccadllc.firebird.vms.topology.estream.ElementaryStreamEntity;
+import com.ccadllc.firebird.vms.topology.estream.PacketizedElementaryStreamEntity;
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
+
+@ThreadSafe
+public class DefaultMutableTopologyModel extends AbstractTopologyModel implements MutableTopologyModel
+{
+    private final MutableServingLocation rootServingLocation;
+    private final Map<UUID, MutableDevice> devices;
+    private final Map<UUID, MutableElementaryStream> elementaryStreams;
+
+    public DefaultMutableTopologyModel(final ElementaryStreamTypeCatalog elementaryStreamTypeCatalog, final ElementaryStreamTransmissionOptimizer streamTransmissionOptimizer, final MutableServingLocation rootServingLocation)
+    {
+        super(elementaryStreamTypeCatalog, streamTransmissionOptimizer);
+
+        Preconditions.checkNotNull(rootServingLocation, "rootServingLocation");
+
+        this.rootServingLocation = rootServingLocation;
+        devices = Maps.newHashMap();
+        elementaryStreams = Maps.newHashMap();
+    }
+
+    @Override
+    public synchronized MutableServingLocation getRootServingLocation()
+    {
+        return rootServingLocation;
+    }
+
+    @Override
+    public synchronized MutableServingLocation getServingLocation(final ServingLocationQName qualifiedName)
+    {
+        Preconditions.checkNotNull(qualifiedName, "qualifiedName");
+        return ServingLocationUtils.getLocationByPath(rootServingLocation, qualifiedName);
+    }
+
+    @Override
+    public synchronized MutableServingLocation addServingLocation(final ServingLocationQName target)
+    {
+        Preconditions.checkArgument(target.isAbsolute(), "Can only add absolute locations.");
+        final MutableServingLocation parent = getServingLocation(target.getParent());
+        if (parent == null)
+        {
+            throw new IllegalArgumentException(String.format("Unable to add serving location %s because the parent serving location %s does not exist.", target.getLocalName(), target.getParent().getLocalName()));
+        }
+        else
+        {
+            return parent.addChild(target.getLocalName());
+        }
+    }
+
+    @Override
+    public synchronized void deleteServingLocation(final ServingLocationQName target)
+    {
+        final MutableServingLocation location = getServingLocation(target);
+        if (location == null)
+        {
+            throw new IllegalArgumentException("Unable to delete " + target.getLocalName() + " because it does not exist.");
+        }
+        else if (location == rootServingLocation)
+        {
+            throw new IllegalArgumentException("Cannot delete root serving location.");
+        }
+        else
+        {
+            for (final ServingLocation childLocation : Sets.newHashSet(location.getChildren()))
+            {
+                deleteServingLocation(childLocation.getQualifiedName());
+            }
+
+            location.delete();
+
+            final Iterable<MutableElementaryStream> streamsReferencingLocation = queryForElementaryStreams(ElementaryStreamMatchers.hasExactLocation(target));
+            for (final MutableElementaryStream stream : streamsReferencingLocation)
+            {
+                stream.clearLocation();
+            }
+
+            final Iterable<MutableDevice> devicesReferencingLocation = queryForDevices(DeviceMatchers.hasExactLocation(target));
+            for (final MutableDevice device : devicesReferencingLocation)
+            {
+                device.setLocation(null);
+            }
+        }
+    }
+
+    @Override
+    public synchronized void renameServingLocation(final ServingLocationQName target, final String newLocalName)
+    {
+        final MutableServingLocation location = getServingLocation(target);
+        if (location == null)
+        {
+            throw new IllegalArgumentException("Unable to rename " + target.getLocalName() + " because it does not exist.");
+        }
+        else if (location == rootServingLocation)
+        {
+            throw new IllegalArgumentException("Unable to rename root serving location.");
+        }
+        else
+        {
+            location.setLocalName(newLocalName);
+
+            updateStreams(target, new StreamUpdater() {
+                @Override
+                public void updateStream(final MutableElementaryStream stream, final ServingLocationQName streamServingLocationQName)
+                {
+                    final ServingLocationQName updatedServingLocationQName = getUpdatedServingLocationQName(streamServingLocationQName, target, location.getQualifiedName());
+                    stream.setLocation(updatedServingLocationQName);
+                }
+            });
+
+            updateDevices(target, location.getQualifiedName());
+        }
+    }
+
+    @Override
+    public synchronized void moveServingLocation(final ServingLocationQName target, final ServingLocationQName newParent)
+    {
+        if (target == newParent)
+        {
+            throw new IllegalArgumentException("A serving location can not be moved under itself.");
+        }
+
+        final MutableServingLocation location = getServingLocation(target);
+        if (location == null)
+        {
+            throw new IllegalArgumentException("Unable to move serving location " + target.getLocalName() + " because it does not exist.");
+        }
+        else if (location == rootServingLocation)
+        {
+            throw new IllegalArgumentException("Unable to move the root serving location.");
+        }
+        else
+        {
+            final MutableServingLocation newParentLocation = getServingLocation(newParent);
+            if (newParentLocation == null)
+            {
+                throw new IllegalArgumentException("Unable to move " + target.getLocalName() + " because the new parent " + newParent.getLocalName() + " does not exist.");
+            }
+
+            final MutableServingLocation oldParentLocation = location.getParent();
+            oldParentLocation.removeChild(location);
+            newParentLocation.addChild(location);
+
+            updateStreams(target, new StreamUpdater() {
+                @Override
+                public void updateStream(final MutableElementaryStream stream, final ServingLocationQName streamServingLocationQName)
+                {
+                    final ServingLocationQName newTargetLocation = location.getQualifiedName();
+                    final ServingLocationQName updatedServingLocationQName = getUpdatedServingLocationQName(streamServingLocationQName, target, newTargetLocation);
+                    stream.setLocation(updatedServingLocationQName);
+                }
+            });
+
+            updateDevices(target, location.getQualifiedName());
+        }
+    }
+
+    public synchronized void mergeServingLocations(final Iterable<ServingLocationQName> targets, final String newLocalName)
+    {
+        if (Iterables.size(targets) < 2)
+        {
+            throw new IllegalArgumentException("Unable to perform merge because at least two serving locations are required.");
+        }
+
+        for (final ServingLocationQName target : targets)
+        {
+            for (final ServingLocationQName compareTarget : targets)
+            {
+                if (!target.getParent().equals(compareTarget.getParent()))
+                {
+                    throw new IllegalArgumentException(String.format("Unable to merge %s with %s because the location parents differ.", target.getLocalName(), compareTarget.getLocalName()));
+                }
+            }
+
+            final MutableServingLocation servingLocation = getServingLocation(target);
+            if (servingLocation == null)
+            {
+                throw new IllegalArgumentException(String.format("Unable to perform merge because serving location %s does not exist.", target.getLocalName()));
+            }
+
+            final MutableServingLocation parentServingLocation = getServingLocation(target.getParent());
+
+            final MutableServingLocation newSL = getServingLocation(ServingLocationQName.newAbsolute(parentServingLocation.getQualifiedName(), newLocalName));
+            final MutableServingLocation newServingLocation = newSL == null ? parentServingLocation.addChild(newLocalName) : newSL;
+
+            addChildren(newServingLocation, servingLocation.getChildren());
+
+            parentServingLocation.removeChild(servingLocation);
+            servingLocation.delete();
+
+            updateStreams(target, new StreamUpdater() {
+                @Override
+                public void updateStream(final MutableElementaryStream stream, final ServingLocationQName streamServingLocationQName)
+                {
+                    final ServingLocationQName newTargetLocation = newServingLocation.getQualifiedName();
+                    final ServingLocationQName updatedServingLocationQName = getUpdatedServingLocationQName(streamServingLocationQName, target, newTargetLocation);
+                    stream.setLocation(updatedServingLocationQName);
+                }
+            });
+            updateDevices(target, newServingLocation.getQualifiedName());
+        }
+    }
+
+    private void addChildren(final MutableServingLocation parent, final Set<? extends MutableServingLocation> children)
+    {
+        for (final MutableServingLocation child : Sets.newHashSet(children))
+        {
+            final MutableServingLocation newChild = parent.addChild(child.getLocalName());
+            addChildren(newChild, child.getChildren());
+        }
+    }
+
+    /**
+     * Creates a new <code>ServingLocationQName</code> that represents the updated location <code>toChange</code> based on the change
+     * made to the fully qualified location <code>originalLocation</code> to <code>newLocation</code>.
+     *
+     * <p>This method is meant to get updated versions of fully qualified serving location names for children of locations that had
+     * their local names changed.  For example, if serving location <code>:A:B</code> changed to <code>:A:C</code> and the <code>B</code>
+     * node originally had a child <code>Y</code>, then the fully qualified serving location <code>:A:B:Y</code> would need to be updated
+     * to <code>:A:C:Y</code>. This can be accomplished with the following command:
+     * <code>getUpdatedServingLocationQName(new ServingLocationQName(":A:B:Y"), new ServingLocationQName(":A:B"), new ServingLocationQName(":A:C"));</code>
+     *
+     * @param toChange fully qualified serving location name that needs to be updated
+     * @param originalLocation fully qualified serving location name before it was changed
+     * @param newLocation fully qualified serving location name after it was changed
+     * @return
+     */
+    private ServingLocationQName getUpdatedServingLocationQName(final ServingLocationQName toChange, final ServingLocationQName originalLocation, final ServingLocationQName newLocation)
+    {
+        return ServingLocationQName.of(toChange.toString().replace(originalLocation.toString(), newLocation.toString()));
+    }
+
+    @Override
+    public synchronized Iterable<MutableElementaryStream> queryForElementaryStreams(final Matcher<ElementaryStream> matcher)
+    {
+        return Lists.newArrayList(matcher == null ? elementaryStreams.values() : Iterables.filter(elementaryStreams.values(), MatcherPredicate.from(matcher)));
+    }
+
+    @Override
+    public synchronized MutableElementaryStream queryForElementaryStream(final Matcher<ElementaryStream> matcher)
+    {
+        try
+        {
+            return Iterables.getOnlyElement(queryForElementaryStreams(matcher));
+        }
+        catch (final NoSuchElementException e)
+        {
+            return null;
+        }
+    }
+
+    public synchronized Iterable<MutableElementaryStream> getAllElementaryStreams()
+    {
+        return Lists.newArrayList(elementaryStreams.values());
+    }
+
+    @Override
+    public synchronized MutableElementaryStream getElementaryStreamById(final UUID id)
+    {
+        Preconditions.checkNotNull(id, "id");
+        return elementaryStreams.get(id);
+    }
+
+    @Override
+    public synchronized void addElementaryStream(final MutableElementaryStream stream)
+    {
+        Preconditions.checkNotNull(stream, "stream");
+        if (elementaryStreams.containsKey(stream.getId()))
+        {
+            throw new IllegalArgumentException(String.format("Unable to add stream %s because it already exists.", stream.getName()));
+        }
+        elementaryStreams.put(stream.getId(), stream);
+    }
+
+    @Override
+    public synchronized MutableElementaryStream deleteElementaryStream(final UUID id)
+    {
+        Preconditions.checkNotNull(id, "id");
+        return elementaryStreams.remove(id);
+    }
+
+    @Override
+    public synchronized Iterable<MutableDevice> getAllDevices()
+    {
+        return Lists.newArrayList(devices.values());
+    }
+
+    @Override
+    public synchronized Iterable<MutableDevice> queryForDevices(final Matcher<Device> matcher)
+    {
+        return Lists.newArrayList(matcher == null ? getAllDevices()
+            : Iterables.filter(getAllDevices(), MatcherPredicate.from(matcher)));
+    }
+
+    @Override
+    public synchronized MutableDevice queryForDevice(final Matcher<Device> matcher)
+    {
+        try
+        {
+            return Iterables.getOnlyElement(queryForDevices(matcher));
+        }
+        catch (final NoSuchElementException e)
+        {
+            return null;
+        }
+    }
+
+    @Override
+    public synchronized MutableDevice getDeviceById(final UUID id)
+    {
+        Preconditions.checkNotNull(id, "id");
+        return devices.get(id);
+    }
+
+    @Override
+    public synchronized void addDevice(final MutableDevice device)
+    {
+        Preconditions.checkNotNull(device, "device");
+        devices.put(device.getId(), device);
+    }
+
+    @Override
+    public synchronized MutableDevice deleteDevice(final UUID id)
+    {
+        Preconditions.checkNotNull(id, "id");
+        return devices.remove(id);
+    }
+
+    /** Callback interface for updating a stream. */
+    private interface StreamUpdater
+    {
+        /**
+         * Updates the specific location for the specified stream.
+         *
+         * @param stream stream to update
+         * @param location location to update
+         */
+        void updateStream(final MutableElementaryStream stream, final ServingLocationQName location);
+    }
+
+    /**
+     * Updates all streams that reference the specified serving location, either directly or indirectly.
+     *
+     * @param location location to search for
+     * @param updater callback called for each stream that references the location
+     */
+    private void updateStreams(final ServingLocationQName location, final StreamUpdater updater)
+    {
+        final Iterable<MutableElementaryStream> streamsReferencingLocation = queryForElementaryStreams(ElementaryStreamMatchers.presentIncludingChildLocations(location));
+
+        for (final MutableElementaryStream stream : streamsReferencingLocation)
+        {
+            if (ServingLocationMatchers.presentIncludingChildLocations(location).matches(stream.getLocation()))
+            {
+                updater.updateStream(stream, stream.getLocation());   
+            }
+        }
+    }
+
+    /**
+     * Updates the location of all devices that have a location that matches the <code>originalLocation</code> or is a child or grandchild of the
+     * <code>originalLocation</code>.
+     *
+     * @param originalLocation location to search for
+     * @param newLocation new location
+     */
+    private void updateDevices(final ServingLocationQName originalLocation, final ServingLocationQName newLocation)
+    {
+        final Iterable<MutableDevice> devicesReferencingLocation = queryForDevices(DeviceMatchers.presentIncludingChildLocations(originalLocation));
+
+        for (final MutableDevice device : devicesReferencingLocation)
+        {
+            final ServingLocationQName updatedServingLocationQName = getUpdatedServingLocationQName(device.getLocation(), originalLocation, newLocation);
+            device.setLocation(updatedServingLocationQName);
+        }
+
+    }
+
+    @Override
+    public synchronized ElementaryStreamTransmissionPlan getNonOptimizedInputTransmissionPlan(final ElementaryStream stream)
+    {
+        return super.getNonOptimizedInputTransmissionPlan(stream);
+    }
+
+    @Override
+    public synchronized ElementaryStreamTransmissionPlan getOptimizedInputTransmissionPlan(final ElementaryStream stream) throws ElementaryStreamTransmissionOptimizationException
+    {
+        return super.getOptimizedInputTransmissionPlan(stream);
+    }
+
+    @Override
+    public synchronized ElementaryStreamTransmissionPlan getOutputTransmissionPlan(final ElementaryStreamTransmissionPlan inputPlan)
+    {
+        return super.getOutputTransmissionPlan(inputPlan);
+    }
+
+    @Override
+    public synchronized ElementaryStreamTransmissionPlan getOutputTransmissionPlan(final ElementaryStream stream) throws ElementaryStreamTransmissionOptimizationException
+    {
+        return super.getOutputTransmissionPlan(stream);
+    }
+
+    @Override
+    public MutableElementaryStream addElementaryStream(final ElementaryStreamDescription desc)
+    {
+        ElementaryStreamEntity stream = null;
+        if (desc instanceof PacketizedElementaryStreamDescription)
+        {
+            final PacketizedElementaryStreamDescription pdesc = ((PacketizedElementaryStreamDescription)desc);
+
+            stream = new PacketizedElementaryStreamEntity(
+                pdesc.getId(),
+                pdesc.getName(),
+                pdesc.getType() == null ? null : pdesc.getType().getId(),
+                pdesc.getPid(),
+                pdesc.isPidFixed(),
+                pdesc.getTrafficShapingProfile(),
+                pdesc.getLocation(),
+                pdesc.getProperties());
+        }
+        else
+        {
+            stream = new ElementaryStreamEntity(
+                desc.getId(),
+                desc.getName(),
+                desc.getType() == null ? null : desc.getType().getId(),
+                desc.getTrafficShapingProfile(),
+                desc.getLocation(),
+                desc.getProperties());
+        }
+
+        addElementaryStream(stream);
+        return stream;
+    }
+}

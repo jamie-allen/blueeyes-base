@@ -1,0 +1,96 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.management;
+
+import static com.ccadllc.firebird.dss.common.datatypes.RouteDataType.MPEG_PACKETS;
+import static com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType.UDP;
+
+import java.util.Map;
+import java.util.Set;
+
+import com.ccadllc.firebird.dss.server.common.RouteJmxUtility;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+
+import net.jcip.annotations.Immutable;
+
+import com.google.common.collect.Maps;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Multimaps;
+import com.google.common.collect.Sets;
+
+/**
+ * JMX Bean instrumenting information about a route.
+ */
+@Immutable
+public final class RouteInstrumentation implements RouteInstrumentationMXBean
+{
+    private final int port;
+    private final long routeId;
+    private Multimap<Integer, Long> pidMappings;
+    private Set<Long> streamIds;
+    private Map<String, String> properties;
+
+    public RouteInstrumentation(final RouteSnapshot route)
+    {
+        routeId = route.getId();
+
+        if (route.getDataType() == MPEG_PACKETS)
+        {
+            pidMappings = Multimaps.synchronizedSetMultimap(Multimaps.<Integer, Long>newHashMultimap(route.getPidMappings()));
+        }
+        else
+        {
+            streamIds = Sets.<Long>newHashSet(route.getStreamIds());
+        }
+
+        switch(route.getTransportProtocolType())
+        {
+            case UDP:
+                port = route.getPort();
+                properties = Maps.newHashMap(route.getProperties());
+                break;
+            case TCP:
+                break;
+            default:
+                throw new IllegalArgumentException(String.format("Invalid Transport Protocol Type %s when creating route MX bean.", route.getTransportProtocolType()));
+        }
+
+        if (route.getTransportProtocolType() == UDP)
+        {
+        }
+        else
+        {
+
+        }
+    }
+
+    public Map<Integer, String> getPidMappings()
+    {
+        final Map<Integer, String> pidMappingsToReturn = Maps.newHashMap();
+        for (final Integer pid : pidMappings.keySet())
+        {
+            pidMappingsToReturn.put(pid, RouteJmxUtility.getStreamIdsAsString(pidMappings.get(pid)));
+        }
+
+        return pidMappingsToReturn;
+    }
+
+    public Set<Long> getStreamIds()
+    {
+        return Sets.newHashSet(streamIds);
+    }
+
+    public int getPort()
+    {
+        return port;
+    }
+
+    public Map<String, String> getProperties()
+    {
+        return Maps.newHashMap(properties);
+    }
+
+    public Long getRouteId()
+    {
+        return routeId;
+    }
+}

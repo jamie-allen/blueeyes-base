@@ -1,0 +1,54 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.standalone.stream.manager;
+
+import static org.easymock.EasyMock.createControl;
+
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.impl.StreamManagerApplicationContextListener;
+
+import org.easymock.IMocksControl;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.context.event.ContextRefreshedEvent;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+/**
+ * Tests the <code>RealtimeApplicationContextListener</code> class.
+ */
+@Test
+public class StreamManagerApplicationContextListenerTest
+{
+    private StreamManager mockStreamManager;
+    private IMocksControl mocks;
+    private StreamManagerApplicationContextListener streamManagerApplicationContextListener;
+    private ApplicationContext mockApplicationContext;
+
+    @BeforeMethod
+    public void setUp()
+    {
+        mocks = createControl();
+        mockStreamManager = mocks.createMock(StreamManager.class);
+        mockApplicationContext = mocks.createMock(ApplicationContext.class);
+        streamManagerApplicationContextListener = new StreamManagerApplicationContextListener(mockStreamManager);
+    }
+
+    @AfterMethod
+    public void tearDown()
+    {
+        mocks.verify();
+    }
+
+    public void testContextRefreshedEventResultsInOsgiEventBeingFired()
+    {
+        mockStreamManager.init();
+        mocks.replay();
+        streamManagerApplicationContextListener.onApplicationEvent(new ContextRefreshedEvent(mockApplicationContext));
+    }
+
+    public void testOtherEventsDoNotResultInOsgiEventBeingFired()
+    {
+        mocks.replay();
+        streamManagerApplicationContextListener.onApplicationEvent(new ContextClosedEvent(mockApplicationContext));
+    }
+}

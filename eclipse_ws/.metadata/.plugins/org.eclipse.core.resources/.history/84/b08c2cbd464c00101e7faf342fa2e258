@@ -1,0 +1,13 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+/**
+ * Notifies the {@link RouteManager} of events.
+ */
+public interface RouteEstablisherNotifier
+{
+    /**
+     * Notifies the route establisher that a session has been closed so that the port can be released for reuse.
+     */
+    void notifyRouteEstablisherThatSessionClosed(final int port);
+}

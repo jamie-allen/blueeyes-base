@@ -1,0 +1,300 @@
+/*
+ * Copyright 2006 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.dcas.ap.data.topology.impl;
+
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Date;
+
+import com.ccadllc.commons.test.spring.AspectJTestUtils;
+
+import com.ccadllc.dcas.ap.data.ps.PersonalizationServer;
+import com.ccadllc.dcas.ap.data.topology.RegionConfiguration;
+import com.ccadllc.dcas.ap.support.datatypes.AnnouncementDestination;
+import com.ccadllc.dcas.ap.support.datatypes.ClientReference;
+import com.ccadllc.dcas.ap.support.datatypes.ClientReferenceCombination;
+import com.ccadllc.dcas.ap.support.datatypes.OperationalStatus;
+import com.ccadllc.dcas.ap.support.datatypes.RegionDeploymentStatus;
+import com.ccadllc.dcas.ap.support.datatypes.SecurityAnnounceConfiguration;
+import com.ccadllc.dcas.ap.support.datatypes.SmClassClientConfiguration;
+import com.ccadllc.dcas.npm.Nonce;
+import com.ccadllc.dcas.npm.messages.SecurityAnnounceMessage;
+import com.ccadllc.dcas.support.datatypes.ApAddressType;
+import com.ccadllc.dcas.support.datatypes.ApIdentifier;
+import com.ccadllc.dcas.support.datatypes.CommonImageInfo;
+import com.ccadllc.dcas.support.datatypes.SmClassIdentifier;
+import com.ccadllc.dcas.support.datatypes.SmClientIdentifier;
+import com.ccadllc.dcas.support.datatypes.SmClientType;
+
+import org.easymock.EasyMock;
+import org.testng.Assert;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeClass;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+/**
+ * Tests <code>DefaultRegion</code>.
+ */
+@Test
+public class DefaultRegionTest
+{
+    private Calendar inThePastStartTime;
+
+    private Calendar startTime;
+
+    private Calendar endTime;
+
+    private RegionDeploymentStrategy deploymentStrategy;
+
+    private RegionPersistenceHelper persistenceHelper;
+
+    private ApIdentifier apIdentifier;
+
+    private boolean enableSecurityAnnounceOperationUponDeployment;
+
+    @BeforeClass
+    public void disableBeanConfigurer()
+    {
+
+    }
+
+    @BeforeMethod
+    public void setUp() throws Exception
+    {
+        AspectJTestUtils.disableBeanConfigurerAspect(DefaultRegion.class);
+
+        inThePastStartTime = Calendar.getInstance();
+        startTime = Calendar.getInstance();
+
+        endTime = Calendar.getInstance();
+        deploymentStrategy = EasyMock.createMock(RegionDeploymentStrategy.class);
+        persistenceHelper = EasyMock.createMock(RegionPersistenceHelper.class);
+        inThePastStartTime.add(Calendar.HOUR, -1);
+        startTime.add(Calendar.HOUR, 1);
+        endTime.add(Calendar.HOUR, 2);
+
+        apIdentifier = new ApIdentifier(1L, ApAddressType.IPV4_ADDRESS_FORMAT, new byte[] {127, 0, 0, 1 }, 1, 2, 3);
+
+        enableSecurityAnnounceOperationUponDeployment = true;
+    }
+
+    @AfterMethod
+    public void tearDown()
+    {
+        inThePastStartTime = null;
+        startTime = null;
+        endTime = null;
+        deploymentStrategy = null;
+        persistenceHelper = null;
+    }
+
+    public void testSimple()
+    {
+        final DefaultRegion region = new DefaultRegion(1L);
+        Assert.assertNotNull(region.getStagedData());
+        Assert.assertNotNull(region.getDeployedData());
+        region.setName("a-region");
+        Assert.assertEquals(region.getName(), "a-region");
+        Assert.assertEquals(region.getLocalizationId(), 1);
+    }
+
+    public void testAnnouncementDestinations()
+    {
+        final DefaultRegion region = new DefaultRegion(1L);
+        final AnnouncementDestination announcementDestination = new AnnouncementDestination();
+
+        region.addAnnouncementDestination(announcementDestination);
+        Assert
+            .assertTrue(region.getStagedData().getConfiguration().getAnnouncementDestinations().contains(announcementDestination));
+
+        region.removeAnnouncementDestination(announcementDestination);
+        Assert.assertFalse(region.getStagedData().getConfiguration().getAnnouncementDestinations()
+            .contains(announcementDestination));
+
+        region.addAnnouncementDestination(announcementDestination);
+        region.deploy(new Date(), enableSecurityAnnounceOperationUponDeployment);
+        Assert
+            .assertTrue(region.getStagedData().getConfiguration().getAnnouncementDestinations().contains(announcementDestination));
+        Assert.assertTrue(region.getDeployedData().getConfiguration().getAnnouncementDestinations().contains(
+            announcementDestination));
+
+        region.updateAnnouncementDestinations(new ArrayList<AnnouncementDestination>());
+        Assert.assertFalse(region.getStagedData().getConfiguration().getAnnouncementDestinations()
+            .contains(announcementDestination));
+    }
+
+    public void testSetSecurityAnnounceConfiguration()
+    {
+        final DefaultRegion region = new DefaultRegion(1L);
+        final SecurityAnnounceConfiguration configuration = new SecurityAnnounceConfiguration();
+
+        region.setSecurityAnnounceConfiguration(configuration);
+        Assert.assertEquals(region.getStagedData().getConfiguration().getSecurityAnnounceConfiguration(), configuration);
+    }
+
+    public void testDeploy()
+    {
+        final AnnouncementDestination announcementDestination = new AnnouncementDestination();
+        final PersonalizationServer personalizationServer = EasyMock.createMock(PersonalizationServer.class);
+        final DefaultRegion region = new DefaultRegion(1L);
+        AspectJTestUtils.disableBeanConfigurerAspect(DefaultRegion.class);
+        final SmClassIdentifier smClassId = new SmClassIdentifier(new byte[] {}, new byte[] {});
+
+        final SmClientIdentifier smClientId = new SmClientIdentifier(SmClientType.CONDITIONAL_ACCESS_SYSTEM, 1, 2);
+        final ClientReferenceCombination combination = new ClientReferenceCombination(false, new ClientReference(smClientId,
+            (short)3, 3000L));
+
+        final SmClassIdentifier supportedClass = smClassId;
+
+        final Collection<SmClassIdentifier> supportedClasses = new ArrayList<SmClassIdentifier>();
+        supportedClasses.add(supportedClass);
+
+        final CommonImageInfo commonImageInfo = new CommonImageInfo("TEST", smClientId, supportedClasses, null);
+        final Collection<CommonImageInfo> commonImageList = new ArrayList<CommonImageInfo>();
+        commonImageList.add(commonImageInfo);
+
+        EasyMock.expect(personalizationServer.getPsClientImageInfosByClientType(SmClientType.CONDITIONAL_ACCESS_SYSTEM)).andReturn(
+            commonImageList).anyTimes();
+
+        EasyMock.replay(personalizationServer);
+        region.addAnnouncementDestination(announcementDestination);
+        region.addClientCombinations(smClassId, combination);
+
+        final Date endTime = new Date();
+        region.deploy(endTime, enableSecurityAnnounceOperationUponDeployment);
+
+        Assert.assertNotNull(region.getDeployedData());
+        Assert.assertEquals(region.getDeployedData().getSecurityAnnounceCounter(), 1);
+        Assert.assertEquals(region.getDeployedData().getDeploymentEndTime(), endTime);
+        Assert.assertEquals(region.getStagedData().getDeploymentStatus(), RegionDeploymentStatus.CURRENT);
+
+        final RegionConfiguration deployedConfiguration = region.getDeployedData().getConfiguration();
+        Assert.assertEquals(1, deployedConfiguration.getAnnouncementDestinations().size());
+        Assert.assertTrue(deployedConfiguration.getAnnouncementDestinations().contains(announcementDestination));
+        Assert.assertEquals(1, deployedConfiguration.getCombinationsByClass().size());
+
+        final SmClassClientConfiguration config = new SmClassClientConfiguration(smClassId, combination);
+        Assert.assertTrue(deployedConfiguration.getCombinationsByClass().contains(config));
+
+        EasyMock.verify(personalizationServer);
+    }
+
+    public void testIncrementSecurityAnnounceVersionOnNeverDeployedRegion()
+    {
+        final DefaultRegion region = new DefaultRegion(1L);
+
+        final int previousCounter = region.getDeployedData().getSecurityAnnounceCounter();
+        final Nonce previousNonce = region.getDeployedData().getSecurityAnnounceNonce();
+
+        region.incrementSecurityAnnounceVersion();
+
+        Assert.assertEquals(region.getDeployedData().getSecurityAnnounceCounter(), previousCounter);
+        Assert.assertEquals(region.getDeployedData().getSecurityAnnounceNonce(), previousNonce);
+    }
+
+    public void testIncrementSecurityAnnounceVersion()
+    {
+        final DefaultRegion region = new DefaultRegion(1L);
+        region.deploy(endTime.getTime(), enableSecurityAnnounceOperationUponDeployment);
+
+        final int previousCounter = region.getDeployedData().getSecurityAnnounceCounter();
+        final Nonce previousNonce = region.getDeployedData().getSecurityAnnounceNonce();
+
+        region.incrementSecurityAnnounceVersion();
+
+        Assert.assertEquals(region.getDeployedData().getSecurityAnnounceCounter(), previousCounter + 1);
+        Assert.assertFalse(region.getDeployedData().getSecurityAnnounceNonce().equals(previousNonce));
+    }
+
+    public void testDeploymentStrategy()
+    {
+        final DefaultRegion region = new DefaultRegion(1L);
+        region.setDeploymentStrategy(deploymentStrategy);
+        region.setPersistenceHelper(persistenceHelper);
+        persistenceHelper.postDeployCleanup(region.getDeployedData());
+        EasyMock.expectLastCall();
+        deploymentStrategy.deploy(region);
+        EasyMock.expectLastCall();
+        EasyMock.replay(deploymentStrategy, persistenceHelper);
+        region.deploy(new Date(), true);
+        EasyMock.verify(deploymentStrategy, persistenceHelper);
+    }
+
+    public void testScheduleFutureDeployment()
+    {
+        final DefaultRegion region = new DefaultRegion(1L);
+
+        region.scheduleDeployment(startTime.getTime(), endTime.getTime(), enableSecurityAnnounceOperationUponDeployment);
+
+        Assert.assertEquals(region.getStagedData().getScheduledDeploymentStartTime(), startTime.getTime());
+        Assert.assertEquals(region.getStagedData().getScheduledDeploymentEndTime(), endTime.getTime());
+        Assert.assertEquals(region.getStagedData().getDeploymentStatus(), RegionDeploymentStatus.SCHEDULED);
+    }
+
+    public void testScheduleImmediateDeployment()
+    {
+        final DefaultRegion region = new DefaultRegion(1L);
+
+        final Date startTimeDate = inThePastStartTime.getTime();
+        final Date endTimeDate = endTime.getTime();
+
+        region.scheduleDeployment(startTimeDate, endTimeDate, enableSecurityAnnounceOperationUponDeployment);
+
+        Assert.assertTrue(region.getDeployedData().getDeploymentStartTime().compareTo(startTimeDate) >= 0);
+        Assert.assertEquals(region.getDeployedData().getDeploymentEndTime(), endTimeDate);
+        Assert.assertEquals(region.getDeployedData().getOperationalStatus(), OperationalStatus.ACTIVE);
+    }
+
+    public void testDeployScheduledDeployment()
+    {
+        final DefaultRegion region = new DefaultRegion(1L);
+        AspectJTestUtils.disableBeanConfigurerAspect(DefaultRegion.class);
+        region.scheduleDeployment(startTime.getTime(), endTime.getTime(), enableSecurityAnnounceOperationUponDeployment);
+        region.deployScheduledDeployment(enableSecurityAnnounceOperationUponDeployment);
+
+        Assert.assertEquals(region.getDeployedData().getDeploymentEndTime(), endTime.getTime());
+        Assert.assertEquals(region.getStagedData().getDeploymentStatus(), RegionDeploymentStatus.CURRENT);
+    }
+
+    public void testUpdateConfigurationErrorsNoDeployedConfiguration()
+    {
+        final DefaultRegion region = new DefaultRegion(1L);
+        region.updateConfigurationErrors();
+    }
+
+    public void testUpdateConfigurationErrorsWithDeployedConfiguration()
+    {
+        final DefaultRegion region = new DefaultRegion(1L);
+        region.deploy(new Date(), enableSecurityAnnounceOperationUponDeployment);
+        region.updateConfigurationErrors();
+    }
+
+    public void testCreateSecurityAnnounceMessage()
+    {
+        final DefaultRegion region = new DefaultRegion(1L);
+        region.addClientCombinations(new SmClassIdentifier("00".getBytes(), "00".getBytes()), new ClientReferenceCombination(false,
+            new ClientReference(new SmClientIdentifier(SmClientType.CONDITIONAL_ACCESS_SYSTEM, 1, 2), (short)3, 3000L)));
+        region.deploy(endTime.getTime(), enableSecurityAnnounceOperationUponDeployment);
+        final SecurityAnnounceMessage message = region.createSecurityAnnounceMessage(apIdentifier);
+        Assert.assertNotNull(message);
+        Assert.assertEquals(message.getCounter(), region.getDeployedData().getSecurityAnnounceCounter());
+        Assert.assertEquals(message.getResponseTimeLimit(), region.getDeployedData().getConfiguration()
+            .getSecurityAnnounceConfiguration().getResponseTimeLimitInSeconds());
+        Assert.assertEquals(message.getApIdentifier(), apIdentifier);
+        Assert.assertEquals(message.getLocalizationId(), (Long)region.getLocalizationId());
+        Assert.assertEquals(message.getSequenceIdentifier(), region.getDeployedData().getSecurityAnnounceNonce());
+        Assert.assertEquals(message.getResponseDirective(), region.getDeployedData().getConfiguration()
+            .getSecurityAnnounceConfiguration().getResponseDirective());
+        Assert.assertEquals(message.getSmClassToClientCombinationsMappings().length, 1);
+    }
+
+    @Test(expectedExceptions = IllegalStateException.class)
+    public void testCreateSecurityAnnounceMessageButNeverDeployed()
+    {
+        final DefaultRegion region = new DefaultRegion(1L);
+        region.createSecurityAnnounceMessage(apIdentifier);
+    }
+}

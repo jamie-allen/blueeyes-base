@@ -1,0 +1,224 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dks.ddip.impl;
+
+import java.util.List;
+
+import com.ccadllc.commons.util.HexByteStringFormatter;
+import com.ccadllc.commons.util.Option;
+import com.ccadllc.firebird.core.base.common.util.XPathUtility;
+import com.ccadllc.firebird.vms.dks.ddip.DtaEcmInfo;
+import com.ccadllc.firebird.vms.dks.ddip.EcmInfo;
+import com.ccadllc.firebird.vms.dks.ddip.ProgramTier;
+import com.ccadllc.firebird.vms.dks.ddip.RightsVector;
+import com.ccadllc.firebird.vms.dks.ddip.SecurityDomainIdentifier;
+
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+
+import com.google.common.collect.Lists;
+
+public class EcmRequestMessage extends AbstractDdipRequest
+{
+    private final short categorySequenceNumber;
+    private final EcmInfo ecmInfo;
+    public short getCategorySequenceNumber()
+    {
+        return categorySequenceNumber;
+    }
+
+    public EcmInfo getEcmInfo()
+    {
+        return ecmInfo;
+    }
+
+    public DtaEcmInfo getDtaEcmInfo()
+    {
+        return dtaEcmInfo;
+    }
+
+    private final DtaEcmInfo dtaEcmInfo;
+
+    public EcmRequestMessage(final SecurityDomainIdentifier securityDomain, final short categorySequenceNumber, final EcmInfo ecmInfo, final DtaEcmInfo dtaEcmInfo)
+    {
+        super(securityDomain);
+        this.categorySequenceNumber = categorySequenceNumber;
+        this.ecmInfo = ecmInfo;
+        this.dtaEcmInfo = dtaEcmInfo;
+    }
+
+    @Override
+    protected void appendMoreXmlElements(final Document document, final Node messageNode)
+    {
+        final Element csnNode = appendNewElement(messageNode, "Csn");
+        csnNode.setTextContent(Short.toString(categorySequenceNumber));
+
+        // EcmInfo
+        final Element ecmInfoNode = appendNewElement(messageNode, "EcmInfo");
+        appendEcmInfo(ecmInfoNode);
+
+        // DtaEcmInfo
+        final Element dtaEcmInfoNode = appendNewElement(messageNode, "DtaEcmInfoNode");
+        appendDtaEcmInfo(dtaEcmInfoNode);
+    }
+
+    private void appendEcmInfo(final Element ecmInfoNode)
+    {
+        final Element serviceIdNode = appendNewElement(ecmInfoNode, "ServiceId");
+        serviceIdNode.setTextContent(Integer.toString(ecmInfo.getServiceId()));
+
+        final Element programEpochNumberNode = appendNewElement(ecmInfoNode, "ProgramEpochNumber");
+        programEpochNumberNode.setTextContent(Short.toString(ecmInfo.getProgramEpochNumber()));
+
+        final Element epochBeginWkeNumberNode = appendNewElement(ecmInfoNode, "EpochBeginWkeNumber");
+        epochBeginWkeNumberNode.setTextContent(Integer.toString(ecmInfo.getEpochBeginWkeNumber()));
+
+        final Element epochDurationNode = appendNewElement(ecmInfoNode, "EpochDuration");
+        epochDurationNode.setTextContent(Integer.toString(ecmInfo.getEpochDuration()));
+
+        final Element programControlByte2Node = appendNewElement(ecmInfoNode, "ProgramControlByte2");
+        programControlByte2Node.setTextContent(Short.toString(ecmInfo.getProgramControlByte2()));
+
+        final Element overlayControlByteNode = appendNewElement(ecmInfoNode, "OverlayControlByte");
+        overlayControlByteNode.setTextContent(Short.toString(ecmInfo.getOverlayControlByte()));
+
+        // Tier; required, can be up to eight Tier nodes
+        for (final ProgramTier tier : ecmInfo.getTiers())
+        {
+            final Element tierNode = appendNewElement(ecmInfoNode, "Tier");
+
+            final Element programTierNode = appendNewElement(tierNode, "ProgramTier");
+            programTierNode.setTextContent(Integer.toString(tier.getProgramTier()));
+
+            final Element tierTypeByte = appendNewElement(tierNode, "TierTypeByte");
+            tierTypeByte.setTextContent(Short.toString(tier.getTierTypeByte()));
+        }
+
+        final Element workingKeyPeriodNode = appendNewElement(ecmInfoNode, "WorkingKeyPeriod");
+        workingKeyPeriodNode.setTextContent(Short.toString(ecmInfo.getWorkingKeyPeriod()));
+    }
+
+    private void appendDtaEcmInfo(final Element dtaEcmInfoNode)
+    {
+        final Element sharedKeyIdentifierNode = appendNewElement(dtaEcmInfoNode, "SharedKeyIdentifier");
+        sharedKeyIdentifierNode.setTextContent(Short.toString(dtaEcmInfo.getSharedKeyIdentifier()));
+
+        // PackageRights; not required
+        if (dtaEcmInfo.getPackageRights().isDefined())
+        {
+            final Element packageRightsNode = appendNewElement(dtaEcmInfoNode, "PackageRights");
+            packageRightsNode.setTextContent(HexByteStringFormatter.toStringWithoutPrefix(dtaEcmInfo.getPackageRights().get().getBytes()));
+        }
+
+        for (final Integer baseRight : dtaEcmInfo.getBaseRights())
+        {
+            final Element baseRightsNode = appendNewElement(dtaEcmInfoNode, "BaseRights");
+            baseRightsNode.setTextContent(Integer.toString(baseRight));
+        }
+
+        final Element cciDataNode = appendNewElement(dtaEcmInfoNode, "CciData");
+        cciDataNode.setTextContent(Integer.toString(dtaEcmInfo.getCciData()));
+
+        final Element includeClass1AuthenticatorNode = appendNewElement(dtaEcmInfoNode, "IncludeClass1Authenticator");
+        includeClass1AuthenticatorNode.setTextContent(Boolean.toString(dtaEcmInfo.isIncludeClass1Authenticator()));
+    }
+
+    static class Factory extends AbstractRequestMessageFactory
+    {
+        @Override
+        protected DdipRequestMessage fromXml(final Node messageNode, final Option<SecurityDomainIdentifier> securityDomain)
+        {
+            final short categorySequenceNumber = Integer.valueOf(XPathUtility.parseRequiredInt(messageNode, getNodeSelectionExpression("Csn"), "Category sequence number is required.")).shortValue();
+            final Node ecmNode = XPathUtility.parseNode(messageNode, getNodeSelectionExpression("EcmInfo"));
+            if (ecmNode == null)
+            {
+                throw new IllegalArgumentException("ECM information is required.");
+            }
+            final Node dtaEcmNode = XPathUtility.parseNode(messageNode, getNodeSelectionExpression("DtaEcmInfo"));
+            if (dtaEcmNode == null)
+            {
+                throw new IllegalArgumentException("DTA ECM information is required.");
+            }
+            return new EcmRequestMessage(securityDomain.get(), categorySequenceNumber, getEcmInfo(ecmNode), getDtaEcmInfo(dtaEcmNode));
+        }
+
+        private EcmInfo getEcmInfo(final Node messageNode)
+        {
+            final int serviceId = XPathUtility.parseRequiredInt(messageNode, getNodeSelectionExpression("ServiceId"), "");
+            final short programEpochNumber = Integer.valueOf(XPathUtility.parseRequiredInt(messageNode, getNodeSelectionExpression("ProgramEpochNumber"), "Program epoch number is required.")).shortValue();
+            final int epochBeginWkeNumber = XPathUtility.parseRequiredInt(messageNode, getNodeSelectionExpression("EpochBeginWkeNumber"), "Epoch begin WKE number is required");
+            final int epochDuration = XPathUtility.parseRequiredInt(messageNode, getNodeSelectionExpression("EpochDuration"), "Epoch duration is required.");
+            final short programControlByte2 = Integer.valueOf(XPathUtility.parseRequiredInt(messageNode, getNodeSelectionExpression("ProgramControlByte2"), "Program control byte 2 is required.")).shortValue();
+            final short overlayControlByte = Integer.valueOf(XPathUtility.parseRequiredInt(messageNode, getNodeSelectionExpression("OverlayControlByte"), "Overlay control byte is required.")).shortValue();
+            final short workingKeyPeriod = Integer.valueOf(XPathUtility.parseRequiredInt(messageNode, getNodeSelectionExpression("WorkingKeyPeriod"), "Working key period is required.")).shortValue();
+            return new EcmInfo.Builder()
+                    .serviceId(serviceId)
+                    .programEpochNumber(programEpochNumber)
+                    .epochBeginWkeNumber(epochBeginWkeNumber)
+                    .epochDuration(epochDuration)
+                    .programControlByte2(programControlByte2)
+                    .overlayControlByte(overlayControlByte)
+                    .tiers(getEcmTiers(messageNode))
+                    .workingKeyPeriod(workingKeyPeriod)
+                    .build();
+        }
+
+        private Iterable<ProgramTier> getEcmTiers(final Node ecmNode)
+        {
+            final List<ProgramTier> ecmTiers = Lists.newArrayList();
+            for(Node childNode = ecmNode.getFirstChild(); childNode != null; )
+            {
+                // Get the next node first, and process the current child
+                final Node nextChild = childNode.getNextSibling();
+                if (childNode.getNodeName().equals("Tier"))
+                {
+                    final int programTier = XPathUtility.parseRequiredInt(childNode, getNodeSelectionExpression("ProgramTier"), "Program tier is required.");
+                    final short tierTypeByte = Integer.valueOf(XPathUtility.parseRequiredInt(childNode, getNodeSelectionExpression("TierTypeByte"), "Tier type byte is required.")).shortValue();
+                    ecmTiers.add(new ProgramTier(programTier, tierTypeByte));
+                }
+                childNode = nextChild;
+            }
+
+            if (ecmTiers.size() <= 1)
+            {
+                throw new IllegalArgumentException("There must be at least one ECM tier.");
+            }
+
+            return ecmTiers;
+        }
+
+        private DtaEcmInfo getDtaEcmInfo(final Node messageNode)
+        {
+            final short sharedKeyIdentifier = Integer.valueOf(XPathUtility.parseRequiredInt(messageNode, getNodeSelectionExpression("SharedKeyIdentifier"), "Shared key identifier is a required field.")).shortValue();
+            final Node packageRightsNode = XPathUtility.parseNode(messageNode, getNodeSelectionExpression("PackageRights"));
+            if (packageRightsNode == null)
+            {
+                throw new IllegalArgumentException("Package rights node is required.");
+            }
+            final int cciData = XPathUtility.parseRequiredInt(messageNode, getNodeSelectionExpression("CciData"), "CCI data is required.");
+            final boolean includeClass1Authenticator = XPathUtility.parseRequiredBoolean(messageNode, getNodeSelectionExpression("IncludeClass1Authenticator"), "Include class 1 authenticator is a required field");
+            return new DtaEcmInfo(sharedKeyIdentifier,
+                    packageRightsNode == null ? Option.<RightsVector>some(new RightsVector(HexByteStringFormatter.toByteArray(packageRightsNode.getTextContent()))) : Option.<RightsVector>none(),
+                    getDtaEcmBaseRights(messageNode),
+                    cciData,
+                    includeClass1Authenticator);
+        }
+
+        private Iterable<Integer> getDtaEcmBaseRights(final Node dtaEcmNode)
+        {
+            final List<Integer> baseRights = Lists.newArrayList();
+            for(Node childNode = dtaEcmNode.getFirstChild(); childNode != null; )
+            {
+                // Get the next node first, and process the current child
+                final Node nextChild = childNode.getNextSibling();
+                if (childNode.getNodeName().equals("BaseRights"))
+                {
+                    baseRights.add(Integer.valueOf(childNode.getTextContent()));
+                }
+                childNode = nextChild;
+            }
+
+            return baseRights;
+        }
+    }
+}

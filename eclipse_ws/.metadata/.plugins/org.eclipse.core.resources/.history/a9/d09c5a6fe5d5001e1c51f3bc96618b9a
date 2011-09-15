@@ -1,0 +1,150 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.stream.manager.impl;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
+
+import java.nio.ByteBuffer;
+import java.util.Calendar;
+import java.util.List;
+
+import com.ccadllc.firebird.vms.common.packetfiltering.AbstractPacketFilter;
+
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+import com.google.common.collect.Lists;
+
+/** Tests <code>Multiplexer</code>. */
+@Test
+public class MultiplexerTest
+{
+    private static class PacketRecordingPacketFilter extends AbstractPacketFilter
+    {
+        private final List<byte[]> packets = Lists.newArrayList();
+
+        @Override
+        public boolean insert(final byte[] packet)
+        {
+            packets.add(packet);
+            return true;
+        }
+
+        public List<byte[]> getPacktets()
+        {
+            return packets;
+        }
+    }
+
+    private Multiplexer multiplexer;
+    private final int pid = 8100;
+    private final int cc = 0;
+    private byte[] mpeg2Packet;
+    private PacketRecordingPacketFilter packetRecorder;
+
+    @BeforeMethod
+    public void setUp()
+    {
+        packetRecorder = new PacketRecordingPacketFilter();
+        multiplexer = new Multiplexer(pid, packetRecorder);
+        mpeg2Packet = MultiplexerTestUtils.getMpeg2Packet();
+    }
+
+    public void testVerifyPidInsertedCorrectly() throws Exception
+    {
+        multiplexer.insert(mpeg2Packet);
+        assertThat(MultiplexerTestUtils.getPidFromMpeg2PacketFirst4BytesAsInt(packetRecorder.getPacktets().get(0)), equalTo(pid));
+    }
+
+    public void testVerifyCcInsertedCorrectly() throws Exception
+    {
+        multiplexer.insert(mpeg2Packet);
+        assertThat(MultiplexerTestUtils.getCcFromMpeg2PacketFirst4BytesAsInt(packetRecorder.getPacktets().get(0)), equalTo(cc));
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testVerifyMultiplexerFailsOnPacketTooLarge() throws Exception
+    {
+        multiplexer.insert(MultiplexerTestUtils.getBadMpeg2Packet());
+    }
+
+    @Test()
+    public void testMpeg2Packet16HasCcResetToZero() throws Exception
+    {
+        final ByteBuffer packetsToProcessBuffer = ByteBuffer.allocate(Mpeg2Packet.PACKET_SIZE_IN_BYTES * 17);
+        for (int i = 0; i < Mpeg2Packet.MAX_CONTINUITY_COUNTER + 1; ++i)
+        {
+            packetsToProcessBuffer.put(mpeg2Packet);
+        }
+
+        packetsToProcessBuffer.flip();
+        final byte[] packetsToProcess = new byte[packetsToProcessBuffer.remaining()];
+        packetsToProcessBuffer.get(packetsToProcess);
+
+        multiplexer.insert(packetsToProcess);
+
+        assertThat(MultiplexerTestUtils.getCcFromMpeg2PacketFirst4BytesAsInt(packetRecorder.getPacktets().get(Mpeg2Packet.MAX_CONTINUITY_COUNTER)), equalTo(cc));
+    }
+
+    public void testAtomicInsertion() throws Exception
+    {
+        final int numberOfPacketsPerBlock = 16;
+
+        final Thread allZeros = new Thread(new Runnable() {
+            public void run()
+            {
+                final Calendar endTime = Calendar.getInstance();
+                endTime.add(Calendar.MILLISECOND, 500);
+
+                while (System.currentTimeMillis() < endTime.getTimeInMillis())
+                {
+                    multiplexer.insert(MultiplexerTestUtils.getBlockMpeg2PacketAllZeros(numberOfPacketsPerBlock));
+                }
+            }
+        });
+
+        final Thread allOnes = new Thread(new Runnable() {
+            public void run()
+            {
+                final Calendar endTime = Calendar.getInstance();
+                endTime.add(Calendar.MILLISECOND, 500);
+
+                while (System.currentTimeMillis() < endTime.getTimeInMillis())
+                {
+                    multiplexer.insert(MultiplexerTestUtils.getBlockMpeg2PacketAllOnes(numberOfPacketsPerBlock));
+                }
+            }
+        });
+
+        allZeros.start();
+        allOnes.start();
+
+        allZeros.join();
+        allOnes.join();
+
+        int currentPacketCounter = 0;
+        int currentPacketByteAsInt;
+        int previousPacketByteAsInt = 0;
+
+        for (final byte[] packet : packetRecorder.packets)
+        {
+            currentPacketByteAsInt = packet[5];
+
+            if (currentPacketCounter < numberOfPacketsPerBlock)
+            {
+                if (currentPacketCounter > 0)
+                {
+                    assertThat(currentPacketByteAsInt, equalTo(previousPacketByteAsInt));
+                }
+                currentPacketCounter++;
+            }
+
+            if (currentPacketCounter == numberOfPacketsPerBlock)
+            {
+                currentPacketCounter = 0;
+            }
+
+            previousPacketByteAsInt = currentPacketByteAsInt;
+        }
+    }
+}

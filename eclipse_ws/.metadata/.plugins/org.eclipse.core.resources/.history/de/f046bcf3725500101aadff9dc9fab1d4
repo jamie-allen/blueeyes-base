@@ -1,0 +1,195 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+
+package com.ccadllc.firebird.core.serviceability.reporter.impl.report;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.util.Calendar;
+import java.util.Map;
+import java.util.Set;
+
+import com.ccadllc.firebird.core.serviceability.reporter.ReportType;
+import com.ccadllc.firebird.core.serviceability.reporter.impl.util.JsonUtil;
+
+import net.sf.json.JSONObject;
+
+import org.joda.time.DateTime;
+import org.joda.time.DateTimeZone;
+import org.joda.time.format.ISODateTimeFormat;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
+
+/** Unit tests for {@link StreamWriterJsonReport}. */
+@Test
+public class StreamWriterJsonReportTest
+{
+
+    private static final String DIAGNOSTIC_REPORT = "diagnostic-report";
+
+    private static final String REPORTER_TEST_BUNDLE = "reporter.test.bundle";
+
+    private static final String SPECIAL_VALUE_TEST = "special-value-test";
+
+    private JSONObject reportData;
+
+    private JSONObject expectedReport;
+
+    private ByteArrayOutputStream stream;
+
+    private Report report;
+
+    private final Logger logger = LoggerFactory.getLogger(StreamWriterJsonReportTest.class);
+
+    private JSONObject streamToObject(final ByteArrayOutputStream stream)
+    {
+        return JsonUtil.objectFromStream(new ByteArrayInputStream(stream.toByteArray()));
+    }
+
+    @BeforeMethod
+    public void beforeMethod()
+    {
+        reportData = new JSONObject();
+        expectedReport = new JSONObject().element(DIAGNOSTIC_REPORT, reportData);
+        stream = new ByteArrayOutputStream();
+        report = new StreamWriterJsonReport(stream);
+    }
+
+    @Test(enabled = false)
+    public void testWriteNullDataNullIdentifier()
+    {
+        report.start(ReportType.SUMMARY);
+        report.write(null, null);
+        report.end();
+        assertThat(streamToObject(stream), equalTo(expectedReport));
+    }
+
+    @Test(enabled = false)
+    public void testWriteNullData()
+    {
+        final String key = REPORTER_TEST_BUNDLE;
+        reportData.element(key, "");
+        expectedReport.element(DIAGNOSTIC_REPORT, reportData);
+
+        report.start(ReportType.SUMMARY);
+        report.write(key, null);
+        report.end();
+        assertThat(streamToObject(stream), equalTo(expectedReport));
+    }
+
+    public void testWriteDataFromTwoBundles()
+    {
+        final String bundle1 = REPORTER_TEST_BUNDLE;
+        final String bundle2 = "reporter.test.anotherbundle";
+        final String key1 = "key1";
+        final String key2 = "key2";
+        final String data1 = "somedata";
+        final String data2 = "otherdata";
+
+        final Map<String, Object> map1 = Maps.newHashMap();
+        final Map<String, Object> map2 = Maps.newHashMap();
+        map1.put(key1, data1);
+        map2.put(key2, data2);
+        reportData.element("reportType", ReportType.SUMMARY.toString());
+        reportData.element("reportDateTime", ISODateTimeFormat.basicDateTimeNoMillis().print(new DateTime(DateTimeZone.UTC)));
+        reportData.element(bundle1, map1);
+        reportData.element(bundle2, map2);
+        expectedReport.element(DIAGNOSTIC_REPORT, reportData);
+
+        report.start(ReportType.SUMMARY);
+        report.write(bundle1, map1);
+        report.write(bundle2, map2);
+        report.end();
+        final JSONObject object = streamToObject(stream);
+        logger.debug("JSON: {}", object.toString(1));
+        final JSONObject reportObject = object.getJSONObject("diagnostic-report");
+        assertThat(reportObject, notNullValue());
+        assertThat(reportObject.getString("reportType"), equalTo(ReportType.SUMMARY.toString()));
+        assertThat(reportObject.getString("reportDateTime"), is(notNullValue()));
+        assertThat(reportObject.getJSONObject(bundle1), equalTo(reportData.get(bundle1)));
+        assertThat(reportObject.getJSONObject(bundle1), equalTo(reportData.get(bundle1)));
+    }
+//
+//    public void writeSpecialNumberValuesAreHandledByTranslatingToString()
+//    {
+//        final Map<String, Object> inputValues = Maps.newHashMap();
+//        inputValues.put("NaNDouble", Double.NaN);
+//        inputValues.put("NaNFloat", Float.NaN);
+//        inputValues.put("NegInfDouble", Double.NEGATIVE_INFINITY);
+//        inputValues.put("PosInfDouble", Double.POSITIVE_INFINITY);
+//        inputValues.put("NegInfFloat", Float.NEGATIVE_INFINITY);
+//        inputValues.put("PosInfFloat", Float.POSITIVE_INFINITY);
+//
+//        final Map<String, Object> expectedValues = Maps.newHashMap();
+//        expectedValues.put("NaNDouble", "NaN");
+//        expectedValues.put("NaNFloat", "NaN");
+//        expectedValues.put("NegInfDouble", "-Infinity");
+//        expectedValues.put("PosInfDouble", "Infinity");
+//        expectedValues.put("NegInfFloat", "-Infinity");
+//        expectedValues.put("PosInfFloat", "Infinity");
+//        expectedReport.accumulate(SPECIAL_VALUE_TEST, expectedValues);
+//
+//        report.start(ReportType.DETAIL);
+//        report.write(SPECIAL_VALUE_TEST, inputValues);
+//        report.end();
+//
+//        final JSONObject actualObject = streamToObject(stream);
+//        logger.debug("JSON: \n{}", actualObject.toString(1));
+//        final JSONObject actualValues = actualObject.getJSONObject(DIAGNOSTIC_REPORT).getJSONObject(SPECIAL_VALUE_TEST);
+//        assertThat(actualValues.getString("NaNDouble"), equalTo(expectedValues.get("NaNDouble")));
+//    }
+
+    public void objectCyclesAreHandledByNotWritingAttributeValue()
+    {
+        final CycleTester object1 = new CycleTester(null);
+        final CycleTester object2 = new CycleTester(object1);
+        object1.setOtherInstance(object2);
+
+        final Map<String, Object> cycleMap = Maps.newHashMap();
+        cycleMap.put("object1", object1);
+        cycleMap.put("object2", object2);
+        report.start(ReportType.DETAIL);
+        report.write(SPECIAL_VALUE_TEST, cycleMap);
+        report.end();
+
+        final JSONObject actualObject = streamToObject(stream);
+        logger.debug("JSON: \n{}", actualObject.toString(1));
+        final Set<String> expectedKeys = Sets.newHashSet("object1", "object2");
+        final Set<String> actualKeys = actualObject.getJSONObject(DIAGNOSTIC_REPORT).getJSONObject(SPECIAL_VALUE_TEST).keySet();
+        assertThat(actualKeys, equalTo(expectedKeys));
+    }
+//
+//    public void dateValuesAreHandledByTranslatingToString()
+//    {
+//
+//        final Calendar calendar = Calendar.getInstance();
+//
+//        final Map<String, Object> dataMap = Maps.newHashMap();
+//        dataMap.put("date1", calendar.getTime());
+//
+//        report.start(ReportType.SUMMARY);
+//        report.write(SPECIAL_VALUE_TEST, dataMap);
+//        report.end();
+//
+//        final JSONObject actualObject = streamToObject(stream);
+//        logger.debug("JSON: \n{}", actualObject.toString(1));
+//
+//        final String expectedDate =
+//            ISODateTimeFormat.basicDateTimeNoMillis().print(new DateTime(calendar.getTimeInMillis(), DateTimeZone.UTC));
+//
+//        assertThat(actualObject.getJSONObject("diagnostic-report").getJSONObject(SPECIAL_VALUE_TEST).getString("date1"),
+//            equalTo(expectedDate));
+//    }
+
+}

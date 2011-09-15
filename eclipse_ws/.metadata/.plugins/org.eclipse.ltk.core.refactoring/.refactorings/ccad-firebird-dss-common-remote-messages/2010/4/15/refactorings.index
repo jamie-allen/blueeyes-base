@@ -1,0 +1,8 @@
+1270647493220	Rename local variable 'mpegPacketRouteMapping'
+1270647511178	Rename local variable 'routePidMapping'
+1270648206621	Rename local variable 'mpegPacketRouteData'
+1270648250039	Rename local variable 'pidMappedRouteData'
+1270648439696	Rename local variable 'mpegPacketRouteMappingNodes'
+1270648452796	Rename local variable 'mpegPacketRouteData'
+1270661737655	Rename method 'getXPathsForBlockWithHeaderTransportPidMappedData'
+1270669904874	Rename method 'getXPathsForPidMappedRoute'

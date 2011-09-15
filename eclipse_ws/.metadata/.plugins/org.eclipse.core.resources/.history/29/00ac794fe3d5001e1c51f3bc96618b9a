@@ -1,0 +1,32 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.standalone.stream.manager.impl;
+
+import static com.ccadllc.firebird.dss.server.configuration.manager.ConfigManager.SERVER_CONFIGURATION_PID;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.osgi.service.cm.ConfigurationEvent;
+import org.osgi.service.cm.ConfigurationListener;
+
+/**
+ * Listens for updates to server configuration via the OSGi configuration admin service.
+ */
+public class StreamManagerConfigurationListener implements ConfigurationListener
+{
+    private static final Logger logger = LoggerFactory.getLogger(StreamManagerConfigurationListener.class);
+    private final DefaultStreamManager streamManager;
+
+    public StreamManagerConfigurationListener(final DefaultStreamManager streamManager)
+    {
+        this.streamManager = streamManager;
+    }
+
+    public void configurationEvent(final ConfigurationEvent event)
+    {
+        logger.debug("Received configuration event {}.", event.getPid());
+        if (event.getPid().equals(SERVER_CONFIGURATION_PID))
+        {
+            streamManager.updateConfiguration();
+        }
+    }
+}

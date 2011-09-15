@@ -1,0 +1,202 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dssrm.core;
+
+import java.util.Date;
+import java.util.Map;
+import java.util.UUID;
+
+import com.ccadllc.firebird.dss.common.datatypes.MeteringType;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStream;
+
+import net.jcip.annotations.Immutable;
+
+import org.apache.commons.lang.builder.EqualsBuilder;
+import org.apache.commons.lang.builder.HashCodeBuilder;
+import org.apache.commons.lang.builder.ToStringBuilder;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Maps;
+
+@Immutable
+public final class PeriodicDescription
+{
+    private final UUID streamId;
+    private final UUID id;
+    private final MeteringType metering;
+    private final Date startTime;
+    private final Date stopTime;
+    private final int insertionRate;
+    private final ImmutableMap<String, String> properties;
+
+    private PeriodicDescription(final Builder builder)
+    {
+        Preconditions.checkNotNull(builder.streamId, "streamId");
+        streamId = builder.streamId;
+
+        if (builder.id == null)
+        {
+            id = UUID.randomUUID();
+        }
+        else
+        {
+            id = builder.id;
+        }
+
+        Preconditions.checkNotNull(builder.metering, "metering");
+        metering = builder.metering;
+
+        startTime = builder.startTime;
+        stopTime = builder.stopTime;
+
+        Preconditions.checkArgument(builder.insertionRate > 0, "insertion rate must be greater than zero");
+        insertionRate = builder.insertionRate;
+
+        properties = ImmutableMap.copyOf(builder.properties);
+    }
+
+    public UUID getStreamId()
+    {
+        return streamId;
+    }
+
+    public UUID getId()
+    {
+        return id;
+    }
+
+    public MeteringType getMetering()
+    {
+        return metering;
+    }
+
+    public Date getStartTime()
+    {
+        return startTime;
+    }
+
+    public Date getStopTime()
+    {
+        return stopTime;
+    }
+
+    public int getInsertionRate()
+    {
+        return insertionRate;
+    }
+
+    public ImmutableMap<String, String> getProperties()
+    {
+        return properties;
+    }
+
+    @Override
+    public int hashCode()
+    {
+        return HashCodeBuilder.reflectionHashCode(this);
+    }
+
+    @Override
+    public boolean equals(final Object obj)
+    {
+        return EqualsBuilder.reflectionEquals(this, obj);
+    }
+
+    @Override
+    public String toString()
+    {
+        return ToStringBuilder.reflectionToString(this);
+    }
+
+    public Builder toBuilder()
+    {
+        return new Builder()
+            .streamId(streamId)
+            .id(id)
+            .metering(metering)
+            .startsAt(startTime)
+            .stopsAt(stopTime)
+            .insertEvery(insertionRate)
+            .properties(Maps.newHashMap(properties));
+    }
+
+    public static class Builder
+    {
+        private UUID streamId;
+        private UUID id;
+        private MeteringType metering = MeteringType.EVENLY_SPACED;
+        private Date startTime = new Date();
+        private Date stopTime;
+        private int insertionRate;
+        private Map<String, String> properties = Maps.newHashMap();
+
+        public Builder streamId(final UUID streamId)
+        {
+            this.streamId = streamId;
+            return this;
+        }
+
+        public Builder stream(final ElementaryStream stream)
+        {
+            streamId = stream.getId();
+            return this;
+        }
+
+        public Builder id(final UUID id)
+        {
+            this.id = id;
+            return this;
+        }
+
+        public Builder metering(final MeteringType metering)
+        {
+            this.metering = metering;
+            return this;
+        }
+
+        public Builder startsAt(final Date when)
+        {
+            startTime = when;
+            return this;
+        }
+
+        public Builder stopsAt(final Date when)
+        {
+            stopTime = when;
+            return this;
+        }
+
+        public Builder insertEvery(final int seconds)
+        {
+            insertionRate = seconds;
+            return this;
+        }
+
+        public Builder addProperty(final String key, final String value)
+        {
+            properties.put(key, value);
+            return this;
+        }
+
+        public Builder addProperties(final Map<String, String> properties)
+        {
+            if (properties != null)
+            {
+                this.properties.putAll(properties);
+            }
+
+            return this;
+        }
+
+        public Builder properties(final Map<String, String> properties)
+        {
+            this.properties = properties;
+            return this;
+        }
+
+        public PeriodicDescription build()
+        {
+            return new PeriodicDescription(this);
+        }
+    }
+}

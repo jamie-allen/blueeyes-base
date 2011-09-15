@@ -1,0 +1,87 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter;
+
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteNotificationHelper;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.JmxRouteNotificationManager;
+import com.ccadllc.firebird.vms.common.packetfiltering.ForwardingPacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilter;
+
+import net.jcip.annotations.ThreadSafe;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+@ThreadSafe
+public class Mpeg2AdaptationFieldValidator extends ForwardingPacketFilter
+{
+    private static final int BYTE_LENGTH = 8;
+    private static final int ADAPTATION_FIELD_BIT_INDEX_FIRST = 26;
+    private static final int ADAPTATION_FIELD_BIT_INDEX_SECOND = 27;
+    private static final int ADAPTATION_FIELD_BIT_VALUE_FIRST = 0;
+    private static final int ADAPTATION_FIELD_BIT_VALUE_SECOND = 1;
+
+    private final Logger logger = LoggerFactory.getLogger(Mpeg2AdaptationFieldValidator.class);
+    private final RouteNotificationHelper routeNotificationHelper;
+    private volatile boolean rejecting;
+
+    private final Object lock = new Object();
+
+    public Mpeg2AdaptationFieldValidator(final PacketFilter sink, final JmxRouteNotificationManager jmxRouteNotificationManager,
+        final String notificationsPrefixString)
+    {
+        super(sink);
+
+        routeNotificationHelper = new RouteNotificationHelper(jmxRouteNotificationManager,
+            notificationsPrefixString);
+    }
+
+    @Override
+    public boolean insert(final byte[] packet)
+    {
+        synchronized (lock)
+        {
+            if (isRejectingPacket(packet))
+            {
+                logger.debug("Not inserting packets from Mpeg2AdaptationFieldValidator.");
+                return false;
+            }
+
+            logger.debug("Inserting packets from Mpeg2AdaptationFieldValidator.");
+            return sink().insert(packet);
+        }
+    }
+
+    private boolean isRejectingPacket(final byte[] packet)
+    {
+        final boolean nowRejecting = !isAdaptationFieldValid(packet);
+        if (routeNotificationHelper.isRejectingStatusChanged(rejecting, nowRejecting))
+        {
+            routeNotificationHelper.sendRejectPacketNotification(createRejectingString(nowRejecting),
+                "Mpeg2AdaptationFieldValidatorRejectingPackets", nowRejecting);
+        }
+        rejecting = nowRejecting;
+        return rejecting;
+    }
+
+    private String createRejectingString(final boolean rejecting)
+    {
+        return String.format("Mpeg2AdaptationFieldValidator %s rejecting packets", (rejecting ? "is" : "is not"));
+    }
+
+    private boolean isAdaptationFieldValid(final byte[] mpeg2Packet)
+    {
+        logger.debug("Is adaptation field valid...");
+        return ((getBit(mpeg2Packet, ADAPTATION_FIELD_BIT_INDEX_FIRST) == ADAPTATION_FIELD_BIT_VALUE_FIRST)
+            && (getBit(mpeg2Packet, ADAPTATION_FIELD_BIT_INDEX_SECOND) == ADAPTATION_FIELD_BIT_VALUE_SECOND));
+    }
+
+    private static int getBit(
+            final byte[] data,
+            final int pos)
+    {
+        final int posByte = pos / BYTE_LENGTH;
+        final int posBit = pos % BYTE_LENGTH;
+        final byte valByte = data[posByte];
+        return valByte >> (BYTE_LENGTH - (posBit + 1)) & 0x0001;
+    }
+}

@@ -1,0 +1,117 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.transport.stream.manager.impl.transportstream;
+
+import static com.ccadllc.firebird.dss.server.realtime.common.jmx.StreamJmxConstants.TRANSPORT_STREAMS;
+import static com.ccadllc.firebird.dss.server.realtime.common.jmx.StreamJmxConstants.TRANSPORT_STREAM_LEVEL_KEY_NAME;
+import static com.ccadllc.firebird.dss.server.realtime.common.jmx.StreamJmxConstants.TRANSPORT_STREAM_SHAPER;
+
+import java.util.Map;
+
+import com.ccadllc.commons.util.concurrent.CallbackSupportingScheduledExecutorService;
+import com.ccadllc.firebird.dss.common.datatypes.TransmissionType;
+import com.ccadllc.firebird.dss.server.common.PacketFilterChainController;
+import com.ccadllc.firebird.dss.server.common.TransportStreamSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.common.TransportPacker;
+import com.ccadllc.firebird.dss.server.realtime.common.TransportSender;
+import com.ccadllc.firebird.dss.server.realtime.transport.manager.TransportManager;
+import com.ccadllc.firebird.dss.server.realtime.transport.stream.manager.impl.TransportStreamImage;
+import com.ccadllc.firebird.vms.common.packetfiltering.AbstractPacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.CompositePacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.ManagedPacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.Packet;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilterFactory;
+
+import net.jcip.annotations.ThreadSafe;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Maps;
+
+/**
+ * Extension of <code>AbstractPacketFilter</code> for sending datagrams to their destinations.
+ *
+ * Currently, this is only used for MPEG 2.
+ */
+@ThreadSafe
+public class TransportStreamSinkChain extends AbstractPacketFilter implements PacketFilterChainController<TransportStreamSnapshot>
+{
+    private final ManagedPacketFilter shaperForTransportStream;
+    private final TransportSender transportSender;
+    private final CompositePacketFilter chain;
+    private final PacketFilterFactory factory;
+    private volatile boolean disposed;
+
+    public TransportStreamSinkChain(final TransportManager transportManager, final TransportStreamSnapshot snapshot,
+        final TransportStreamImage transportStream, final PacketFilterFactory factory, final CallbackSupportingScheduledExecutorService executor)
+    {
+        super();
+        Preconditions.checkNotNull(transportManager, "transportManager");
+        Preconditions.checkNotNull(transportStream, "transportStream");
+        transportSender = new TransportSender(transportManager, snapshot);
+        this.factory = factory;
+
+        if (snapshot.getTransmissionType() == TransmissionType.MPEG2)
+        {
+            final TransportPacker transportPacker = new TransportPacker(transportSender, executor);
+            shaperForTransportStream = this.factory.newPolicingShaper(getManagementProperties(snapshot), snapshot.getShaping().getAverageBytesPerSecond(),
+                snapshot.getShaping().getBurstLimitInBytes(), snapshot.getShaping().getMaxLatencyInSeconds(), transportPacker);
+            chain = new CompositePacketFilter(ImmutableList.of(shaperForTransportStream, transportPacker, transportSender));
+        }
+        else
+        {
+            shaperForTransportStream = this.factory.newPolicingShaper(getManagementProperties(snapshot), snapshot.getShaping().getAverageBytesPerSecond(),
+                snapshot.getShaping().getBurstLimitInBytes(), snapshot.getShaping().getMaxLatencyInSeconds(), transportSender);
+            chain = new CompositePacketFilter(ImmutableList.of(shaperForTransportStream, transportSender));
+        }
+    }
+
+    private Map<String, String> getManagementProperties(final TransportStreamSnapshot stream)
+    {
+        final Map<String, String> managementProperties = Maps.newLinkedHashMap();
+        managementProperties.put("type", TRANSPORT_STREAMS);
+        managementProperties.put("id", Integer.toString(stream.getId()));
+        managementProperties.put(TRANSPORT_STREAM_LEVEL_KEY_NAME, TRANSPORT_STREAM_SHAPER);
+        return managementProperties;
+    }
+
+    @Override
+    public boolean insert(final Packet packet)
+    {
+        ensureNotDisposed();
+        return chain.insert(packet);
+    }
+
+    @Override
+    public void dispose()
+    {
+        chain.dispose();
+        disposed = true;
+    }
+
+    @Override
+    public void describeTo(final StringBuilder builder, final boolean detailed)
+    {
+        super.describeTo(builder, detailed);
+        chain.describeTo(builder, detailed);
+    }
+
+    @Override
+    public void update(final TransportStreamSnapshot snapshot)
+    {
+        ensureNotDisposed();
+        setDestinations(snapshot);
+    }
+
+    private void setDestinations(final TransportStreamSnapshot transportStream)
+    {
+        transportSender.setDestinations(transportStream);
+    }
+
+    private void ensureNotDisposed()
+    {
+        if (disposed)
+        {
+            throw new IllegalStateException("Object has been disposed.");
+        }
+    }
+}

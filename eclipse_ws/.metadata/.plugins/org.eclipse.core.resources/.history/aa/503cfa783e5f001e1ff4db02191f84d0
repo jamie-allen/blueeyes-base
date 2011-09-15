@@ -1,0 +1,65 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<!-- Copyright 2009 Combined Conditional Access Development, LLC. -->
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<body>
+<h1>External Route Manager</h1>
+
+<h2>Summary</h2>
+<p>Provides a facility for establishing a dedicated UDP route (which references a specified PID) through which external systems
+(such as the RADD) can forward datagrams for multiplexing into DSS stream output.</p>
+
+<h2>Design</h2>
+<p>The external route manager has no external interface.  It receives route creation, update and deletion OSGi events by
+registering with the {@link com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager}.  Once an
+external route is created, a controller opens a port and listens for UDP datagrams.  When a datagram is received, it is
+separated into Mpeg2 packets, routed by PID, assembled into data blocks and forwarded to the 
+{@link com.ccadllc.firebird.server.realtime.stream.manager.StreamManager} to be sent to each destination for that stream.</p>
+
+<p>The external route manager consists of the following components:</p>
+
+<ul>
+<li>{@link com.ccadllc.firebird.server.realtime.external.route.manager.ExternalRouteManager} handles the OSGi events from
+the {@link com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager}, manages a
+{@link com.ccadllc.firebird.server.realtime.external.route.manager.RouteController} for each route that is established, and
+maintains a mapping of port to {@link com.ccadllc.firebird.server.realtime.external.route.manager.RouteController} so that
+those routes can be updated and deleted.  When the class is initialized, it loads all 
+{@link com.ccadllc.firebird.dss.server.common.RouteSnapshot} instances from the
+{@link com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager} and sets up 
+{@link com.ccadllc.firebird.server.realtime.external.route.manager.RouteController} instances for each UDP persisted route.</li>
+<li>{@link com.ccadllc.firebird.server.realtime.external.route.manager.ExternalRouteManagerApplicationContextListener} listens
+for when the Spring application context has been refreshed, such as when the bundle is started, or when the
+{@link com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager} has been restarted.  It then tells the
+{@link com.ccadllc.firebird.server.realtime.external.route.manager.ExternalRouteManager} to initialize itself.</li>
+<li>{@link com.ccadllc.firebird.server.realtime.external.route.manager.RouteController} manages the UDP port through Apache Mina
+and forwards acceptable Mpeg2 packets to the filter chain for the packet's PID so that the packet can be forwarded to the
+appropriate stream.</li>
+<li>{@link com.ccadllc.firebird.server.realtime.external.route.manager.RouteControllerHandler} is a specialization of the
+{@link org.apache.mina.core.service.IoHandlerAdapter} callback for message reception.  When a datagram is received, it is split 
+into Mpeg2 packets, and if the Mpeg2 packet header sync byte is valid and the adaptation field is unused, it is sent back to the 
+{@link com.ccadllc.firebird.server.realtime.external.route.manager.RouteController} to be routed by PID.</li>
+<li>{@link com.ccadllc.firebird.server.realtime.external.route.manager.PidChainController} manages the filter chain for a
+specific PID, so that updates to the streams associated with a PID can be performed.</li>
+<li>{@link com.ccadllc.firebird.server.realtime.external.route.manager.Mpeg2BlockTransformer} assembles data blocks from
+Mpeg2 packets.</li>
+<li>{@link com.ccadllc.firebird.server.realtime.external.route.manager.Inserter} forwards data blocks to the
+{@link com.ccadllc.firebird.server.realtime.stream.manager.StreamManager} for each stream associated with a PID.</li>
+</ul>
+
+<h2>Bundle Use</h2>
+<p>No part of this bundle should be exported for external use.  There is no client for external route management.  All create,
+update and delete functionality should be managed through the provisioning capabilities provided elsewhere, and external routes
+are then managed based on events received.</p>
+
+<h2>JMX Support</h2>
+<p>The <b>RouteManager</b> includes JMX instrumentation, supporting access to the following attributes for each route:</p>
+<ul>
+    <li>port</li>
+    <li>pidMappings (if this is an Mpeg2 packet route)
+    <li>streamIds (if this is a block data route)</li>
+    <li>properties (if this is a UDP route)</li>
+</ul>
+<p>To access this periodic MXBean data, open a JMX console application (such as JConsole or VisualVM), select the application
+runtime, navigate to the MBean view, and select the <code>DSS</code> namespace.  This should list all streams by unique ID, 
+and permit viewing these attributes.</p> </body>
+</body>
+</html>

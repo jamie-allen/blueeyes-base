@@ -1,0 +1,1073 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.it;
+
+import static com.ccadllc.commons.util.MoreHamcrest.waitUntil;
+import static com.ccadllc.firebird.dss.common.datatypes.RouteDataType.BLOCKS;
+import static com.ccadllc.firebird.dss.common.datatypes.RouteDataType.MPEG_PACKETS;
+import static com.ccadllc.firebird.dss.common.datatypes.RouteType.ELEMENTARY_STREAM;
+import static com.ccadllc.firebird.dss.common.datatypes.RouteType.PID_MAPPED;
+import static com.ccadllc.firebird.dss.common.datatypes.RouteType.TRANSPORT_STREAM;
+import static com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType.TCP;
+import static com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType.UDP;
+import static com.ccadllc.firebird.dss.it.MxBeanUtils.verifyMBeanUnregistered;
+import static com.ccadllc.firebird.dss.it.StreamMatcher.acceptAllPackets;
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.ROUTE_DESCRIPTOR_TEMPLATE;
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.ROUTE_NOTIFICATIONS_MESSAGE_PREFIX;
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.TCP_ROUTE_LOOKUP_MXBEAN_OBJECT_NAME;
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.UDP_ROUTE_LOOKUP_MXBEAN_OBJECT_NAME;
+import static com.google.common.collect.Lists.newArrayList;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.isOneOf;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
+
+import java.lang.management.ManagementFactory;
+import java.net.InetAddress;
+import java.net.Socket;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
+
+import javax.management.InstanceNotFoundException;
+import javax.management.MBeanException;
+import javax.management.MBeanServer;
+import javax.management.MalformedObjectNameException;
+import javax.management.Notification;
+import javax.management.NotificationFilter;
+import javax.management.NotificationListener;
+import javax.management.ObjectName;
+import javax.management.ReflectionException;
+import javax.management.openmbean.CompositeDataSupport;
+import javax.management.openmbean.TabularDataSupport;
+
+import com.ccadllc.firebird.dss.common.datatypes.RouteDataType;
+import com.ccadllc.firebird.dss.common.datatypes.RouteType;
+import com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType;
+import com.ccadllc.firebird.dss.common.remote.messages.ElementaryStreams;
+import com.ccadllc.firebird.dss.common.remote.messages.PidMapped;
+import com.ccadllc.firebird.dss.common.remote.messages.PidMapping;
+import com.ccadllc.firebird.dss.common.remote.messages.StreamDestinationInfo;
+import com.ccadllc.firebird.dss.common.remote.messages.TransportStreams;
+import com.ccadllc.firebird.dss.server.common.RouteJmxUtility;
+import com.ccadllc.firebird.dss.server.realtime.common.Events;
+
+import org.hamcrest.BaseMatcher;
+import org.hamcrest.Description;
+import org.hamcrest.Matcher;
+import org.junit.After;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
+
+/**
+ * Instrumentation of JMX in the DSS to provide users with monitoring capabilities into the state of realtime routes.
+ *
+ * NOTE: This class has several tests disabled.  These tests execute some of the time without issue,
+ * but fail sporadically.  We need to understand the timing issues that cause them to fail.
+ */
+public class JmxRouteIntegrationTest extends AbstractDssOsgiIntegrationTest
+{
+    private static final Logger logger = LoggerFactory.getLogger(JmxRouteIntegrationTest.class);
+
+    private static final int VALID_PID1 = 0x1503;
+    private static final int PID_OUT1 = 1234;
+    private static final int PID_OUT2 = 1235;
+    private static final MBeanServer MBS = ManagementFactory.getPlatformMBeanServer();
+    private static final StreamDestinationInfo STREAM_ON_PORT1 = new StreamDestinationInfo(IP_STRING, PORT1);
+    private static final long TEN_SECONDS = 10000L;
+
+    private Long streamId1;
+    private Long streamId2;
+    private long routeId;
+    private int transportStreamId1;
+    private long previousNotificationSequenceNumber;
+    private Socket clientSocket;
+    private AtomicReference<Notification> notificationRef;
+    private NotificationListener notificationListener;
+
+    @Override
+    @Before public void onSetUp() throws Exception
+    {
+        super.onSetUp();
+        clearExistingModelChangeEvents();
+    }
+
+    @Override
+    @After public void onTearDown() throws Exception
+    {
+        super.onTearDown();
+        previousNotificationSequenceNumber = 0;
+        if (clientSocket != null)
+        {
+            clientSocket.close();
+        }
+    }
+
+    @Test
+    public void testInstrumentationFor_TcpBlockPidMappedRoute() throws Exception
+    {
+        final int port = createTcpBlockPidMappedRouteAndSendData(VALID_PID);
+
+        final Long[] routeIds = verifyLookupTcpRouteIdsForStreamId(streamId1);
+        Assert.assertTrue(routeIds.length == 1);
+        verifyLookupTcpRouteIdsForMappedPid(VALID_PID, routeIds[0]);
+
+        verifyPidMappedRouteInstrumentation(routeIds[0], TCP, BLOCKS, port);
+        verifyStatistics(new ObjectName(String.format(RouteJmxUtility.ROUTE_BLOCK_HEADER_DECODER_TEMPLATE, TCP, routeIds[0])), true, false);
+        verifyExpectedMappingsRetrievedforPid(new ObjectName(String.format(RouteJmxUtility.ROUTE_PACKET_FILTER_ROUTER_TEMPLATE, TCP, routeIds[0])), VALID_PID, streamId1);
+
+        clientSocket.close();
+        verifyRouteDescriptorUnregistered(TCP, BLOCKS, PID_MAPPED, routeIds[0], PORT3);
+        verifyBlockHeaderDecoderUnregistered(TCP, routeIds[0]);
+        verifyRouterUnregistered(TCP, PID_MAPPED, routeIds[0]);
+    }
+
+    @Test
+    public void testInstrumentationFor_TcpBlockElementaryStreamRoute() throws Exception
+    {
+        final int port = createTcpBlockElementaryStreamRouteAndSendData();
+
+        final Long[] routeIds = verifyLookupTcpRouteIdsForStreamId(streamId1);
+        Assert.assertTrue(routeIds.length == 1);
+
+        verifyElementaryStreamRouteInstrumentation(routeIds[0], TCP, BLOCKS, port);
+        verifyStatistics(new ObjectName(String.format(RouteJmxUtility.ROUTE_BLOCK_HEADER_DECODER_TEMPLATE, TCP, routeIds[0])), true, false);
+        verifyExpectedStreamIds(new ObjectName(String.format(RouteJmxUtility.ROUTE_PACKET_FILTER_ROUTER_TEMPLATE, TCP, routeIds[0])), Sets.newHashSet(streamId1));
+
+        clientSocket.close();
+        verifyRouteDescriptorUnregistered(TCP, BLOCKS, ELEMENTARY_STREAM, routeIds[0], PORT3);
+        verifyBlockHeaderDecoderUnregistered(TCP, routeIds[0]);
+        verifyRouterUnregistered(TCP, ELEMENTARY_STREAM, routeIds[0]);
+    }
+
+    @Test
+    public void testInstrumentationFor_TcpBlockTransportStreamRoute() throws Exception
+    {
+        final int port = createTcpBlockTransportStreamRoute();
+
+        final Long[] routeIds = verifyLookupTcpRouteIdsForTransportStreamId(transportStreamId1);
+        Assert.assertTrue(routeIds.length == 1);
+
+        verifyTransportStreamRouteInstrumentation(routeIds[0], TCP, BLOCKS, port);
+        verifyExpectedTransportStreamIds(new ObjectName(String.format(RouteJmxUtility.ROUTE_PACKET_FILTER_ROUTER_TEMPLATE, TCP, routeIds[0])), Sets.newHashSet(transportStreamId1));
+
+        dssClient.deleteTransportStream(transportStreamId1);
+        verifyRouteDescriptorUnregistered(TCP, BLOCKS, TRANSPORT_STREAM, routeIds[0], PORT3);
+        verifyRouterUnregistered(TCP, TRANSPORT_STREAM, routeIds[0]);
+    }
+
+    @Test
+    public void testInstrumentationFor_TcpMpeg2PidMappedRoute() throws Exception
+    {
+        final int port = createTcpMpeg2PidMappedRouteAndSendData(VALID_PID);
+
+        final Long[] routeIds = verifyLookupTcpRouteIdsForStreamId(streamId1);
+        Assert.assertTrue(routeIds.length == 1);
+        verifyLookupTcpRouteIdsForMappedPid(VALID_PID, routeIds[0]);
+
+        verifyPidMappedRouteInstrumentation(routeIds[0], TCP, MPEG_PACKETS, port);
+        verifyStatistics(new ObjectName(String.format(RouteJmxUtility.ROUTE_ADAPTATION_FIELD_VALIDATOR_TEMPLATE, TCP, routeIds[0])), true, false);
+        verifyStatistics(new ObjectName(String.format(RouteJmxUtility.ROUTE_PACKET_TO_BLOCK_TRANSFORMER_TEMPLATE, TCP, routeIds[0], VALID_PID)), true, false);
+        verifyExpectedMappingsRetrievedforPid(new ObjectName(String.format(RouteJmxUtility.ROUTE_PACKET_FILTER_ROUTER_TEMPLATE, TCP, routeIds[0])), VALID_PID, streamId1);
+
+        clientSocket.close();
+        verifyRouteDescriptorUnregistered(TCP, MPEG_PACKETS, PID_MAPPED, routeIds[0], PORT3);
+        verifyAdaptationFieldCheckerUnregistered(TCP, routeIds[0]);
+        verifyPacketToBlockTransformerUnregistered(TCP, routeIds[0], VALID_PID);
+        verifyRouterUnregistered(TCP, PID_MAPPED, routeIds[0]);
+    }
+
+    @Test
+    public void testInstrumentationFor_TcpMpeg2ElementaryStreamRoute() throws Exception
+    {
+        final int port = createTcpMpeg2ElementaryStreamRouteAndSendData();
+
+        final Long[] routeIds = verifyLookupTcpRouteIdsForStreamId(streamId1);
+        Assert.assertTrue(routeIds.length == 1);
+
+        verifyElementaryStreamRouteInstrumentation(routeIds[0], TCP, MPEG_PACKETS, port);
+        verifyStatistics(new ObjectName(String.format(RouteJmxUtility.ROUTE_ADAPTATION_FIELD_VALIDATOR_TEMPLATE, TCP, routeIds[0])), true, false);
+        verifyStatistics(new ObjectName(String.format(RouteJmxUtility.ROUTE_PACKET_TO_BLOCK_TRANSFORMER_TEMPLATE, TCP, routeIds[0], VALID_PID)), true, false);
+        verifyExpectedStreamIds(new ObjectName(String.format(RouteJmxUtility.ROUTE_PACKET_FILTER_ROUTER_TEMPLATE, TCP, routeIds[0])), Sets.newHashSet(streamId1));
+
+        clientSocket.close();
+        verifyRouteDescriptorUnregistered(TCP, MPEG_PACKETS, ELEMENTARY_STREAM, routeIds[0], PORT3);
+        verifyAdaptationFieldCheckerUnregistered(TCP, routeIds[0]);
+        verifyPacketToBlockTransformerUnregistered(TCP, routeIds[0], VALID_PID);
+        verifyRouterUnregistered(TCP, ELEMENTARY_STREAM, routeIds[0]);
+    }
+
+    @Test
+    public void testInstrumentationFor_TcpMpeg2TransportStreamRoute() throws Exception
+    {
+        final int port = createTcpMpeg2TransportStreamRoute();
+
+        final Long[] routeIds = verifyLookupTcpRouteIdsForTransportStreamId(transportStreamId1);
+        Assert.assertTrue(routeIds.length == 1);
+
+        verifyTransportStreamRouteInstrumentation(routeIds[0], TCP, MPEG_PACKETS, port);
+        verifyExpectedTransportStreamIds(new ObjectName(String.format(RouteJmxUtility.ROUTE_PACKET_FILTER_ROUTER_TEMPLATE, TCP, routeIds[0])), Sets.newHashSet(transportStreamId1));
+
+        dssClient.deleteTransportStream(transportStreamId1);
+        verifyRouteDescriptorUnregistered(TCP, MPEG_PACKETS, TRANSPORT_STREAM, routeIds[0], PORT3);
+        verifyRouterUnregistered(TCP, TRANSPORT_STREAM, routeIds[0]);
+    }
+
+    @Test
+    public void testInstrumentationFor_UdpBlockPidMappedRoute() throws Exception
+    {
+        final long routeId = createUdpBlockPidMappedRoute();
+
+        verifyLookupUdpRouteIdsForStreamId(streamId1, routeId);
+        verifyLookupUdpRouteIdsForMappedPid(VALID_PID, routeId);
+        verifyLookupUdpRouteIdForPort(PORT3, routeId);
+
+        verifyPidMappedRouteInstrumentation(routeId, UDP, BLOCKS, PORT3);
+        verifyStatistics(new ObjectName(String.format(RouteJmxUtility.ROUTE_BLOCK_HEADER_DECODER_TEMPLATE, UDP, routeId)), true, false);
+        verifyExpectedMappingsRetrievedforPid(new ObjectName(String.format(RouteJmxUtility.ROUTE_PACKET_FILTER_ROUTER_TEMPLATE, UDP, routeId)), VALID_PID, streamId1, streamId2);
+
+        dssClient.removeRoute(routeId);
+        waitForEvent(Events.REMOVE_EXTERNAL_ROUTE_EVENT);
+        verifyRouteDescriptorUnregistered(UDP, BLOCKS, PID_MAPPED, routeId, PORT3);
+        verifyBlockHeaderDecoderUnregistered(UDP, routeId);
+        verifyRouterUnregistered(UDP, PID_MAPPED, routeId);
+    }
+
+    @Test
+    public void testInstrumentationFor_UdpBlockElementaryStreamRoute() throws Exception
+    {
+        final long routeId = createUdpBlockElementaryStreamRoute();
+
+        verifyLookupUdpRouteIdsForStreamId(streamId1, routeId);
+        verifyLookupUdpRouteIdForPort(PORT3, routeId);
+
+        verifyElementaryStreamRouteInstrumentation(routeId, UDP, BLOCKS, PORT3);
+        verifyStatistics(new ObjectName(String.format(RouteJmxUtility.ROUTE_BLOCK_HEADER_DECODER_TEMPLATE, UDP, routeId)), true, false);
+        verifyExpectedStreamIds(new ObjectName(String.format(RouteJmxUtility.ROUTE_PACKET_FILTER_ROUTER_TEMPLATE, UDP, routeId)), Sets.newHashSet(streamId1, streamId2));
+
+        dssClient.removeRoute(routeId);
+        verifyRouteDescriptorUnregistered(UDP, BLOCKS, ELEMENTARY_STREAM, routeId, PORT3);
+        verifyBlockHeaderDecoderUnregistered(UDP, routeId);
+        verifyRouterUnregistered(UDP, ELEMENTARY_STREAM, routeId);
+    }
+
+    @Test
+    public void testInstrumentationFor_UdpBlockTransportStreamRoute() throws Exception
+    {
+        final long routeId = createUdpBlockTransportStreamRoute();
+
+        verifyLookupUdpRouteIdsForTransportStreamId(transportStreamId1, routeId);
+        verifyLookupUdpRouteIdForPort(PORT3, routeId);
+
+        verifyTransportStreamRouteInstrumentation(routeId, UDP, BLOCKS, PORT3);
+        verifyExpectedTransportStreamIds(new ObjectName(String.format(RouteJmxUtility.ROUTE_PACKET_FILTER_ROUTER_TEMPLATE, UDP, routeId)), Sets.newHashSet(transportStreamId1));
+
+        dssClient.deleteTransportStream(transportStreamId1);
+        verifyTransportStreamRouteInstrumentation(routeId, UDP, BLOCKS, PORT3);
+    }
+
+    @Test
+    public void testInstrumentationFor_UdpMpeg2PidMappedRoute() throws Exception
+    {
+        final long routeId = createUdpMpeg2PidMappedRoute();
+
+        verifyLookupUdpRouteIdsForStreamId(streamId1, routeId);
+        verifyLookupUdpRouteIdsForMappedPid(VALID_PID, routeId);
+        verifyLookupUdpRouteIdForPort(PORT3, routeId);
+
+        verifyPidMappedRouteInstrumentation(routeId, UDP, MPEG_PACKETS, PORT3);
+        verifyStatistics(new ObjectName(String.format(RouteJmxUtility.ROUTE_ADAPTATION_FIELD_VALIDATOR_TEMPLATE, UDP, routeId)), true, false);
+        verifyStatistics(new ObjectName(String.format(RouteJmxUtility.ROUTE_PACKET_TO_BLOCK_TRANSFORMER_TEMPLATE, UDP, routeId, VALID_PID)), true, false);
+        verifyExpectedMappingsRetrievedforPid(new ObjectName(String.format(RouteJmxUtility.ROUTE_PACKET_FILTER_ROUTER_TEMPLATE, UDP, routeId)), VALID_PID, streamId1, streamId2);
+
+        dssClient.removeRoute(routeId);
+        verifyRouteDescriptorUnregistered(UDP, MPEG_PACKETS, PID_MAPPED, routeId, PORT3);
+        verifyAdaptationFieldCheckerUnregistered(UDP, routeId);
+        verifyPacketToBlockTransformerUnregistered(UDP, routeId, VALID_PID);
+        verifyRouterUnregistered(UDP, PID_MAPPED, routeId);
+    }
+
+    @Test
+    public void testInstrumentationFor_UdpMpeg2ElementaryStreamRoute() throws Exception
+    {
+        final long routeId = createUdpMpeg2ElementaryStreamRoute();
+
+        verifyLookupUdpRouteIdsForStreamId(streamId1, routeId);
+        verifyLookupUdpRouteIdForPort(PORT3, routeId);
+
+        verifyElementaryStreamRouteInstrumentation(routeId, UDP, MPEG_PACKETS, PORT3);
+        verifyStatistics(new ObjectName(String.format(RouteJmxUtility.ROUTE_ADAPTATION_FIELD_VALIDATOR_TEMPLATE, UDP, routeId)), true, false);
+        verifyStatistics(new ObjectName(String.format(RouteJmxUtility.ROUTE_PACKET_TO_BLOCK_TRANSFORMER_TEMPLATE, UDP, routeId, VALID_PID)), true, false);
+        verifyExpectedStreamIds(new ObjectName(String.format(RouteJmxUtility.ROUTE_PACKET_FILTER_ROUTER_TEMPLATE, UDP, routeId)), Sets.newHashSet(streamId1, streamId2));
+
+        dssClient.removeRoute(routeId);
+        verifyRouteDescriptorUnregistered(UDP, MPEG_PACKETS, ELEMENTARY_STREAM, routeId, PORT3);
+        verifyAdaptationFieldCheckerUnregistered(UDP, routeId);
+        verifyPacketToBlockTransformerUnregistered(UDP, routeId, VALID_PID);
+        verifyRouterUnregistered(UDP, ELEMENTARY_STREAM, routeId);
+    }
+
+    @Test
+    public void testInstrumentationFor_UdpMpeg2TransportStreamRoute() throws Exception
+    {
+        final long routeId = createUdpMpeg2TransportStreamRoute();
+
+        verifyLookupUdpRouteIdsForTransportStreamId(transportStreamId1, routeId);
+        verifyLookupUdpRouteIdForPort(PORT3, routeId);
+
+        verifyTransportStreamRouteInstrumentation(routeId, UDP, MPEG_PACKETS, PORT3);
+        verifyExpectedTransportStreamIds(new ObjectName(String.format(RouteJmxUtility.ROUTE_PACKET_FILTER_ROUTER_TEMPLATE, UDP, routeId)), Sets.newHashSet(transportStreamId1));
+
+        dssClient.deleteTransportStream(transportStreamId1);
+//        verifyTransportStreamRouteInstrumentation(routeId, UDP, MPEG_PACKETS, PORT3);
+        verifyRouteDescriptorUnregistered(UDP, MPEG_PACKETS, TRANSPORT_STREAM, routeId, PORT3);
+        verifyRouterUnregistered(UDP, TRANSPORT_STREAM, routeId);
+    }
+    @Test
+    public void testNotificationFor_BlockHeaderDecoder() throws Exception
+    {
+        verifyRouteNotification(BLOCKS, "BlockHeaderDecoder", getInvalidBlockWithHeaderData(), getValidBlockWithHeaderData());
+    }
+
+    @Test
+    public void testNotificationFor_Mpeg2AdaptationFieldChecker() throws Exception
+    {
+        verifyRouteNotification(MPEG_PACKETS, "Mpeg2AdaptationFieldValidator", getDummyMpegPacket(VALID_PID1, false, true), getDummyMpegPacket(VALID_PID1, true, true));
+    }
+
+    @Test
+    public void testNotificationFor_Mpeg2PacketToBlockTransformer() throws Exception
+    {
+        final byte[] invalidMpegPacket = getDummyMpegPacket(VALID_PID1, true, true);
+        invalidMpegPacket[4] = (byte)0xFF;
+        verifyRouteNotification(MPEG_PACKETS, "Mpeg2BlockTransformer", invalidMpegPacket, getDummyMpegPacket(VALID_PID1, true, true));
+    }
+
+    private byte[] getInvalidBlockWithHeaderData()
+    {
+        final byte[] data = new byte[10];
+        Arrays.fill(data, (byte)0x64);
+        final byte[] block = new byte[data.length + (byte)0x05 + 2];
+        int i = 0;
+        block[i++] = (byte)0x51;
+        block[i++] = (byte)0x05;
+        block[i++] = (byte)(10 >> 8);
+        block[i++] = (byte)(10 & 0x00FF);
+        block[i++] = (byte)0x80;
+        block[i++] = (byte)((1503 >> 8) & 0xFF);
+        block[i] = (byte)(1503 & 0xFF);
+        System.arraycopy(data, 0, block, 2 + (byte)0x05, data.length);
+        return block;
+    }
+
+    private byte[] getValidBlockWithHeaderData()
+    {
+        final byte[] data = new byte[10];
+        Arrays.fill(data, (byte)0x64);
+        final byte[] block = new byte[data.length + (byte)0x05 + 2];
+        int i = 0;
+        block[i++] = (byte)0x50;
+        block[i++] = (byte)0x05;
+        block[i++] = (byte)(10 >> 8);
+        block[i++] = (byte)(10 & 0x00FF);
+        block[i++] = (byte)0x80;
+        block[i++] = (byte)((1503 >> 8) & 0xFF);
+        block[i] = (byte)(1503 & 0xFF);
+        System.arraycopy(data, 0, block, 2 + (byte)0x05, data.length);
+        return block;
+    }
+
+    private int createTcpMpeg2PidMappedRouteAndSendData(final int pidMappingPid) throws Exception
+    {
+        streamId1 = createAnMpegElementaryStream(PID_OUT1, IP_STRING, PORT1);
+        final int port = establishATcpRouteWithMpegDataForPidMapped(Lists.newArrayList(new PidMapping(pidMappingPid, Lists.newArrayList(streamId1))));
+        waitForEvent(Events.ESTABLISH_EXTERNAL_ROUTE_EVENT);
+
+        clientSocket = new Socket(InetAddress.getByName(IP_STRING), port);
+        receiveData(TransportProtocolType.TCP, getDummyMpegPacket(VALID_PID1), new MappingVerifierComposite(IP_STRING, PORT1, true));
+        return port;
+    }
+
+    private int createTcpMpeg2ElementaryStreamRouteAndSendData() throws Exception
+    {
+        streamId1 = createAnMpegElementaryStream(PID_OUT1, IP_STRING, PORT1);
+        final Set<Long> streamIds = Sets.newHashSet();
+        streamIds.add(streamId1);
+        final int port = establishATcpRouteWithMpegData(streamIds);
+        waitForEvent(Events.ESTABLISH_EXTERNAL_ROUTE_EVENT);
+
+        clientSocket = new Socket(InetAddress.getByName(IP_STRING), port);
+        receiveData(TransportProtocolType.TCP, getDummyMpegPacket(VALID_PID1), new MappingVerifierComposite(IP_STRING, PORT1, true));
+        return port;
+    }
+
+    private int createTcpMpeg2TransportStreamRoute() throws Exception
+    {
+        transportStreamId1 = createMpeg2TransportStream(newArrayList(STREAM_ON_PORT1), null, null, null, transportStreamProperties, MAX_AVERAGE, MAX_BURST, MAX_LATENCY);
+        final Set<Integer> transportStreamIds = Sets.newHashSet();
+        transportStreamIds.add(transportStreamId1);
+        final int port = establishATcpRouteWithMpegDataForTransportStreams(transportStreamIds);
+        waitForEvent(Events.ESTABLISH_EXTERNAL_ROUTE_EVENT);
+
+        return port;
+    }
+
+    private int createTcpBlockPidMappedRouteAndSendData(final int pidMappingPid) throws Exception
+    {
+        streamId1 = createAnMpegElementaryStream(PID_OUT1, IP_STRING, PORT1);
+        final int port = establishATcpRouteWithBlockDataToPidMappings(Lists.newArrayList(new PidMapping(pidMappingPid, Lists.newArrayList(streamId1))));
+        waitForEvent(Events.ESTABLISH_EXTERNAL_ROUTE_EVENT);
+
+        clientSocket = new Socket(InetAddress.getByName(IP_STRING), port);
+        receiveData(TransportProtocolType.TCP, getDummyBlockWithHeaderData(), new MappingVerifierComposite(IP_STRING, PORT1, true));
+        return port;
+    }
+
+    private int createTcpBlockElementaryStreamRouteAndSendData() throws Exception
+    {
+        streamId1 = createAnMpegElementaryStream(PID_OUT1, IP_STRING, PORT1);
+        final Set<Long> streamIds = Sets.newHashSet();
+        streamIds.add(streamId1);
+        final int port = establishATcpRouteWithBlockDataToElementaryStream(streamIds);
+
+        clientSocket = new Socket(InetAddress.getByName(IP_STRING), port);
+        receiveData(TransportProtocolType.TCP, getDummyBlockWithHeaderData(), new MappingVerifierComposite(IP_STRING, PORT1, true));
+        return port;
+    }
+
+    private int createTcpBlockTransportStreamRoute() throws Exception
+    {
+        transportStreamId1 = createMpeg2TransportStream(newArrayList(STREAM_ON_PORT1), null, null, null, transportStreamProperties, MAX_AVERAGE, MAX_BURST, MAX_LATENCY);
+
+        final Set<Integer> transportStreamIds = Sets.newHashSet();
+        transportStreamIds.add(transportStreamId1);
+        final int port = establishATcpRouteWithBlockDataToTransportStream(transportStreamIds);
+        waitForEvent(Events.ESTABLISH_EXTERNAL_ROUTE_EVENT);
+
+        return port;
+    }
+
+    private long createUdpMpeg2PidMappedRoute() throws Exception
+    {
+        streamId1 = createAnMpegElementaryStream(PID_OUT1, IP_STRING, PORT1);
+        streamId2 = createAnMpegElementaryStream(PID_OUT2, IP_STRING, PORT2);
+        final long routeId = dssClient.establishUdpRoute(MPEG_PACKETS, routeProperties, PORT3, new PidMapped(Lists.newArrayList(new PidMapping(VALID_PID1, Lists.newArrayList(streamId1, streamId2)))));
+        waitForEvent(Events.ESTABLISH_EXTERNAL_ROUTE_EVENT);
+
+        verifyUdpDataSentToAllStreams(getDummyMpegPacket(VALID_PID1), Lists.newArrayList(new StreamDestinationInfo(IP_STRING, PORT1), new StreamDestinationInfo(IP_STRING, PORT2)));
+        return routeId;
+    }
+
+    private long createUdpMpeg2ElementaryStreamRoute() throws Exception
+    {
+        streamId1 = createAnMpegElementaryStream(PID_OUT1, IP_STRING, PORT1);
+        streamId2 = createAnMpegElementaryStream(PID_OUT2, IP_STRING, PORT2);
+        final long routeId = dssClient.establishUdpRoute(MPEG_PACKETS, routeProperties, PORT3, new ElementaryStreams(Sets.newHashSet(streamId1, streamId2)));
+        waitForEvent(Events.ESTABLISH_EXTERNAL_ROUTE_EVENT);
+
+        verifyUdpDataSentToAllStreams(getDummyMpegPacket(VALID_PID1), Lists.newArrayList(new StreamDestinationInfo(IP_STRING, PORT1), new StreamDestinationInfo(IP_STRING, PORT2)));
+        return routeId;
+    }
+
+    private long createUdpMpeg2TransportStreamRoute() throws Exception
+    {
+        transportStreamId1 = createMpeg2TransportStream(newArrayList(STREAM_ON_PORT1), null, null, null, transportStreamProperties, MAX_AVERAGE, MAX_BURST, MAX_LATENCY);
+        final long routeId = dssClient.establishUdpRoute(MPEG_PACKETS, routeProperties, PORT3, new TransportStreams(Sets.newHashSet(transportStreamId1)));
+        waitForEvent(Events.ESTABLISH_EXTERNAL_ROUTE_EVENT);
+
+        return routeId;
+    }
+
+    private long createUdpBlockPidMappedRoute() throws Exception
+    {
+        streamId1 = createAnMpegElementaryStream(PID_OUT1, IP_STRING, PORT1);
+        streamId2 = createAnMpegElementaryStream(PID_OUT2, IP_STRING, PORT2);
+        final long routeId = dssClient.establishUdpRoute(BLOCKS, routeProperties, PORT3, new PidMapped(Lists.newArrayList(new PidMapping(VALID_PID1, Lists.newArrayList(streamId1, streamId2)))));
+        waitForEvent(Events.ESTABLISH_EXTERNAL_ROUTE_EVENT);
+
+        verifyUdpDataSentToAllStreams(getDummyBlockWithHeaderData(), Lists.newArrayList(new StreamDestinationInfo(IP_STRING, PORT1), new StreamDestinationInfo(IP_STRING, PORT2)));
+        return routeId;
+    }
+
+    private long createUdpBlockElementaryStreamRoute() throws Exception
+    {
+        streamId1 = createAnMpegElementaryStream(PID_OUT1, IP_STRING, PORT1);
+        streamId2 = createAnMpegElementaryStream(PID_OUT2, IP_STRING, PORT2);
+        final long routeId = dssClient.establishUdpRoute(BLOCKS, routeProperties, PORT3, new ElementaryStreams(Sets.newHashSet(streamId1, streamId2)));
+        waitForEvent(Events.ESTABLISH_EXTERNAL_ROUTE_EVENT);
+
+        verifyUdpDataSentToAllStreams(getDummyBlockWithHeaderData(), Lists.newArrayList(new StreamDestinationInfo(IP_STRING, PORT1), new StreamDestinationInfo(IP_STRING, PORT2)));
+        return routeId;
+    }
+
+    private long createUdpBlockTransportStreamRoute() throws Exception
+    {
+        transportStreamId1 = createMpeg2TransportStream(newArrayList(STREAM_ON_PORT1), null, null, null, transportStreamProperties, MAX_AVERAGE, MAX_BURST, MAX_LATENCY);
+        final long routeId = dssClient.establishUdpRoute(BLOCKS, routeProperties, PORT3, new TransportStreams(Sets.newHashSet(transportStreamId1)));
+        waitForEvent(Events.ESTABLISH_EXTERNAL_ROUTE_EVENT);
+
+        return routeId;
+    }
+
+    private void verifyUdpDataSentToAllStreams(final byte[] msg, final List<StreamDestinationInfo> destinations) throws Exception
+    {
+        final byte[][] payloads = routeTestUtility.sendDataToRouteAndReceiveDataFromUdpSource(PORT3, msg, destinations, outputHandler, new PacketCollectorWithMatcher(acceptAllPackets()), TEN_SECONDS);
+
+        for (final byte[] payload : payloads)
+        {
+            assertThat(payload, notNullValue());
+        }
+    }
+
+    private void receiveData(final TransportProtocolType transportProtocolType, final byte[] payload, final MappingVerifierComposite... mappingVerifierComposites) throws Exception
+    {
+        final MappingVerifier mappingVerifier = new MappingVerifier(payload, mappingVerifierComposites);
+        if (transportProtocolType == TransportProtocolType.UDP)
+        {
+            dataReceivedInAllDestinationsFromUdpSource(PORT3, mappingVerifier);
+        }
+        else
+        {
+            dataReceivedInAllDestinationsFromTcpSource(clientSocket, mappingVerifier, true);
+        }
+    }
+
+    private void verifyStatistics(final ObjectName objectName, final boolean hasInsertedPackets, final boolean hasRejectedPackets) throws Exception
+    {
+        if (hasInsertedPackets)
+        {
+            Assert.assertTrue((Long)MBS.getAttribute(objectName, "TotalDataElementsInserted") > 0);
+            Assert.assertTrue((Long)MBS.getAttribute(objectName, "TotalBytesInserted") > 0);
+        }
+        else
+        {
+            Assert.assertTrue((Long)MBS.getAttribute(objectName, "TotalDataElementsInserted") == 0);
+            Assert.assertTrue((Long)MBS.getAttribute(objectName, "TotalBytesInserted") == 0);
+        }
+
+        if (hasRejectedPackets)
+        {
+            Assert.assertTrue((Long)MBS.getAttribute(objectName, "NumberOfDataElementsRejected") > 0);
+            Assert.assertTrue((Long)MBS.getAttribute(objectName, "NumberOfBytesRejected") > 0);
+        }
+        else
+        {
+            Assert.assertTrue((Long)MBS.getAttribute(objectName, "NumberOfDataElementsRejected") == 0);
+            Assert.assertTrue((Long)MBS.getAttribute(objectName, "NumberOfBytesRejected") == 0);
+        }
+    }
+
+    private void verifyPidMappedRouteInstrumentation(final long routeId, final TransportProtocolType transportProtocolType,
+        final RouteDataType routeDataType, final int port) throws Exception
+    {
+        verifyRouteInstrumentation(routeId, transportProtocolType, routeDataType, PID_MAPPED, port);
+    }
+
+    private void verifyElementaryStreamRouteInstrumentation(final long routeId, final TransportProtocolType transportProtocolType,
+        final RouteDataType routeDataType, final int port) throws Exception
+    {
+        verifyRouteInstrumentation(routeId, transportProtocolType, routeDataType, ELEMENTARY_STREAM, port);
+    }
+
+    private void verifyTransportStreamRouteInstrumentation(final long routeId, final TransportProtocolType transportProtocolType,
+        final RouteDataType routeDataType, final int port) throws Exception
+    {
+        verifyRouteInstrumentation(routeId, transportProtocolType, routeDataType, TRANSPORT_STREAM, port);
+    }
+
+    private void verifyRouteInstrumentation(final long routeId, final TransportProtocolType transportProtocolType,
+        final RouteDataType routeDataType, final RouteType routeType, final int port) throws Exception
+    {
+        final ObjectName mbeanName = new ObjectName(String.format(ROUTE_DESCRIPTOR_TEMPLATE, transportProtocolType, routeId, transportProtocolType, routeDataType, routeType, port));
+        waitUntil(Boolean.TRUE, hasRoute(mbeanName), 10000L);
+
+        if (routeType != TRANSPORT_STREAM)
+        {
+            Assert.assertTrue((Long)MBS.getAttribute(mbeanName, "TotalDataElementsReceived") > 0);
+            Assert.assertTrue((Long)MBS.getAttribute(mbeanName, "TotalDataElementsInserted") > 0);
+            Assert.assertTrue((Long)MBS.getAttribute(mbeanName, "TotalBytesReceived") > 0);
+            Assert.assertTrue((Long)MBS.getAttribute(mbeanName, "TotalBytesInserted") > 0);
+        }
+    }
+
+    private void verifyExpectedMappingsRetrievedforPid(final ObjectName mbeanName,
+        final Integer expectedPid, final Long... expectedStreamIds) throws Exception
+    {
+        final CompositeDataSupport returnedPidMappings =
+            (CompositeDataSupport)((TabularDataSupport)MBS.getAttribute(mbeanName, "PidMappings")).get(new Integer[] {expectedPid});
+        final Collection<?> pidMappings = returnedPidMappings.values();
+        assertThat(pidMappings.size(), is(2));
+
+        // Check pid in mappings
+        final Iterator<?> values = pidMappings.iterator();
+        assertThat((Integer)values.next(), is(expectedPid));
+
+        // Check streams for pid
+        final Long[] streamsForPid = (Long[])values.next();
+        verifyStreams(Sets.newHashSet(streamsForPid), expectedStreamIds);
+    }
+
+    private void verifyExpectedStreamIds(final ObjectName mbeanName, final Set<Long> expectedStreamIds) throws Exception
+    {
+        try
+        {
+            waitUntil(Boolean.TRUE, hasAllStreamIds(mbeanName, expectedStreamIds));
+        }
+        catch (final TimeoutException e)
+        {
+            Assert.fail(String.format("Timed out waiting for route stream ids to be available in mbean: %s", mbeanName));
+        }
+    }
+
+    private void verifyExpectedTransportStreamIds(final ObjectName mbeanName, final Set<Integer> expectedTransportStreamIds) throws Exception
+    {
+        try
+        {
+            waitUntil(Boolean.TRUE, hasAllTransportStreamIds(mbeanName, expectedTransportStreamIds));
+        }
+        catch (final TimeoutException e)
+        {
+            Assert.fail(String.format("Timed out waiting for route transport stream ids to be available in mbean: %s", mbeanName));
+        }
+    }
+
+    private void verifyStreams(final Set<Long> returnedStreamIds, final Long... expectedStreamIds)
+    {
+        assertThat(returnedStreamIds.size(), is(expectedStreamIds.length));
+        for (final Long expectedStreamId : expectedStreamIds)
+        {
+            Assert.assertTrue(returnedStreamIds.contains(expectedStreamId));
+        }
+    }
+
+    private void verifyAdaptationFieldCheckerUnregistered(final TransportProtocolType transportProtocolType, final Long routeId) throws Exception
+    {
+        if (!verifyMBeanUnregistered(new ObjectName(String.format(RouteJmxUtility.ROUTE_ADAPTATION_FIELD_VALIDATOR_TEMPLATE, transportProtocolType, routeId))))
+        {
+            Assert.fail("AdaptationFieldChecker MXBean found when route was deleted.");
+        }
+    }
+
+    private void verifyPacketToBlockTransformerUnregistered(final TransportProtocolType transportProtocolType, final Long routeId, final int pid) throws Exception
+    {
+        if (!verifyMBeanUnregistered(new ObjectName(String.format(RouteJmxUtility.ROUTE_PACKET_TO_BLOCK_TRANSFORMER_TEMPLATE, transportProtocolType, routeId, pid))))
+        {
+            Assert.fail("PacketToBlock MXBean found when route was deleted.");
+        }
+    }
+
+    private void verifyRouteNotification(final RouteDataType routeDataType, final String prefix, final byte[] invalidPayload, final byte[] validPayload) throws Exception
+    {
+        notificationRef = new AtomicReference<Notification>();
+        registerNotificationListener();
+        if (routeDataType == MPEG_PACKETS)
+        {
+            verifyMpegRouteNotification(String.format("%s is rejecting packets", prefix), String.format("%s is not rejecting packets", prefix), invalidPayload, validPayload);
+        }
+        else
+        {
+            verifyBlockRouteNotification(String.format("%s is rejecting blocks", prefix), String.format("%s is not rejecting blocks", prefix), invalidPayload, validPayload);
+        }
+        unregisterNotificationListener();
+        notificationRef = null;
+        notificationListener = null;
+    }
+
+    private void createUdpMpeg2Route() throws Exception
+    {
+        streamId1 = createAnMpegElementaryStream(PID_OUT1, IP_STRING, PORT1);
+        streamId2 = createAnMpegElementaryStream(PID_OUT2, IP_STRING, PORT2);
+        routeId = dssClient.establishUdpRoute(RouteDataType.MPEG_PACKETS, routeProperties, PORT3, new PidMapped(Lists.newArrayList(new PidMapping(VALID_PID1, Lists.newArrayList(streamId1, streamId2)))));
+        waitForEvent(Events.ESTABLISH_EXTERNAL_ROUTE_EVENT);
+    }
+
+    private void verifyMpegRouteNotification(final String rejectedMessage, final String insertedMessage, final byte[] invalidPayload, final byte[] validPayload) throws Exception
+    {
+        // Send data with invalid payload to force first notification.
+        createUdpMpeg2Route();
+
+        RouteClientUtility.instance().openRouteAndSendData(PORT3, invalidPayload);
+
+        // Verify Notification.
+        verifyNotification(UDP.toString(), MPEG_PACKETS.toString(), PID_MAPPED.toString(), PORT3, rejectedMessage);
+
+        // Send invalid data again.
+        RouteClientUtility.instance().openRouteAndSendData(PORT3, invalidPayload);
+
+        // Make sure no new notification is received.
+        verifyNotificationNotSent();
+
+        // Send valid data payload to reset the flag and send new notification.
+        RouteClientUtility.instance().openRouteAndSendData(PORT3, validPayload);
+
+        // Verify Notification.
+        verifyNotification(UDP.toString(), MPEG_PACKETS.toString(), PID_MAPPED.toString(), PORT3, insertedMessage);
+    }
+
+    private void verifyBlockRouteNotification(final String rejectedMessage, final String insertedMessage, final byte[] invalidPayload, final byte[] validPayload) throws Exception
+    {
+        // Send data with invalid payload to force first notification.
+        streamId1 = createAnMpegElementaryStream(PID_OUT1, IP_STRING, PORT1);
+        streamId2 = createAnMpegElementaryStream(PID_OUT2, IP_STRING, PORT2);
+        clearExistingModelChangeEvents();
+        routeId = dssClient.establishUdpRoute(RouteDataType.BLOCKS, routeProperties, PORT3, new PidMapped(Lists.newArrayList(new PidMapping(VALID_PID1, Lists.newArrayList(streamId1, streamId2)))));
+        waitForEvent(Events.ESTABLISH_EXTERNAL_ROUTE_EVENT);
+
+        RouteClientUtility.instance().openRouteAndSendData(PORT3, invalidPayload);
+
+        // Verify Notification.
+        verifyNotification(UDP.toString(), BLOCKS.toString(), PID_MAPPED.toString(), PORT3, rejectedMessage);
+
+        // Send invalid data again.
+        RouteClientUtility.instance().openRouteAndSendData(PORT3, invalidPayload);
+
+        // Make sure no new notification is received.
+        verifyNotificationNotSent();
+
+        // Send valid data payload to reset the flag and send new notification.
+        RouteClientUtility.instance().openRouteAndSendData(PORT3, validPayload);
+
+        // Verify Notification.
+        verifyNotification(UDP.toString(), BLOCKS.toString(), PID_MAPPED.toString(), PORT3, insertedMessage);
+    }
+
+    private void verifyNotification(final String transportProtocolType, final String routeDataType, final String routeType, final int port, final String message)
+    {
+        assertThat(notificationRef, not(nullValue()));
+        try
+        {
+            waitUntil(Boolean.TRUE, notificationVerified(transportProtocolType, routeDataType, routeType, port, message), TEN_SECONDS);
+        }
+        catch (final TimeoutException e)
+        {
+            Assert.fail("Timed out waiting for notification sequence to increment");
+        }
+    }
+
+    private void verifyNotificationNotSent()
+    {
+        try
+        {
+            waitUntil(Boolean.TRUE, notificationSent(), TEN_SECONDS);
+            Assert.fail("Unexpected notification occurred when none was expected.");
+        }
+        catch (final TimeoutException e)
+        {
+            // Expected behavior
+        }
+    }
+
+    private void registerNotificationListener() throws Exception
+    {
+        waitUntil(Boolean.TRUE, hasRouteNotificationBean(), TEN_SECONDS);
+    }
+
+    private void unregisterNotificationListener() throws Exception
+    {
+        waitUntil(Boolean.TRUE, doesNotHaveRouteNotificationBean(), TEN_SECONDS);
+    }
+
+    private Long[] verifyLookupTcpRouteIdsForStreamId(final Long streamId) throws InstanceNotFoundException, MalformedObjectNameException, MBeanException, ReflectionException
+    {
+        final Long[] routeIds = (Long[])ManagementFactory.getPlatformMBeanServer().invoke(
+            new ObjectName(TCP_ROUTE_LOOKUP_MXBEAN_OBJECT_NAME), "getTcpRouteIdsForStreamId",
+            new Object[] {String.valueOf(streamId)}, new String[] {"java.lang.String"});
+
+        Assert.assertTrue(routeIds.length > 0);
+        return routeIds;
+    }
+
+    private void verifyLookupTcpRouteIdsForMappedPid(final Integer pid, final Long... expectedRouteIds) throws InstanceNotFoundException, MalformedObjectNameException, MBeanException, ReflectionException
+    {
+        final Long[] routeIds = (Long[])ManagementFactory.getPlatformMBeanServer().invoke(
+            new ObjectName(TCP_ROUTE_LOOKUP_MXBEAN_OBJECT_NAME), "getTcpRouteIdsForMappedPid",
+            new Object[] {pid}, new String[] {"java.lang.Integer"});
+
+        verifyExpectedRouteIds(routeIds, expectedRouteIds);
+    }
+
+    private Long[] verifyLookupTcpRouteIdsForTransportStreamId(final Integer transportStreamId) throws InstanceNotFoundException, MalformedObjectNameException, MBeanException, ReflectionException
+    {
+        final Long[] routeIds = (Long[])ManagementFactory.getPlatformMBeanServer().invoke(
+            new ObjectName(TCP_ROUTE_LOOKUP_MXBEAN_OBJECT_NAME), "getTcpRouteIdsForTransportStreamId",
+            new Object[] {String.valueOf(transportStreamId)}, new String[] {"java.lang.String"});
+
+        Assert.assertTrue(routeIds.length > 0);
+        return routeIds;
+    }
+
+    private void verifyLookupUdpRouteIdForPort(final Integer port, final Long... expectedRouteIds) throws InstanceNotFoundException, MalformedObjectNameException, MBeanException, ReflectionException
+    {
+        final Long routeId = (Long)ManagementFactory.getPlatformMBeanServer().invoke(
+            new ObjectName(UDP_ROUTE_LOOKUP_MXBEAN_OBJECT_NAME), "getUdpRouteIdForPort",
+            new Object[] {port}, new String[] {"java.lang.Integer"});
+
+        verifyExpectedRouteIds(new Long[] {routeId}, expectedRouteIds);
+    }
+
+    private void verifyLookupUdpRouteIdsForStreamId(final Long streamId, final Long... expectedRouteIds) throws InstanceNotFoundException, MalformedObjectNameException, MBeanException, ReflectionException
+    {
+        final Long[] routeIds = (Long[])ManagementFactory.getPlatformMBeanServer().invoke(
+            new ObjectName(UDP_ROUTE_LOOKUP_MXBEAN_OBJECT_NAME), "getUdpRouteIdsForStreamId",
+            new Object[] {String.valueOf(streamId)}, new String[] {"java.lang.String"});
+
+        verifyExpectedRouteIds(routeIds, expectedRouteIds);
+    }
+
+    private void verifyLookupUdpRouteIdsForTransportStreamId(final Integer transportStreamId, final Long... expectedRouteIds) throws InstanceNotFoundException, MalformedObjectNameException, MBeanException, ReflectionException
+    {
+        final Long[] routeIds = (Long[])ManagementFactory.getPlatformMBeanServer().invoke(
+            new ObjectName(UDP_ROUTE_LOOKUP_MXBEAN_OBJECT_NAME), "getUdpRouteIdsForTransportStreamId",
+            new Object[] {String.valueOf(transportStreamId)}, new String[] {"java.lang.String"});
+
+        verifyExpectedRouteIds(routeIds, expectedRouteIds);
+    }
+
+    private void verifyLookupUdpRouteIdsForMappedPid(final Integer pid, final Long... expectedRouteIds) throws InstanceNotFoundException, MalformedObjectNameException, MBeanException, ReflectionException
+    {
+        final Long[] routeIds = (Long[])ManagementFactory.getPlatformMBeanServer().invoke(
+            new ObjectName(UDP_ROUTE_LOOKUP_MXBEAN_OBJECT_NAME), "getUdpRouteIdsForMappedPid",
+            new Object[] {pid}, new String[] {"java.lang.Integer"});
+
+        verifyExpectedRouteIds(routeIds, expectedRouteIds);
+    }
+
+    private void verifyExpectedRouteIds(final Long[] routeIds, final Long[] expectedRouteIds)
+    {
+        for (final Long routeId : routeIds)
+        {
+            assertThat(routeId, isOneOf(expectedRouteIds));
+        }
+        for (final Long expectedRouteId : expectedRouteIds)
+        {
+            assertThat(expectedRouteId, isOneOf(routeIds));
+        }
+    }
+
+    private Matcher<Boolean> hasRoute(final ObjectName mbeanName)
+    {
+
+        return new BaseMatcher<Boolean>() {
+            @Override
+            public boolean matches(final Object toMatch)
+            {
+                try
+                {
+                    MBS.getObjectInstance(mbeanName);
+                    return true;
+                }
+                catch (final InstanceNotFoundException e)
+                {
+                    logger.debug(String.format("Unable to reference bean with name %s.", mbeanName));
+                    return false;
+                }
+            }
+
+            @Override
+            public void describeTo(final Description description)
+            {
+                description.appendText(String.format("Has object name of %s", mbeanName));
+            }
+        };
+    }
+
+    private Matcher<Boolean> hasAllStreamIds(final ObjectName mbeanName, final Set<Long> expectedStreamIds)
+    {
+        return new BaseMatcher<Boolean>() {
+            @Override
+            public boolean matches(final Object toMatch)
+            {
+                try
+                {
+                    final Long[] returnedStreamIds = (Long[])MBS.getAttribute(mbeanName, "ElementaryStreamIds");
+                    return Sets.newHashSet(returnedStreamIds).containsAll(Sets.newHashSet(expectedStreamIds));
+                }
+                // CHECKSTYLE:OFF
+                catch (final Exception e)
+                // CHECKSTYLE:ON
+                {
+                    logger.warn(String.format("Unable to reference bean with name %s or retrieve its stream ids's attribute.", mbeanName));
+                    return false;
+                }
+            }
+
+            @Override
+            public void describeTo(final Description description)
+            {
+                description.appendText(String.format("Has route id of %s", routeId));
+            }
+        };
+    }
+
+    private Matcher<Boolean> hasAllTransportStreamIds(final ObjectName mbeanName, final Set<Integer> expectedTransportStreamIds)
+    {
+        return new BaseMatcher<Boolean>() {
+            @Override
+            public boolean matches(final Object toMatch)
+            {
+                try
+                {
+                    final Integer[] returnedTransportStreamIds = (Integer[])MBS.getAttribute(mbeanName, "TransportStreamIds");
+                    return Sets.newHashSet(returnedTransportStreamIds).containsAll(Sets.newHashSet(expectedTransportStreamIds));
+                }
+                // CHECKSTYLE:OFF
+                catch (final Exception e)
+                // CHECKSTYLE:ON
+                {
+                    logger.warn(String.format("Unable to reference bean with name %s or retrieve its transport stream ids's attribute.", mbeanName));
+                    return false;
+                }
+            }
+
+            @Override
+            public void describeTo(final Description description)
+            {
+                description.appendText(String.format("Has route id of %s", routeId));
+            }
+        };
+    }
+
+    private Matcher<Boolean> notificationSent()
+    {
+        return new BaseMatcher<Boolean>() {
+            @Override
+            public boolean matches(final Object toMatch)
+            {
+                try
+                {
+                    Assert.assertTrue(previousNotificationSequenceNumber != notificationRef.get().getSequenceNumber());
+                    return true;
+                }
+                // CHECKSTYLE:OFF
+                catch (final Exception e)
+                // CHECKSTYLE:ON
+                {
+                    return false;
+                }
+            }
+
+            @Override
+            public void describeTo(final Description description)
+            {
+                description.appendText(String.format("Previous notification sequence number: %d, new notification sequence number: %d, and they should not be equal", previousNotificationSequenceNumber, notificationRef.get().getSequenceNumber()));
+            }
+        };
+    }
+
+    private Matcher<Boolean> hasRouteNotificationBean()
+    {
+        return new BaseMatcher<Boolean>() {
+            @SuppressWarnings("serial")
+            @Override
+            public boolean matches(final Object toMatch)
+            {
+                try
+                {
+                    final ObjectName mbeanName = new ObjectName(RouteJmxUtility.ROUTE_NOTIFICATIONS_MXBEAN_OBJECT_NAME);
+                    notificationListener = new NotificationListener() {
+                        @Override
+                        public void handleNotification(final Notification notification, final Object handback)
+                        {
+                            notificationRef.set(notification);
+                        }
+                    };
+                    MBS.addNotificationListener(mbeanName, notificationListener, new NotificationFilter() {
+                        @Override
+                        public boolean isNotificationEnabled(final Notification notification)
+                        {
+                            return true;
+                        }
+                    }, null);
+                    return true;
+                }
+                // CHECKSTYLE:OFF
+                catch (final Exception e)
+                // CHECKSTYLE:ON
+                {
+                    return false;
+                }
+            }
+
+            @Override
+            public void describeTo(final Description description)
+            {
+                description.appendText(String.format("Has route id of %s", routeId));
+            }
+        };
+    }
+
+    private Matcher<Boolean> doesNotHaveRouteNotificationBean()
+    {
+        return new BaseMatcher<Boolean>() {
+            @Override
+            public boolean matches(final Object toMatch)
+            {
+                try
+                {
+                    final ObjectName mbeanName = new ObjectName(RouteJmxUtility.ROUTE_NOTIFICATIONS_MXBEAN_OBJECT_NAME);
+                    MBS.removeNotificationListener(mbeanName, notificationListener);
+                    return true;
+                }
+                // CHECKSTYLE:OFF
+                catch (final Exception e)
+                // CHECKSTYLE:ON
+                {
+                    return false;
+                }
+            }
+
+            @Override
+            public void describeTo(final Description description)
+            {
+                description.appendText(String.format("Has route id of %s", routeId));
+            }
+        };
+    }
+
+    private Matcher<Boolean> notificationVerified(final String transportProtocolType, final String routeDataType, final String routeType, final int port, final String message)
+    {
+        return new BaseMatcher<Boolean>() {
+            @Override
+            public boolean matches(final Object toMatch)
+            {
+                try
+                {
+                    final Notification notification = notificationRef.get();
+                    assertThat(notification, not(nullValue()));
+
+                    if (notification.getSequenceNumber() > previousNotificationSequenceNumber)
+                    {
+                        final String prefix = String.format(ROUTE_NOTIFICATIONS_MESSAGE_PREFIX, routeId, transportProtocolType, routeDataType, routeType, port);
+                        assertThat(notification.getMessage(), is(String.format("%s %s.", prefix, message)));
+                        previousNotificationSequenceNumber = notification.getSequenceNumber();
+                        return true;
+                    }
+                    return false;
+                }
+                // CHECKSTYLE:OFF
+                catch (final Exception e)
+                // CHECKSTYLE:ON
+                {
+                    return false;
+                }
+            }
+
+            @Override
+            public void describeTo(final Description description)
+            {
+                description.appendText(String.format("Has route id of %s", routeId));
+            }
+        };
+    }
+}

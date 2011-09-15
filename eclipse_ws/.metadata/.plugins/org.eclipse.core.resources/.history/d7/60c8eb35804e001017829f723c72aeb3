@@ -1,0 +1,25 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import java.io.IOException;
+
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+
+/**
+ * Factory to create valid {@link RouteController}s.
+ */
+public interface RouteControllerFactory
+{
+    /**
+     * Creates a valid route controller instance.
+     *
+     * @param route snapshot of the route to create a controller for
+     * @param route manager to be notified when a TCP route socket is closed
+     * @param route establisher to be notified when a TCP route socket is closed
+     * @return route controller
+     * @throws IOException upon issue creating the route
+     */
+    RouteController create(RouteSnapshot route, RouteManager routeManager, RouteEstablisher routeEstablisher) throws IOException;
+}

@@ -1,0 +1,7 @@
+1277904970843	Rename local variable 'is'
+1277904988804	Rename method 'convertStreamToString'
+1277905011680	Extract constant 'HTTP_RESPONSE_BODY_ENCODING'
+1277905946591	Extract constant 'HTTP_RESPONSE_BODY_ENCODING'
+1277905978133	Extract constant 'END_LINE'
+1277905995976	Extract constant 'EMPTY_RESPONSE_BODY'
+1277912815420	Extract method 'validateHttpResponse'

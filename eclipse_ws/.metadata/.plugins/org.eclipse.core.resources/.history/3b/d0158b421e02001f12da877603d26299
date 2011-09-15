@@ -1,0 +1,836 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.topology.service.impl;
+
+import static com.ccadllc.firebird.core.test.support.hamcrest.MoreHamcrest.hasOnlyItem;
+import static com.ccadllc.firebird.core.test.support.hamcrest.MoreHamcrest.hasSize;
+import static com.ccadllc.firebird.vms.topology.core.ElementaryStreamMatchers.hasExactLocation;
+import static com.ccadllc.firebird.vms.topology.core.ElementaryStreamMatchers.hasName;
+import static com.ccadllc.firebird.vms.topology.core.ElementaryStreamMatchers.hasPropertyKey;
+import static com.ccadllc.firebird.vms.topology.core.ElementaryStreamMatchers.hasPropertyValue;
+import static com.ccadllc.firebird.vms.topology.core.ElementaryStreamMatchers.presentIncludingChildLocations;
+import static com.ccadllc.firebird.vms.topology.core.ElementaryStreamMatchers.presentIncludingParentAndChildNetworks;
+import static com.ccadllc.firebird.vms.topology.core.ElementaryStreamMatchers.presentIncludingParentLocations;
+import static com.ccadllc.firebird.vms.topology.service.impl.TestDataHelpers.aShapingProfile;
+import static com.ccadllc.firebird.vms.topology.service.impl.TestDataHelpers.stubInserter;
+import static org.easymock.EasyMock.anyObject;
+import static org.easymock.EasyMock.createNiceMock;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.replay;
+import static org.easymock.EasyMock.verify;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.allOf;
+import static org.hamcrest.Matchers.anyOf;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.hasItems;
+import static org.hamcrest.Matchers.hasProperty;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.nullValue;
+
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.UUID;
+
+import com.ccadllc.firebird.core.base.common.UnresolvedInetAddress;
+import com.ccadllc.firebird.vms.common.units.Frequency;
+import com.ccadllc.firebird.vms.common.units.ModulationFormat;
+import com.ccadllc.firebird.vms.topology.core.Device;
+import com.ccadllc.firebird.vms.topology.core.DeviceMatchers;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStreamInserter;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStreamMatchers;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStreamTransmissionDescriptor;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStreamType;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStreamTypeCatalog;
+import com.ccadllc.firebird.vms.topology.core.ModulatedRFElementaryStreamTransmissionDescriptor;
+import com.ccadllc.firebird.vms.topology.core.PacketizedElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.PacketizedElementaryStreamType;
+import com.ccadllc.firebird.vms.topology.core.ServingLocation;
+import com.ccadllc.firebird.vms.topology.core.ServingLocationQName;
+import com.ccadllc.firebird.vms.topology.core.TopologyModelSearchHit;
+import com.ccadllc.firebird.vms.topology.core.TopologyModelSearchResults;
+import com.ccadllc.firebird.vms.topology.core.TrafficShapingProfile;
+import com.ccadllc.firebird.vms.topology.core.UDPElementaryStreamTransmissionDescriptor;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableDevice;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableServingLocation;
+import com.ccadllc.firebird.vms.topology.estream.ElementaryStreamEntity;
+import com.ccadllc.firebird.vms.topology.estream.PacketizedElementaryStreamEntity;
+import com.ccadllc.firebird.vms.topology.service.impl.TestDataHelpers.MutableElementaryStreamInserter;
+import com.ccadllc.firebird.vms.topology.servinglocation.ServingLocationEntity;
+
+import org.easymock.EasyMock;
+import org.hamcrest.Matchers;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
+
+@Test
+public class DefaultMutableTopologyModelTest
+{
+    private static final String DTA_EMM_STREAM_NAME = "DTA EMM";
+    private static final String DTA_CA_STREAM_NAME = "DTA PID1";
+    private static final String DTA_MONTGOMERY_NETWORK_STREAM_NAME = "Montgomery DTA Network";
+    private static final String DTA_BUCKS_NETWORK_STREAM_NAME = "Bucks DTA Network";
+
+    private static final String DTA_EMM_STREAM_TYPE_ID = "dta.emm";
+    private static final String DTA_CA_STREAM_TYPE_ID = "dta.ca";
+    private static final String DTA_NETWORK_STREAM_TYPE_ID = "dta.network";
+
+    final ElementaryStreamType DTA_EMM_STREAM_TYPE = PacketizedElementaryStreamType.builder().id(DTA_EMM_STREAM_TYPE_ID).name("DTA EMM").pid(8176).trafficShapingProfile(new TrafficShapingProfile(1000, 1000, 1)).build();
+    final ElementaryStreamType DTA_CA_STREAM_TYPE = PacketizedElementaryStreamType.builder().id(DTA_CA_STREAM_TYPE_ID).name("DTA CA").fixedPid(1).trafficShapingProfile(new TrafficShapingProfile(1000, 1000, 1)).build();
+    final ElementaryStreamType DTA_NETWORK_STREAM_TYPE = PacketizedElementaryStreamType.builder().id(DTA_NETWORK_STREAM_TYPE_ID).name("DTA Network").fixedPid(8188).trafficShapingProfile(new TrafficShapingProfile(1000, 1000, 1)).build();
+
+    private static final UnresolvedInetAddress EMM_MULTICAST_ADDRESS = UnresolvedInetAddress.create("224.100.100.100");
+    private static final int EMM_PORT = 6001;
+
+    private DefaultMutableTopologyModel model;
+    private ServingLocationEntity root;
+
+    @BeforeMethod
+    public void setUp()
+    {
+        root = new ServingLocationEntity(ServingLocationQName.of(":"));
+        final ElementaryStreamTypeCatalog catalog = new StubElementaryStreamTypeCatalog(DTA_EMM_STREAM_TYPE, DTA_CA_STREAM_TYPE, DTA_NETWORK_STREAM_TYPE);
+        model = new DefaultMutableTopologyModel(catalog, new Sat4jElementaryStreamTransmissionOptimizer(), root);
+    }
+
+    public void freshModelHasValidRootServingLocation() throws Exception
+    {
+        assertThat(model.getRootServingLocation(), is(not(nullValue())));
+    }
+
+    public void addServingLocation_addsLocation() throws Exception
+    {
+        final MutableServingLocation rootPriorToAdd = model.getRootServingLocation();
+        model.addServingLocation(ServingLocationQName.of(":bucks"));
+
+        assertThat(model.getRootServingLocation().getChildren(), hasSize(1));
+        assertThat(rootPriorToAdd.getChildren(), hasSize(1));
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void addServingLocation_throwsWhenAddsDuplicateLocation() throws Exception
+    {
+        model.addServingLocation(ServingLocationQName.of(":bucks"));
+        model.addServingLocation(ServingLocationQName.of(":bucks"));
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void addServingLocation_throwsWhenTryingToAddToNonExistentParent() throws Exception
+    {
+        model.addServingLocation(ServingLocationQName.of(":bucks:warrington"));
+    }
+
+    public void deleteServingLocation_removesLocation() throws Exception
+    {
+        configureModelForDta();
+
+        model.deleteServingLocation(ServingLocationQName.of(":bucks:warrington"));
+
+        assertThat(model.getServingLocation(ServingLocationQName.of(":bucks:warrington")), is(nullValue()));
+        assertThat(model.getServingLocation(ServingLocationQName.of(":bucks")).getChildren().size(), is(1));
+    }
+
+    public void deleteServingLocation_cascadeDeletesChildNetworks() throws Exception
+    {
+        configureModelForDta();
+
+        model.deleteServingLocation(ServingLocationQName.of(":bucks"));
+
+        assertThat(model.getServingLocation(ServingLocationQName.of(":bucks:warrington")), is(nullValue()));
+        assertThat(model.getServingLocation(ServingLocationQName.of(":bucks")), is(nullValue()));
+        assertThat(model.getServingLocation(ServingLocationQName.of(":")).getChildren(), hasSize(1));
+    }
+
+    public void deleteServingLocation_removesLocationFromStreams() throws Exception
+    {
+        configureModelForDta();
+
+        final ServingLocationQName warrington = ServingLocationQName.of(":bucks:warrington");
+
+        assertThat(getStreamByName(DTA_BUCKS_NETWORK_STREAM_NAME).getLocation(), is(warrington));
+        model.deleteServingLocation(warrington);
+        assertThat(getStreamByName(DTA_BUCKS_NETWORK_STREAM_NAME).getLocation(), is(nullValue()));
+    }
+
+    public void deleteServingLocation_removesLocationFromDevices() throws Exception
+    {
+        configureModelForDta();
+
+        final ServingLocationQName warrington = ServingLocationQName.of(":bucks:warrington");
+
+        assertThat(getDeviceByName("SEM Warrington").getLocation(), is(warrington));
+        model.deleteServingLocation(warrington);
+        // TODO: JLA
+        assertThat(getDeviceByName("SEM Warrington").getLocation(), is(ServingLocationQName.ORPHANED));
+//        assertThat(getDeviceByName("SEM Warrington").getLocation(), is(nullValue()));
+    }
+
+    public void deleteServingLocation_removesCascadeDeletedLocationFromStreams() throws Exception
+    {
+        configureModelForDta();
+
+        final ServingLocationQName warrington = ServingLocationQName.of(":bucks:warrington");
+
+        assertThat(getStreamByName(DTA_BUCKS_NETWORK_STREAM_NAME).getLocation(), is(warrington));
+        model.deleteServingLocation(warrington.getParent());
+        assertThat(getStreamByName(DTA_BUCKS_NETWORK_STREAM_NAME).getLocation(), is(nullValue()));
+    }
+
+    public void deleteServingLocation_removesCascadeDeletedLocationFromDevices() throws Exception
+    {
+        configureModelForDta();
+
+        final ServingLocationQName warrington = ServingLocationQName.of(":bucks:warrington");
+
+        assertThat(getDeviceByName("SEM Warrington").getLocation(), is(warrington));
+        model.deleteServingLocation(warrington.getParent());
+        assertThat(getDeviceByName("SEM Warrington").getLocation(), is(nullValue()));
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void deleteServingLocation_cannotDeleteRoot() throws Exception
+    {
+        model.deleteServingLocation(ServingLocationQName.of(":"));
+    }
+
+    public void renameServingLocation_renamesLocation() throws Exception
+    {
+        configureModelForDta();
+
+        model.renameServingLocation(ServingLocationQName.of(":bucks"), "Bucks County");
+        assertThat(model.getServingLocation(ServingLocationQName.of(":bucks")), is(nullValue()));
+        assertThat(model.getServingLocation(ServingLocationQName.of(":bucks:warrington")), is(nullValue()));
+        assertThat(model.getServingLocation(ServingLocationQName.of(":Bucks County")).getChildren(), hasSize(2));
+    }
+
+    public void renameServingLocation_updatesLocationsOnStreams() throws Exception
+    {
+        configureModelForDta();
+
+        model.renameServingLocation(ServingLocationQName.of(":bucks"), "Bucks County");
+        assertThat(getStreamByName(DTA_BUCKS_NETWORK_STREAM_NAME).getLocation(), is(ServingLocationQName.of(":Bucks County:warrington")));
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void renameServingLocation_cannotRenameRoot() throws Exception
+    {
+        model.renameServingLocation(ServingLocationQName.of(":"), "Bucks County");
+    }
+
+
+    public void renameServingLocation_updatesLocationOnDevices() throws Exception
+    {
+        configureModelForDta();
+        final MutableDevice device = createNiceMock(MutableDevice.class);
+        expect(device.getId()).andStubReturn(UUID.randomUUID());
+        expect(device.getLocation()).andStubReturn(ServingLocationQName.of(":bucks:horsham"));
+        device.setLocation(ServingLocationQName.of(":Bucks County:horsham"));
+        replay(device);
+
+        model.addDevice(device);
+        model.renameServingLocation(ServingLocationQName.of(":bucks"), "Bucks County");
+
+        verify(device);
+    }
+
+    public void moveServingLocation_movesLocation() throws Exception
+    {
+        configureModelForDta();
+
+        final ServingLocationQName pa = ServingLocationQName.of(":pennsylvania");
+        model.addServingLocation(pa);
+        model.moveServingLocation(ServingLocationQName.of(":montgomery"), pa);
+        model.moveServingLocation(ServingLocationQName.of(":bucks"), pa);
+
+        assertThat(model.getServingLocation(ServingLocationQName.of(":montgomery")), is(nullValue()));
+        assertThat(model.getServingLocation(ServingLocationQName.of(":bucks")), is(nullValue()));
+        assertThat(model.getServingLocation(ServingLocationQName.of(":pennsylvania:bucks")).getChildren(), hasSize(2));
+    }
+
+    public void moveServingLocation_updatesStreams() throws Exception
+    {
+        configureModelForDta();
+
+        model.moveServingLocation(ServingLocationQName.of(":bucks:warrington"), ServingLocationQName.of(":bucks:warminster"));
+
+        assertThat(getStreamByName(DTA_BUCKS_NETWORK_STREAM_NAME).getLocation(), is(ServingLocationQName.of(":bucks:warminster:warrington")));
+
+        final ServingLocationQName pa = ServingLocationQName.of(":pennsylvania");
+        model.addServingLocation(pa);
+        model.moveServingLocation(ServingLocationQName.of(":bucks"), pa);
+
+        assertThat(getStreamByName(DTA_BUCKS_NETWORK_STREAM_NAME).getLocation(), is(ServingLocationQName.of(":pennsylvania:bucks:warminster:warrington")));
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void moveServingLocation_cannotMoveRoot() throws Exception
+    {
+        final ServingLocationQName pa = ServingLocationQName.of(":pennsylvania");
+        model.addServingLocation(pa);
+        model.moveServingLocation(ServingLocationQName.of(":"), pa);
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void moveServingLocation_cannotMoveLocationUnderSelf() throws Exception
+    {
+        final ServingLocationQName pa = ServingLocationQName.of(":pennsylvania");
+        model.addServingLocation(pa);
+        model.moveServingLocation(pa, pa);
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void moveServingLocation_thrownIfUnknownTarget() throws Exception
+    {
+        final ServingLocationQName pa = ServingLocationQName.of(":pennsylvania");
+        model.addServingLocation(pa);
+        model.moveServingLocation(pa, ServingLocationQName.of(":newjersey"));
+    }
+
+    public void moveServingLocation_idRemainsTheSame() throws Exception
+    {
+        configureModelForDta();
+
+        final UUID originalId = model.getServingLocation(ServingLocationQName.of(":montgomery")).getId();
+
+        final ServingLocationQName pa = ServingLocationQName.of(":pennsylvania");
+        model.addServingLocation(pa);
+        model.moveServingLocation(ServingLocationQName.of(":montgomery"), pa);
+
+        final UUID resultantId = model.getServingLocation(ServingLocationQName.of(":pennsylvania:montgomery")).getId();
+
+        assertThat(originalId, is(resultantId));
+    }
+
+    @SuppressWarnings("unchecked")
+    public void mergeServingLocations_mergesAllLocationsAndChildren()
+    {
+        final MutableServingLocation root = model.getRootServingLocation();
+        final MutableServingLocation pa = root.addChild("pa");
+        final MutableServingLocation east = pa.addChild("east");
+        final MutableServingLocation west = pa.addChild("west");
+        east.addChild("phila");
+        west.addChild("pitt");
+
+        model.mergeServingLocations(Lists.newArrayList(ServingLocationQName.of(":pa:east"), ServingLocationQName.of(":pa:west")), "all");
+
+        assertThat(model.getServingLocation(ServingLocationQName.of(":pa")), hasProperty("children",
+            allOf(
+                hasItem(hasProperty("qualifiedName", is(ServingLocationQName.of(":pa:all")))),
+                hasItem(hasProperty("children", hasItem(hasProperty("qualifiedName", is(ServingLocationQName.of(":pa:all:phila")))))),
+                hasItem(hasProperty("children", hasItem(hasProperty("qualifiedName", is(ServingLocationQName.of(":pa:all:pitt")))))),
+                not(anyOf(
+                    hasItem(hasProperty("qualifiedName", is(ServingLocationQName.of(":pa:east")))),
+                    hasItem(hasProperty("qualifiedName", is(ServingLocationQName.of(":pa:west"))))
+                )))));
+    }
+
+    @Test(expectedExceptions = {IllegalArgumentException.class })
+    public void mergeServingLocations_throwsIfAnyParentServingLocationQNameDoesNotMatchTheOtherParentQNames()
+    {
+        final MutableServingLocation root = model.getRootServingLocation();
+        final MutableServingLocation pa = root.addChild("pa");
+        pa.addChild("east");
+        pa.addChild("west");
+        model.mergeServingLocations(Lists.newArrayList(ServingLocationQName.of(":pa"), ServingLocationQName.of(":pa:west")), "none");
+    }
+
+    @Test(expectedExceptions = {IllegalArgumentException.class })
+    public void mergeServingLocations_throwsIfAnyServingLocationDoesNotExist()
+    {
+        final MutableServingLocation root = model.getRootServingLocation();
+        root.addChild("pa");
+        model.mergeServingLocations(Lists.newArrayList(ServingLocationQName.of(":pa"), ServingLocationQName.of(":pa:east")), "none");
+    }
+
+    @Test(expectedExceptions = {IllegalArgumentException.class })
+    public void mergeServingLocations_throwsIfLessThanTwoServingLocationsAreSpecified()
+    {
+        final MutableServingLocation root = model.getRootServingLocation();
+        root.addChild("pa");
+        model.mergeServingLocations(Lists.newArrayList(ServingLocationQName.of(":pa")), "none");
+    }
+
+    public void mergeServingLocations_updatesLocationOnDevices() throws Exception
+    {
+        configureModelForDta();
+
+        final MutableDevice device = createNiceMock(MutableDevice.class);
+        expect(device.getId()).andStubReturn(UUID.randomUUID());
+        expect(device.getLocation()).andStubReturn(ServingLocationQName.of(":montgomery:horsham:golden acres"));
+        device.setLocation(ServingLocationQName.of(":montgomery:new:golden acres"));
+        replay(device);
+
+        model.addDevice(device);
+        model.mergeServingLocations(Lists.newArrayList(ServingLocationQName.of(":montgomery:horsham"), ServingLocationQName.of(":montgomery:hatboro")), "new");
+
+        verify(device);
+    }
+
+    public void mergeServingLocations_updatesLocationsOnStreams() throws Exception
+    {
+        configureModelForDta();
+
+        model.mergeServingLocations(Lists.newArrayList(ServingLocationQName.of(":montgomery"), ServingLocationQName.of(":bucks")), "pa");
+
+        assertThat(model.queryForElementaryStream(ElementaryStreamMatchers.hasExactLocation(ServingLocationQName.of(":pa"))), is(not(nullValue())));
+        assertThat(model.queryForElementaryStream(ElementaryStreamMatchers.hasExactLocation(ServingLocationQName.of(":montgomery"))), is(nullValue()));
+        assertThat(model.queryForElementaryStream(ElementaryStreamMatchers.hasExactLocation(ServingLocationQName.of(":bucks:warrington"))), is(nullValue()));
+    }
+
+    public void freshModelHasNoDevices() throws Exception
+    {
+        assertThat(Iterables.isEmpty(model.getAllDevices()), is(true));
+    }
+
+    public void freshModelHasNoStreams() throws Exception
+    {
+        assertThat(Iterables.isEmpty(model.getAllElementaryStreams()), is(true));
+    }
+
+    public void addStream() throws Exception
+    {
+        final MutableElementaryStream stream = new ElementaryStreamEntity("stream", null, aShapingProfile(), ServingLocationQName.of(":"), Collections.<String, String>emptyMap());
+        model.addElementaryStream(stream);
+
+        assertThat(model.getAllElementaryStreams(), hasOnlyItem(stream));
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void addStream_throwsIfStreamHasSameIdAsAnotherStream() throws Exception
+    {
+        final MutableElementaryStream stream1 = new ElementaryStreamEntity("stream", null, aShapingProfile(), ServingLocationQName.of(":"), Collections.<String, String>emptyMap());
+        model.addElementaryStream(stream1);
+
+        final MutableElementaryStream stream2 = new ElementaryStreamEntity(stream1.getId(), "stream", null, aShapingProfile(), ServingLocationQName.of(":"), Collections.<String, String>emptyMap());
+        model.addElementaryStream(stream2);
+    }
+
+    public void getAllStreamsReturnsAllStreams() throws Exception
+    {
+        configureModelForDta();
+
+        assertThat(model.getAllElementaryStreams(), hasSize(4));
+    }
+
+    public void queryForStreams_nameQuery_exists() throws Exception
+    {
+        configureModelForDta();
+
+        assertThat(model.queryForElementaryStreams(hasName("DTA EMM")), hasSize(1));
+    }
+
+    public void queryForStreams_nameQuery_doesntExist() throws Exception
+    {
+        configureModelForDta();
+
+        assertThat(model.queryForElementaryStreams(hasName("invalid name")), hasSize(0));
+    }
+
+    @SuppressWarnings("unchecked")
+    public void queryForStreams_locationQuery() throws Exception
+    {
+        configureModelForDta();
+
+        assertThat(model.queryForElementaryStreams(hasExactLocation(ServingLocationQName.of(":"))),
+            allOf(hasItems(getStreamByName(DTA_EMM_STREAM_NAME), getStreamByName(DTA_CA_STREAM_NAME)), hasSize(2)));
+    }
+
+    @SuppressWarnings("unchecked")
+    public void queryForStreams_presentIncludingParentNetworksQuery() throws Exception
+    {
+        configureModelForDta();
+
+        assertThat(model.queryForElementaryStreams(presentIncludingParentLocations(ServingLocationQName.of(":montgomery:horsham"))),
+            allOf(hasItems(getStreamByName(DTA_EMM_STREAM_NAME), getStreamByName(DTA_CA_STREAM_NAME), getStreamByName(DTA_MONTGOMERY_NETWORK_STREAM_NAME)), hasSize(3)));
+    }
+
+    @SuppressWarnings("unchecked")
+    public void queryForStreams_presentIncludingChildNetworksQuery() throws Exception
+    {
+        configureModelForDta();
+
+        assertThat(model.queryForElementaryStreams(presentIncludingChildLocations(ServingLocationQName.of(":bucks"))),
+            allOf(hasItems(getStreamByName(DTA_BUCKS_NETWORK_STREAM_NAME)), hasSize(1)));
+    }
+
+    public void queryForStreams_presentIncludingParentAndChildNetworksQuery() throws Exception
+    {
+        configureModelForDta();
+
+        assertThat(model.queryForElementaryStreams(presentIncludingParentAndChildNetworks(ServingLocationQName.of(":"))), hasSize(4));
+    }
+
+    public void queryForStreams_hasPropertyValueQueries() throws Exception
+    {
+        configureModelForDta();
+
+        assertThat(model.queryForElementaryStreams(hasPropertyValue("dta_role", "emm")), hasSize(1));
+        assertThat(model.queryForElementaryStreams(hasPropertyValue("dta_role", "pid1")), hasSize(1));
+        assertThat(model.queryForElementaryStreams(hasPropertyValue("dta_role", "network")), hasSize(2));
+    }
+
+    public void queryForStreams_hasPropertyKeyQuery() throws Exception
+    {
+        configureModelForDta();
+
+        assertThat(model.queryForElementaryStreams(hasPropertyKey("dta_role")), hasSize(4));
+    }
+
+    public void queryForStream_noMatcher_noStreams() throws Exception
+    {
+        assertThat(model.queryForElementaryStream(null), is(nullValue()));
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void queryForStream_noMatcher_streams() throws Exception
+    {
+        configureModelForDta();
+        model.queryForElementaryStream(null);
+    }
+
+    public void deleteStream() throws Exception
+    {
+        configureModelForDta();
+
+        model.deleteElementaryStream(getStreamByName(DTA_EMM_STREAM_NAME).getId());
+
+        assertThat(model.queryForElementaryStreams(hasName(DTA_EMM_STREAM_NAME)), hasSize(0));
+    }
+
+
+    public void queryForDevices_noMatcher() throws Exception
+    {
+        configureModelForDta();
+
+        assertThat(model.queryForDevices(null), hasSize(4));
+    }
+
+    public void queryForDevices_matcher() throws Exception
+    {
+        configureModelForDta();
+
+        assertThat(model.queryForDevices(DeviceMatchers.presentIncludingChildLocations(ServingLocationQName.ROOT)), hasSize(4));
+    }
+
+    public void queryForDevice_noMatcher_noEntries() throws Exception
+    {
+        assertThat(model.queryForDevice(null), is(nullValue()));
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void queryForDevice_noMatcher_entries() throws Exception
+    {
+        configureModelForDta();
+
+        model.queryForDevice(null);
+    }
+
+    public void queryForDevice_matcher() throws Exception
+    {
+        configureModelForDta();
+
+        model.queryForDevice(DeviceMatchers.presentIncludingChildLocations(ServingLocationQName.of(":bucks:warrington")));
+    }
+
+    public void deleteDevice_deviceDeleted() throws Exception
+    {
+        configureModelForDta();
+
+        assertThat(model.getAllDevices(), hasSize(4));
+
+        final MutableDevice device = model.queryForDevice(DeviceMatchers.presentIncludingChildLocations(ServingLocationQName.of(":bucks:warrington")));
+        model.deleteDevice(device.getId());
+
+        assertThat(model.getAllDevices(), hasSize(3));
+    }
+
+    @SuppressWarnings("unchecked")
+    public void getInputTransmissionPlan_multicastChosenOverUnicast() throws Exception
+    {
+        configureModelForDta();
+
+        assertThat(model.getOptimizedInputTransmissionPlan(getEmmStream()).getDescriptors(), allOf(hasSize(1),
+            hasItem(UDPElementaryStreamTransmissionDescriptor.builder()
+                .stream(getStreamByName(DTA_EMM_STREAM_NAME))
+                .address(EMM_MULTICAST_ADDRESS)
+                .port(6001)
+                .sinks(model.getAllDevices())
+                .build())));
+    }
+
+    @SuppressWarnings("unchecked")
+    public void getInputTransmissionPlan_multicastCycle() throws Exception
+    {
+        final ServingLocationQName montgomery = ServingLocationQName.of(":montgomery");
+        model.addServingLocation(montgomery);
+        model.addElementaryStream(new PacketizedElementaryStreamEntity(DTA_EMM_STREAM_NAME, null, 8176, false, aShapingProfile(), ServingLocationQName.ROOT, ImmutableMap.<String, String>of("dta_role", "emm")));
+
+        final PacketizedElementaryStream emmStream = getEmmStream();
+
+        final MutableElementaryStreamInserter sem1 = stubInserter(montgomery);
+        expectDescribeInputForEmmStream(sem1, emmStream, "10.10.10.101", "224.100.100.100", "224.100.100.101");
+
+        final MutableElementaryStreamInserter sem2 = stubInserter(montgomery);
+        expectDescribeInputForEmmStream(sem2, emmStream, "10.10.10.102", "224.100.100.101", "224.100.100.102");
+
+        final MutableElementaryStreamInserter sem3 = stubInserter(montgomery);
+        expectDescribeInputForEmmStream(sem3, emmStream, "10.10.10.103", "224.100.100.102", "224.100.100.100");
+
+        EasyMock.replay(sem1, sem2, sem3);
+
+        model.addDevice(sem1);
+        model.addDevice(sem2);
+        model.addDevice(sem3);
+
+        final ElementaryStreamTransmissionDescriptor sem1Unicast = emmDescriptor("10.10.10.101", sem1);
+        final ElementaryStreamTransmissionDescriptor sem2Unicast = emmDescriptor("10.10.10.102", sem2);
+        final ElementaryStreamTransmissionDescriptor sem3Unicast = emmDescriptor("10.10.10.103", sem3);
+
+        final ElementaryStreamTransmissionDescriptor multicast100 = emmDescriptor("224.100.100.100", sem1, sem3);
+        final ElementaryStreamTransmissionDescriptor multicast101 = emmDescriptor("224.100.100.101", sem1, sem2);
+        final ElementaryStreamTransmissionDescriptor multicast102 = emmDescriptor("224.100.100.102", sem2, sem3);
+
+        assertThat(model.getOptimizedInputTransmissionPlan(getEmmStream()).getDescriptors(), allOf(hasSize(2), anyOf(
+            allOf(hasItem(multicast100), hasItem(sem2Unicast)),
+            allOf(hasItem(multicast101), hasItem(sem3Unicast)),
+            allOf(hasItem(multicast102), hasItem(sem1Unicast))
+        )));
+    }
+
+    @SuppressWarnings("unchecked")
+    public void getInputTransmissionPlan_multicastMustNotBeUsedBecauseFootprintIsWiderThanStreamFootprint() throws Exception
+    {
+        final ServingLocationQName montgomery = ServingLocationQName.of(":montgomery");
+        final ServingLocationQName bucks = ServingLocationQName.of(":bucks");
+        model.addServingLocation(montgomery);
+        model.addServingLocation(bucks);
+        model.addElementaryStream(new PacketizedElementaryStreamEntity(DTA_EMM_STREAM_NAME, null, 8176, false, aShapingProfile(), montgomery, ImmutableMap.<String, String>of("dta_role", "emm")));
+
+        final PacketizedElementaryStream emmStream = getEmmStream();
+
+        final MutableElementaryStreamInserter semMontgomery = stubInserter(montgomery);
+        expectDescribeInputForEmmStream(semMontgomery, emmStream, "10.10.10.101", "224.100.100.100");
+
+        final MutableElementaryStreamInserter semBucks = stubInserter(bucks);
+        expectDescribeInputForEmmStream(semBucks, emmStream, "10.10.10.102", "224.100.100.100");
+
+        EasyMock.replay(semMontgomery, semBucks);
+
+        model.addDevice(semMontgomery);
+        model.addDevice(semBucks);
+
+        assertThat(model.getOptimizedInputTransmissionPlan(getEmmStream()).getDescriptors(), allOf(hasSize(1), hasItem(emmDescriptor("10.10.10.101", semMontgomery))));
+    }
+
+    @SuppressWarnings("unchecked")
+    public void getOutputTransmissionPlan_multicastChosenOverUnicast() throws Exception
+    {
+        configureModelForDta();
+
+        final ModulatedRFElementaryStreamTransmissionDescriptor.Builder<?> builder = ModulatedRFElementaryStreamTransmissionDescriptor.builder()
+            .stream(getStreamByName(DTA_EMM_STREAM_NAME))
+            .sinks(model.getAllDevices());
+
+        assertThat(model.getOutputTransmissionPlan(getEmmStream()).getDescriptors(), allOf(hasSize(2),
+            hasItem(builder.frequency(Frequency.fromKHz(561000L)).modulation(ModulationFormat.QAM256).build()),
+            hasItem(builder.frequency(Frequency.fromKHz(568000L)).modulation(ModulationFormat.QAM256).build())));
+    }
+
+    public void search_forServingLocation_ByNameAdvanced() throws Exception
+    {
+        configureModelForDta();
+
+        final TopologyModelSearchResults results = model.indexForSearch().search("element-type:location AND horsh~", true, 10);
+        assertThat(results.getTotalHits(), is(1));
+        assertThat(results.getTopHits().iterator().next().getElement(), is(ServingLocation.class));
+    }
+
+    public void search_forServingLocation_ByNameSimple() throws Exception
+    {
+        configureModelForDta();
+
+        final TopologyModelSearchResults results = model.indexForSearch().search("horsh", false, 10);
+        assertThat(results.getTotalHits(), is(2));
+        assertThat(results.getTopHits(), hasItem(Matchers.<TopologyModelSearchHit>hasProperty("element", is(ServingLocation.class))));
+    }
+
+    public void search_forServingLocation_ByIdAdvanced() throws Exception
+    {
+        configureModelForDta();
+
+        final ServingLocation location = model.getRootServingLocation();
+        final TopologyModelSearchResults results = model.indexForSearch().search("id:" + location.getId(), true, 10);
+        assertThat(results.getTotalHits(), is(1));
+    }
+
+    public void search_ByIdSimple_NotAllowed() throws Exception
+    {
+        configureModelForDta();
+
+        final ElementaryStream stream = model.queryForElementaryStream(ElementaryStreamMatchers.hasName(DTA_EMM_STREAM_NAME));
+        final TopologyModelSearchResults results = model.indexForSearch().search(stream.getId().toString(), false, 10);
+        assertThat(results.getTotalHits(), is(0));
+    }
+
+    public void search_forStream_ByIdAdvanced() throws Exception
+    {
+        configureModelForDta();
+
+        final ElementaryStream stream = model.queryForElementaryStream(ElementaryStreamMatchers.hasName(DTA_EMM_STREAM_NAME));
+        final TopologyModelSearchResults results = model.indexForSearch().search("id:" + stream.getId(), true, 10);
+        assertThat(results.getTotalHits(), is(1));
+    }
+
+
+    public void search_forElementaryStream_ByTypeAdvanced() throws Exception
+    {
+        configureModelForDta();
+
+        final TopologyModelSearchResults results = model.indexForSearch().search("type:\"dta network\"", true, 10);
+        assertThat(results.getTotalHits(), is(2));
+    }
+
+    public void search_forDevice_ByTypeAdvanced() throws Exception
+    {
+        configureModelForDta();
+
+        final TopologyModelSearchResults results = model.indexForSearch().search("type:sem", true, 10);
+        assertThat(results.getTotalHits(), is(4));
+    }
+
+    public void search_forDevice_ByMixinTypeAdvanced() throws Exception
+    {
+        configureModelForDta();
+
+        final TopologyModelSearchResults results = model.indexForSearch().search("type:ElementaryStreamInserter", true, 10);
+        assertThat(results.getTotalHits(), is(4));
+    }
+
+    public void search_forDevice_ByIdAdvanced() throws Exception
+    {
+        configureModelForDta();
+
+        final Device device = model.getAllDevices().iterator().next();
+        final TopologyModelSearchResults results = model.indexForSearch().search("id:" + device.getId(), true, 10);
+        assertThat(results.getTotalHits(), is(1));
+    }
+
+
+
+
+    // Helpers
+
+    private ElementaryStreamTransmissionDescriptor emmDescriptor(final String address, final Device... sinks) throws Exception
+    {
+        return UDPElementaryStreamTransmissionDescriptor.builder()
+            .stream(getStreamByName(DTA_EMM_STREAM_NAME))
+            .sinks(Sets.newHashSet(sinks))
+            .address(UnresolvedInetAddress.create(address))
+            .port(6001)
+            .build();
+    }
+
+    private MutableDevice getDeviceByName(final String name)
+    {
+        return model.queryForDevice(DeviceMatchers.hasName(name));
+    }
+
+    private MutableElementaryStream getStreamByName(final String name)
+    {
+        return model.queryForElementaryStream(hasName(name));
+    }
+
+    private void configureModelForDta() throws Exception
+    {
+        model.addServingLocation(ServingLocationQName.of(":montgomery"));
+        model.addServingLocation(ServingLocationQName.of(":montgomery:horsham"));
+        model.addServingLocation(ServingLocationQName.of(":montgomery:hatboro"));
+        model.addServingLocation(ServingLocationQName.of(":bucks"));
+        model.addServingLocation(ServingLocationQName.of(":bucks:warrington"));
+        model.addServingLocation(ServingLocationQName.of(":bucks:warminster"));
+
+        model.addElementaryStream(new PacketizedElementaryStreamEntity(DTA_EMM_STREAM_NAME, DTA_EMM_STREAM_TYPE_ID, 8176, false, aShapingProfile(), ServingLocationQName.of(":"), ImmutableMap.<String, String>of("dta_role", "emm")));
+        model.addElementaryStream(new PacketizedElementaryStreamEntity(DTA_CA_STREAM_NAME, DTA_CA_STREAM_TYPE_ID, 1, true, aShapingProfile(), ServingLocationQName.of(":"), ImmutableMap.<String, String>of("dta_role", "pid1")));
+        model.addElementaryStream(new PacketizedElementaryStreamEntity(DTA_MONTGOMERY_NETWORK_STREAM_NAME, DTA_NETWORK_STREAM_TYPE_ID, 8188, true, aShapingProfile(), ServingLocationQName.of(":montgomery"), ImmutableMap.<String, String>of("dta_role", "network")));
+        model.addElementaryStream(new PacketizedElementaryStreamEntity(DTA_BUCKS_NETWORK_STREAM_NAME, DTA_NETWORK_STREAM_TYPE_ID, 8188, true, aShapingProfile(), ServingLocationQName.of(":bucks:warrington"), ImmutableMap.<String, String>of("dta_role", "network")));
+
+        final PacketizedElementaryStream emmStream = getEmmStream();
+
+        final MutableElementaryStreamInserter semHorsham = stubInserter(ServingLocationQName.of(":montgomery:horsham"), "SEM Horsham");
+        expectDescribeInputForEmmStream(semHorsham, emmStream, "10.10.10.100");
+        expectDescribeOutputForEmmStream(semHorsham, emmStream, ModulationFormat.QAM256);
+
+        final MutableElementaryStreamInserter semHatboro = stubInserter(ServingLocationQName.of(":montgomery:hatboro"), "SEM Hatboro");
+        expectDescribeInputForEmmStream(semHatboro, emmStream, "10.10.10.101");
+        expectDescribeOutputForEmmStream(semHatboro, emmStream, ModulationFormat.QAM256);
+
+        final MutableElementaryStreamInserter semWarrington = stubInserter(ServingLocationQName.of(":bucks:warrington"), "SEM Warrington");
+        expectDescribeInputForEmmStream(semWarrington, emmStream, "10.10.20.100");
+        expectDescribeOutputForEmmStream(semWarrington, emmStream, ModulationFormat.QAM256);
+
+        final MutableElementaryStreamInserter semWarminster = stubInserter(ServingLocationQName.of(":bucks:warminster"), "SEM Warminster");
+        expectDescribeInputForEmmStream(semWarminster, emmStream, "10.10.20.101");
+        expectDescribeOutputForEmmStream(semWarminster, emmStream, ModulationFormat.QAM256);
+
+        EasyMock.replay(semHorsham, semHatboro, semWarrington, semWarminster);
+
+        model.addDevice(semHorsham);
+        model.addDevice(semHatboro);
+        model.addDevice(semWarrington);
+        model.addDevice(semWarminster);
+    }
+
+    private void expectDescribeInputForEmmStream(final ElementaryStreamInserter device, final PacketizedElementaryStream stream, final String address) throws Exception
+    {
+        final UDPElementaryStreamTransmissionDescriptor unicastDescriptor = UDPElementaryStreamTransmissionDescriptor.builder()
+            .stream(stream)
+            .sinks(Arrays.asList(device))
+            .address(UnresolvedInetAddress.create(address))
+            .port(EMM_PORT)
+            .build();
+
+        EasyMock.expect(device.describeInput(stream)).andReturn(Arrays.<ElementaryStreamTransmissionDescriptor>asList(
+            unicastDescriptor,
+            unicastDescriptor.toBuilder().address(EMM_MULTICAST_ADDRESS).build())).anyTimes();
+    }
+
+    private void expectDescribeOutputForEmmStream(final ElementaryStreamInserter device, final PacketizedElementaryStream stream, final ModulationFormat modulation) throws Exception
+    {
+        final ModulatedRFElementaryStreamTransmissionDescriptor.Builder<?> builder = ModulatedRFElementaryStreamTransmissionDescriptor.builder()
+            .stream(stream)
+            .sinks(Arrays.<Device>asList(device))
+            .modulation(modulation);
+
+        EasyMock.expect(device.describeOutput((ElementaryStreamTransmissionDescriptor)anyObject())).andReturn(Arrays.<ElementaryStreamTransmissionDescriptor>asList(
+            builder.frequency(Frequency.fromKHz(561000L)).build(),
+            builder.frequency(Frequency.fromKHz(568000L)).build())).anyTimes();
+    }
+
+    private void expectDescribeInputForEmmStream(final ElementaryStreamInserter device, final PacketizedElementaryStream stream, final String... addresses) throws Exception
+    {
+        final UDPElementaryStreamTransmissionDescriptor.Builder<?> builder = UDPElementaryStreamTransmissionDescriptor.builder()
+            .stream(stream)
+            .port(EMM_PORT)
+            .sinks(Arrays.<Device>asList(device));
+
+        final List<ElementaryStreamTransmissionDescriptor> descriptors = Lists.newArrayList();
+        for (final String address : addresses)
+        {
+            descriptors.add(builder.address(UnresolvedInetAddress.create(address)).build());
+        }
+
+        EasyMock.expect(device.describeInput(stream)).andReturn(descriptors).anyTimes();
+    }
+
+    private PacketizedElementaryStream getEmmStream()
+    {
+        return (PacketizedElementaryStream)getStreamByName(DTA_EMM_STREAM_NAME);
+    }
+}

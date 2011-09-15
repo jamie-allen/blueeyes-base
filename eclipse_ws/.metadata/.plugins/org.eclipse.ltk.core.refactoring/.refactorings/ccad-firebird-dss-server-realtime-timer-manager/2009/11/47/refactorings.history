@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring accessors="true" comment="Delete 1 element(s) from project &apos;ccad-firebird-dss-server-realtime-timer-manager&apos;&#x0A;- Original project: &apos;ccad-firebird-dss-server-realtime-timer-manager&apos;&#x0A;- Original element: &apos;ccad-firebird-dss-server-realtime-timer-manager/src/main/java/com.ccadllc.firebird.dss.server.realtime.timer.manager.management&apos;" description="Delete element" element1="/src\/main\/java&lt;com.ccadllc.firebird.dss.server.realtime.timer.manager.management" elements="1" flags="589830" id="org.eclipse.jdt.ui.delete" resources="0" stamp="1258730101976" subPackages="false" version="1.0"/>
+</session>

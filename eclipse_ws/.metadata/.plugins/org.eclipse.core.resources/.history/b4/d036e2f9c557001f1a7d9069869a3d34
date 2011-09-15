@@ -1,0 +1,137 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import java.net.InetSocketAddress;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Set;
+
+import com.ccadllc.firebird.dss.common.datatypes.RouteDataType;
+import com.ccadllc.firebird.dss.common.datatypes.StreamType;
+import com.ccadllc.firebird.dss.common.datatypes.TransmissionType;
+import com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.common.SnapshotUtility;
+import com.ccadllc.firebird.dss.server.common.StreamSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+
+import org.easymock.EasyMock;
+import org.easymock.IMocksControl;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+import org.testng.v6.Maps;
+
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Sets;
+
+@Test
+public class PidMappedRouterTest
+{
+    private static final byte FILLER_BYTE = (byte)0xFF;
+    private PidMappedRouter pidMappedRouter;
+    private RealTimeSnapshotManager realTimeSnapshotManager;
+    private StreamManager streamManager;
+    private IMocksControl mocks;
+
+    @BeforeMethod
+    public void setUp()
+    {
+        mocks = EasyMock.createControl();
+        streamManager = mocks.createMock(StreamManager.class);
+        realTimeSnapshotManager = mocks.createMock(RealTimeSnapshotManager.class);
+    }
+
+    public void testInsertToStreamManager() throws Exception
+    {
+        final Multimap<Integer, Long> pidMappings = HashMultimap.create();
+        final Block block = aBlock();
+        final StreamSnapshot testStreamSnapshot = SnapshotUtility.createStreamSnapshot(1L, 1503, Sets.<InetSocketAddress>newHashSet(), TransmissionType.MPEG2, StreamType.STANDALONE, 10, 20, 30, Maps.<String, String>newHashMap());
+        EasyMock.expect(realTimeSnapshotManager.getStream(1L)).andReturn(testStreamSnapshot);
+        streamManager.insert(block.getData(), testStreamSnapshot);
+        EasyMock.expectLastCall();
+
+        mocks.replay();
+        pidMappedRouter = new PidMappedRouter(aRouteSnapshot(pidMappings), realTimeSnapshotManager, streamManager);
+        pidMappedRouter.route(block);
+        mocks.verify();
+    }
+
+    public void testChangeStreamIdsWhen_SetOfIdsIsBiggerThanExistingSet() throws Exception
+    {
+        changeStreamIds(createStreamIds(1L, 2L, 3L, 4L, 5L), createStreamIds(1L, 2L, 10L, 11L, 12L, 13L, 14L));
+    }
+
+    public void testChangeStreamIdsWhen_SetOfIdsIsSmallerThanExistingSet() throws Exception
+    {
+        changeStreamIds(createStreamIds(1L, 2L, 3L, 4L, 5L), createStreamIds(1L, 2L, 10L, 11L));
+    }
+
+    public void testChangeStreamIdsWhen_SetOfIdsIsSameSizeAsExistingSet() throws Exception
+    {
+        changeStreamIds(createStreamIds(1L, 2L, 3L, 4L, 5L), createStreamIds(10L, 11L, 12L, 13L, 14L));
+    }
+
+    private RouteSnapshot aRouteSnapshot(final Multimap<Integer, Long> pidMappings)
+    {
+        return SnapshotUtility.createPidMappedRouteSnapshot(TransportProtocolType.UDP, RouteDataType.MPEG_PACKETS, 1L, 6000, pidMappings, Collections.<String, String>emptyMap());
+    }
+
+    private void changeStreamIds(final Multimap<Integer, Long> initialPidMappings, final Multimap<Integer, Long> updatedPidMappings)
+    {
+        final Block block = aBlock();
+        for (final Long streamId : initialPidMappings.values())
+        {
+            expectStreamManagerCall(streamId, block);
+        }
+
+        mocks.replay();
+        pidMappedRouter = new ElementaryStreamRouter(streamManager, realTimeSnapshotManager, aRouteSnapshot(initialPidMappings));
+        pidMappedRouter.route(block);
+        mocks.verify();
+
+        mocks.reset();
+        for (final Long streamId : updatedPidMappings.values())
+        {
+            expectStreamManagerCall(streamId, block);
+        }
+
+        mocks.replay();
+        pidMappedRouter.updateRoute(updatedPidMappings);
+        pidMappedRouter.route(block);
+        mocks.verify();
+    }
+
+    private void expectStreamManagerCall(final Long streamId, final Block block)
+    {
+        final StreamSnapshot testStreamSnapshot = SnapshotUtility.createStreamSnapshot(streamId, 1503, Sets.<InetSocketAddress>newHashSet(), TransmissionType.MPEG2, StreamType.STANDALONE, 10, 20, 30, Maps.<String, String>newHashMap());
+        EasyMock.expect(realTimeSnapshotManager.getStream(streamId)).andReturn(testStreamSnapshot);
+        streamManager.insert(block.getData(), testStreamSnapshot);
+        EasyMock.expectLastCall();
+    }
+
+    private Block aBlock()
+    {
+        final byte[] blockData = new byte[10];
+        Arrays.fill(blockData, FILLER_BYTE);
+        return new Block(1503, blockData);
+    }
+
+    /**
+     * Creates a set of stream IDs to use for testing.
+     *
+     * @param idsToUse in the test
+     * @return set of <code>Long</code> stream IDs
+     */
+    private Set<Long> createStreamIds(final Long... idsToUse)
+    {
+        final Set<Long> ids = Sets.newHashSet();
+        for (final Long idToUse : idsToUse)
+        {
+            ids.add(idToUse);
+        }
+
+        return ids;
+    }
+}

@@ -1,0 +1,54 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dssrm.provisioning;
+
+import java.util.Set;
+import java.util.UUID;
+
+import com.ccadllc.firebird.dss.common.datatypes.RouteDataType;
+import com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType;
+import com.ccadllc.firebird.vms.dssrm.core.RouteDescription;
+
+import net.jcip.annotations.Immutable;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Multimap;
+
+/**
+ * Immutable snapshot of a route and its data.
+ */
+@Immutable
+public final class RouteSnapshot
+{
+    private final UUID streamId;
+    private final UUID id;
+    private final int port;
+    private final Multimap<Integer, Long> pidMappings;
+    private final Set<Long> streamIds;
+    private final TransportProtocolType transportProtocolType;
+    private final RouteDataType routeDataType;
+    private final ImmutableMap<String, String> properties;
+    private final RouteDescription description;
+
+    public RouteSnapshot(final RouteDescription description)
+    {
+        Preconditions.checkNotNull(description);
+        streamId = description.getStreamId()
+        id = description.getId()
+        port = description.getPort()
+        pidMappings = description.getPidMappings()
+        if (description.getStreamIds() != null)
+        {
+            streamIds = ImmutableSet<Long>.copyOf(description.getStreamIds());
+        }
+        transportProtocolType = description.getTransportProtocolType();
+        routeDataType = description.getRouteDataType();
+        properties = ImmutableMap.copyOf(description.getProperties());
+    }
+
+    public RouteDescription getDescription()
+    {
+        return description;
+    }
+}

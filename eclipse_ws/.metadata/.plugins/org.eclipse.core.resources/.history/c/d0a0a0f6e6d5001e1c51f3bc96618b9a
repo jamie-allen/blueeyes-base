@@ -1,0 +1,111 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerUnitTestUtility.createStreamIdsList;
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerUnitTestUtility.createUdpBlockRouteSnapshot;
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerUnitTestUtility.getStubbedNotifier;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.isOneOf;
+
+import java.lang.reflect.Field;
+import java.util.Set;
+
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter.Inserter;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+
+import org.easymock.EasyMock;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+import org.testng.v6.Sets;
+
+@Test
+public class UdpBlockRouteControllerTest
+{
+    private static final int PORT1 = 8150;
+
+    private StreamManager mockStreamManager;
+
+    @BeforeMethod
+    public void setUp() throws Exception
+    {
+        mockStreamManager = EasyMock.createMock(StreamManager.class);
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testNullStreamIds() throws Exception
+    {
+        new UdpBlockRouteController(createUdpBlockRouteSnapshot(1L, PORT1, null), mockStreamManager,
+            getStubbedNotifier());
+    }
+
+    public void testEmptyStreamIds() throws Exception
+    {
+        new UdpBlockRouteController(createUdpBlockRouteSnapshot(1L, PORT1, createStreamIdsList()), mockStreamManager,
+            getStubbedNotifier());
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testNullStreamManager() throws Exception
+    {
+        new UdpBlockRouteController(createUdpBlockRouteSnapshot(1L, PORT1, createStreamIdsList()), null,
+            getStubbedNotifier());
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testNullNotificationManager() throws Exception
+    {
+        new UdpBlockRouteController(createUdpBlockRouteSnapshot(1L, PORT1, createStreamIdsList()), mockStreamManager,
+            null);
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testInvalidPortNumber() throws Exception
+    {
+        new UdpBlockRouteController(createUdpBlockRouteSnapshot(1L, -1, createStreamIdsList()), mockStreamManager,
+            getStubbedNotifier());
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testNullStreamIdsOnUpdate() throws Exception
+    {
+        final UdpBlockRouteController udpRouteController = new UdpBlockRouteController(createUdpBlockRouteSnapshot(2L,
+            PORT1, createStreamIdsList()), mockStreamManager, getStubbedNotifier());
+        udpRouteController.update(null);
+    }
+
+    public void testEmptyStreamIdsOnUpdate() throws Exception
+    {
+        final UdpBlockRouteController udpRouteController = new UdpBlockRouteController(createUdpBlockRouteSnapshot(3L,
+            PORT1, createStreamIdsList()), mockStreamManager, getStubbedNotifier());
+        udpRouteController.update(createUdpBlockRouteSnapshot(3L, PORT1, createStreamIdsList()));
+    }
+
+    public void testValidStreamIdsOnUpdate() throws Exception
+    {
+        final Set<Long> streamIds = Sets.newHashSet();
+        streamIds.add(1L);
+        streamIds.add(2L);
+        final UdpBlockRouteController udpRouteController = new UdpBlockRouteController(createUdpBlockRouteSnapshot(4L,
+            PORT1, streamIds), mockStreamManager, getStubbedNotifier());
+
+        streamIds.clear();
+        streamIds.add(2L);
+        streamIds.add(3L);
+        udpRouteController.update(createUdpBlockRouteSnapshot(4L, PORT1, streamIds));
+
+        assertInserterStreamIds(udpRouteController, streamIds);
+    }
+
+    private void assertInserterStreamIds(final UdpBlockRouteController controller, final Set<Long> expectedStreamIds) throws NoSuchFieldException, IllegalAccessException
+    {
+        final Field inserterField = controller.getClass().getDeclaredField("inserter");
+        inserterField.setAccessible(true);
+        final Inserter inserter = (Inserter)inserterField.get(controller);
+
+        for (final Long expectedStreamId : expectedStreamIds)
+        {
+            assertThat(expectedStreamId, isOneOf(inserter.getStreamIds()));
+        }
+    }
+}

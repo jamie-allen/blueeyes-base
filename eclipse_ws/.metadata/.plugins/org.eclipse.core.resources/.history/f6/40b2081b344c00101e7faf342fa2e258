@@ -1,0 +1,154 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import java.io.IOException;
+import java.net.BindException;
+import java.net.InetSocketAddress;
+import java.util.Set;
+import java.util.concurrent.ScheduledExecutorService;
+
+import com.ccadllc.commons.util.IntegerGeneratorStrategy;
+import com.ccadllc.commons.util.IntegerRange;
+import com.ccadllc.commons.util.concurrent.ExecutorBuilder;
+import com.ccadllc.firebird.dss.common.datatypes.RouteDescription;
+import com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType;
+import com.ccadllc.firebird.dss.server.common.SnapshotUtility;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.RouteEstablisher;
+
+import org.apache.mina.core.service.IoAcceptor;
+import org.apache.mina.core.service.IoHandler;
+import org.apache.mina.core.session.IdleStatus;
+import org.apache.mina.core.session.IoSession;
+import org.apache.mina.transport.socket.nio.NioProcessor;
+import org.apache.mina.transport.socket.nio.NioSocketAcceptor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Sets;
+
+/**
+ * Default implementation of the {@code RouteEstablisher}.
+ */
+public class TcpRouteEstablisher implements RouteEstablisher
+{
+    static final int LEGAL_PORT_MIN_RANGE = 1025;
+    static final int LEGAL_PORT_MAX_RANGE = 65535;
+    private final RouteManager routeManager;
+    private final Set<IntegerRange> usablePortNumbers;
+    private final Set<Integer> inUsePortNumbers;
+//    private final int tcpMinPortRange;
+//    private final int tcpMaxPortRange;
+
+    private final IntegerGeneratorStrategy availableEstablishConnectionPorts;
+//    private final SortedSet<Integer> availableEstablishConnectionPorts = Sets.newTreeSet();
+
+    private final Logger logger = LoggerFactory.getLogger(TcpRouteEstablisher.class);
+
+    public TcpRouteEstablisher(final RouteManager routeManager, final int tcpMinPortRange, final int tcpMaxPortRange)
+    {
+        Preconditions.checkNotNull(routeManager, "ExternalRoute manager cannot be null");
+        Preconditions.checkArgument((tcpMinPortRange >= LEGAL_PORT_MIN_RANGE && tcpMaxPortRange <= LEGAL_PORT_MAX_RANGE),
+            "tcp range must be between %d and %d [inclusive]", tcpMinPortRange, tcpMaxPortRange);
+        this.routeManager = routeManager;
+        availableEstablishConnectionPorts = new IntegerGeneratorStrategy(tcpMinPortRange, tcpMaxPortRange);
+        usablePortNumbers = Sets.newHashSet(new IntegerRange(tcpMinPortRange, tcpMaxPortRange));
+        inUsePortNumbers = Sets.newHashSet();
+
+//        this.tcpMinPortRange = tcpMinPortRange;
+//        this.tcpMaxPortRange = tcpMaxPortRange;
+//        for (int i = tcpMinPortRange; i <= tcpMaxPortRange; i++)
+//        {
+//            availableEstablishConnectionPorts.add(i);
+//        }
+        logger.debug("TcpRouteEstablisher ready for use.");
+    }
+
+    public int establishTcpRoute(final RouteDescription routeDescription) throws IOException
+    {
+        logger.debug("Going to establish a TCP route for {}", routeDescription);
+        final int port = getNextAvailablePort();
+        switch(routeDescription.getType())
+        {
+            case PID_MAPPED:
+                routeManager.establishRoute(SnapshotUtility.createPidMappedRouteSnapshot(TransportProtocolType.TCP, routeDescription.getRouteDataType(), idFromPort(port), port, routeDescription.getPidMappings(), null));
+                break;
+            case ELEMENTARY_STREAM:
+                routeManager.establishRoute(SnapshotUtility.createElementaryStreamRouteSnapshot(TransportProtocolType.TCP, routeDescription.getRouteDataType(), idFromPort(port), port, routeDescription.getStreamIds(),  null));
+                break;
+            case TRANSPORT_STREAM:
+                routeManager.establishRoute(SnapshotUtility.createTransportStreamRouteSnapshot(TransportProtocolType.TCP, routeDescription.getRouteDataType(), idFromPort(port), port, routeDescription.getTransportStreamIds(), null));
+                break;
+            default:
+                throw new IllegalArgumentException("Unrecognized route type encountered.");
+        }
+        return port;
+    }
+
+    private Long idFromPort(final int port)
+    {
+        return -(long)port;
+    }
+
+    private synchronized int getNextAvailablePort() throws IOException
+    {
+        while (availableEstablishConnectionPorts.
+            size() > 0)
+        {
+            final int nextPort = availableEstablishConnectionPorts.first();
+            final ScheduledExecutorService executor = new ExecutorBuilder("TCP Route Manager Executor Thread").build();
+            final IoAcceptor acceptor = new NioSocketAcceptor(executor, new NioProcessor(executor));
+            acceptor.setHandler(new IoHandler()
+            {
+                public void sessionOpened(final IoSession session) throws Exception
+                {
+                }
+
+                public void sessionIdle(final IoSession session, final IdleStatus status) throws Exception
+                {
+                }
+
+                public void sessionCreated(final IoSession session) throws Exception
+                {
+                }
+
+                public void sessionClosed(final IoSession session) throws Exception
+                {
+                }
+                public void messageSent(final IoSession session, final Object obj) throws Exception
+                {
+                }
+
+                public void messageReceived(final IoSession session, final Object obj) throws Exception
+                {
+                }
+
+                public void exceptionCaught(final IoSession session, final Throwable exception) throws Exception
+                {
+                }
+            });
+            try
+            {
+                acceptor.bind(new InetSocketAddress(nextPort));
+                acceptor.unbind();
+                return nextPort;
+            }
+            catch (final BindException be)
+            {
+                logger.warn("Port {} is currently unavailable.", nextPort);
+            }
+            finally
+            {
+                availableEstablishConnectionPorts.remove(nextPort);
+            }
+        }
+        throw new IOException(String.format("All ports in the range %d-%d are currently in use!", tcpMinPortRange, tcpMaxPortRange));
+    }
+
+    public void unregisterPort(final int port)
+    {
+        logger.debug("Releasing TCP port {} for reuse.", port);
+    }
+}

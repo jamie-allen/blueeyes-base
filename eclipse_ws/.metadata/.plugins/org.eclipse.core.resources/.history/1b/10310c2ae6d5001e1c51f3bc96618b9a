@@ -1,0 +1,137 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.util.concurrent.ScheduledExecutorService;
+
+import com.ccadllc.commons.util.EventListenerList;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.JmxRouteNotificationManager;
+import com.ccadllc.firebird.dss.server.realtime.standalone.stream.manager.StreamManager;
+import com.ccadllc.firebird.vms.common.packetfiltering.CompositePacketFilter;
+
+import org.apache.mina.core.service.IoAcceptor;
+import org.apache.mina.core.service.IoHandler;
+import org.apache.mina.filter.codec.ProtocolCodecFactory;
+import org.apache.mina.filter.codec.ProtocolCodecFilter;
+import org.apache.mina.transport.socket.nio.NioProcessor;
+import org.apache.mina.transport.socket.nio.NioSocketAcceptor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.base.Preconditions;
+
+/**
+ * Base implementation for {@code TcpRouteController}.
+ */
+public abstract class AbstractTcpRouteController implements TcpRouteController
+{
+    private final Logger logger = LoggerFactory.getLogger(AbstractTcpRouteController.class);
+    private volatile boolean disposed;
+    private final TcpEventListenerComposite eventListenerComposite;
+    private IoAcceptor acceptor;
+    private CompositePacketFilter chain;
+    /** Lock used when manipulating the streamIds collection. */
+    private final Object lock = new Object();
+    private final ScheduledExecutorService executor;
+    private final NioProcessor processor;
+
+    public AbstractTcpRouteController(
+        final RouteSnapshot route, 
+        final StreamManager streamManager,
+        final JmxRouteNotificationManager jmxRouteNotificationManager,
+        final TcpRouteSessionClosedEventDispatcher tcpRouteSessionClosedEventDispatcher,
+        final TcpRouteSessionCreatedEventDispatcher tcpRouteSessionCreatedEventDispatcher,
+        final ScheduledExecutorService executor,
+        final NioProcessor processor) throws IOException
+    {
+        Preconditions.checkNotNull(streamManager);
+        Preconditions.checkNotNull(jmxRouteNotificationManager);
+        eventListenerComposite = new TcpEventListenerComposite(new EventListenerList<TcpRouteEventListener, TcpRouteEvent>(), tcpRouteSessionClosedEventDispatcher, tcpRouteSessionCreatedEventDispatcher);
+        this.executor = executor;
+        this.processor = processor;
+    }
+
+    @Override
+    public void addRouteEventListener(final TcpRouteEventListener routeEventListener)
+    {
+        eventListenerComposite.addRouteEventListener(routeEventListener);
+    }
+
+    @Override
+    public void closedSession()
+    {
+        eventListenerComposite.closedSession();
+    }
+
+    @Override
+    public void createdSession() throws IOException
+    {
+        acceptor.unbind();
+        eventListenerComposite.createdSession();
+    }
+
+    @Override
+    public void shutdown()
+    {
+        logger.debug("Shutdown...");
+        synchronized (lock)
+        {
+            if (acceptor != null)
+            {
+                acceptor.unbind();
+                acceptor.dispose();
+            }
+
+            chain.dispose();
+            disposed = true;
+        }
+    }
+
+    @Override
+    public final void update(final RouteSnapshot route)
+    {
+        updateValidations(route);
+
+        synchronized (lock)
+        {
+            ensureNotDisposed();
+            updateInternal(route);
+        }
+    }
+
+    abstract void updateValidations(RouteSnapshot route);
+    abstract void updateInternal(RouteSnapshot route);
+
+    void setChain(final CompositePacketFilter chain)
+    {
+        this.chain = chain;
+    }
+
+    CompositePacketFilter getChain()
+    {
+        return chain;
+    }
+
+    void ensureNotDisposed()
+    {
+        if (disposed)
+        {
+            logger.warn("Action called on disposed filter chain.");
+            throw new IllegalStateException("Object has been disposed.");
+        }
+    }
+
+    void openTcpPort(final int port, final ProtocolCodecFactory factory, final IoHandler handler) throws IOException
+    {
+        acceptor = new NioSocketAcceptor();
+        acceptor.getFilterChain().addLast("protocol", new ProtocolCodecFilter(factory));
+        acceptor.setHandler(handler);
+        acceptor.bind(new InetSocketAddress(port));
+        acceptor.setCloseOnDeactivation(false);
+        logger.debug("Opened TCP port " + port);
+    }
+}

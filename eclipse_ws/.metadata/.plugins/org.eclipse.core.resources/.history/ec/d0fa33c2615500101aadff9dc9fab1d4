@@ -1,0 +1,116 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.terminals.manager.impl;
+
+import java.util.Date;
+
+public class DefaultOperationMXBean implements OperationMXBean
+{
+    private final OperationRunner runner;
+
+    public DefaultOperationMXBean(final OperationRunner runner)
+    {
+        this.runner = runner;
+    }
+
+    @Override
+    public String getId()
+    {
+        return runner.getOperation().getId().toString();
+    }
+
+    @Override
+    public String getName()
+    {
+        return runner.getOperation().getName();
+    }
+
+    @Override
+    public String getAction()
+    {
+        return runner.getOperation().getAction().toString();
+    }
+
+    @Override
+    public String getSelector()
+    {
+        return runner.getOperation().getSelector().toString();
+    }
+
+    @Override
+    public String getStreamId()
+    {
+        return runner.getOperation().getStreamId().toString();
+    }
+
+    @Override
+    public String getBandwidthPercent()
+    {
+        return String.format("%.1f", runner.getOperation().getBandwidthPercent());
+    }
+
+    @Override
+    public Date getStartDate()
+    {
+        return runner.getOperation().getStartDate();
+    }
+
+    @Override
+    public Date getEndDate()
+    {
+        return runner.getOperation().getEndDate();
+    }
+
+    @Override
+    public boolean isOptimize()
+    {
+        return runner.getOperation().isOptimize();
+    }
+
+    @Override
+    public boolean isSystemOperation()
+    {
+        return runner.getOperation().isSystemOperation();
+    }
+
+    @Override
+    public int getTotalPasses()
+    {
+        return runner.getOperation().getTotalPasses();
+    }
+
+    @Override
+    public int getCurrentPass()
+    {
+        return runner.getStatistics().getCurrentPass();
+    }
+
+    @Override
+    public int getTerminalCount()
+    {
+        return runner.getStatistics().getTerminalCount();
+    }
+
+    @Override
+    public double getPercentComplete()
+    {
+        return runner.getStatistics().getPercentComplete();
+    }
+
+    @Override
+    public long getTimeToComplete()
+    {
+        return runner.getStatistics().getTimeToComplete();
+    }
+
+    @Override
+    public int getBatchSize()
+    {
+        return runner.getStatistics().getBatchSize();
+    }
+
+    @Override
+    public long getEstimatedBatchLoadTime()
+    {
+        return runner.getStatistics().getEstimatedBatchLoadTime();
+    }
+}

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans
+        xmlns:util="http://www.springframework.org/schema/util"
+        xmlns="http://www.springframework.org/schema/beans"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns:tx="http://www.springframework.org/schema/tx"
+        xmlns:context="http://www.springframework.org/schema/context"
+        xmlns:osgix="http://www.springframework.org/schema/osgi-compendium"
+        xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+           http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx.xsd
+           http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
+           http://www.springframework.org/schema/osgi-compendium  http://www.springframework.org/schema/osgi-compendium/spring-osgi-compendium.xsd">
+
+    <context:annotation-config />
+    <tx:annotation-driven mode="aspectj" />
+
+    <bean class="com.ccadllc.firebird.core.base.common.util.osgi.OsgiAnnotationBeanConfigurerAspectConfigurer" />
+
+    <bean id="dataStreamServerResourceManager" class="com.ccadllc.firebird.vms.dssrm.provisioning.DefaultDataStreamServerResourceManager">
+        <property name="periodicRepository" ref="periodicRepository"/>
+        <property name="blockSetRepository" ref="blockSetRepository"/>
+        <property name="topologyservice" ref="topologyService"/>
+        <property name="multicastInputStreamManager" ref="multicastInputStreamManager"/>
+    </bean>
+    
+    <bean id="periodicRepository" class="com.ccadllc.firebird.vms.dssrm.provisioning.impl.DefaultPeriodicRepository" />
+    <bean id="blockSetRepository" class="com.ccadllc.firebird.vms.dssrm.provisioning.impl.DefaultBlockSetRepository" />
+
+    <bean class="com.ccadllc.firebird.vms.dssrm.provisioning.PeriodicEntity" abstract="true">
+        <property name="eventDispatcher" ref="eventDispatcher"/>
+    </bean>
+
+    <bean class="com.ccadllc.firebird.vms.dssrm.provisioning.BlockSetEntity" abstract="true">
+        <property name="eventDispatcher" ref="eventDispatcher"/>
+    </bean>
+
+    <bean id="eventDispatcher" class="com.ccadllc.firebird.core.base.common.util.osgi.TransactionalEventDispatcher">
+        <constructor-arg ref="eventAdmin" />
+    </bean>
+
+</beans>

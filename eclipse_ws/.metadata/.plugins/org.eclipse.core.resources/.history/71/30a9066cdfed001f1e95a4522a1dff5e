@@ -1,0 +1,163 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dks.ddip;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+
+import java.io.StringReader;
+
+import javax.xml.transform.stream.StreamSource;
+
+import com.ccadllc.firebird.vms.dks.ddip.impl.ConfigureDscRequestMessage;
+import com.ccadllc.firebird.vms.dks.ddip.impl.DdipMessageUnmarshaller;
+import com.ccadllc.firebird.vms.dks.ddip.impl.DdipRequestMessage;
+import com.ccadllc.firebird.vms.dks.ddip.impl.DeeAddressRequestMessage;
+import com.ccadllc.firebird.vms.dks.ddip.impl.DksRecoveryRequestMessage;
+
+import org.springframework.oxm.Unmarshaller;
+import org.testng.annotations.Test;
+
+import com.ning.http.util.Base64;
+
+@Test
+public class DdipRequestUnmarshallerTest {
+    private static final short SECURITY_DOMAIN_KEY_SERVER_GROUP_NUMBER = 52;
+    private static final short SECURITY_DOMAIN_CATEGORY_ID = 1;
+
+    private final Unmarshaller unmarshaller = new DdipMessageUnmarshaller();
+
+    public void testConfigureDscRequest_withValidData() throws Exception
+    {
+        final String dscName = "John Smith";
+        final String dscAddress = "5 Walnut Grove, Horsham, PA";
+        final String dscEmailAddress = "jsmith@cable.comcast.com";
+        final String dscPhoneNumber = "215-555-1212";
+
+        final String message = String.format("<ConfigureDscRequest xmlns=\"http://www.motorola.com/namespaces/dks/xsd/ddip/2_0\"><Name>%s</Name><Address>%s</Address><EmailAddress>%s</EmailAddress><PhoneNumber>%s</PhoneNumber></ConfigureDscRequest>", dscName, dscAddress, dscEmailAddress, dscPhoneNumber);
+        final ConfigureDscRequestMessage unmarshal = (ConfigureDscRequestMessage)unmarshaller.unmarshal(new StreamSource(new StringReader(message)));
+
+        assertThat(unmarshal.getName(), is(dscName));
+        assertThat(unmarshal.getAddress(), is(dscAddress));
+        assertThat(unmarshal.getEmailAddress(), is(dscEmailAddress));
+        assertThat(unmarshal.getPhoneNumber(), is(dscPhoneNumber));
+    }
+
+    @Test(expectedExceptions = {NullPointerException.class })
+    public void testConfigureDscRequest_withMissingName() throws Exception
+    {
+        final String message = "<ConfigureDscRequest xmlns=\"http://www.motorola.com/namespaces/dks/xsd/ddip/2_0\"><Address>5 Walnut Grove, Horsham, PA</Address><EmailAddress>jsmith@cable.comcast.com</EmailAddress><PhoneNumber>215-555-1212</PhoneNumber></ConfigureDscRequest>";
+        unmarshaller.unmarshal(new StreamSource(new StringReader(message)));
+    }
+
+    @Test(expectedExceptions = {NullPointerException.class })
+    public void testConfigureDscRequest_withMissingAddress() throws Exception
+    {
+        final String message = "<ConfigureDscRequest xmlns=\"http://www.motorola.com/namespaces/dks/xsd/ddip/2_0\"><Name>John Smith</Name><EmailAddress>jsmith@cable.comcast.com</EmailAddress><PhoneNumber>215-555-1212</PhoneNumber></ConfigureDscRequest>";
+        unmarshaller.unmarshal(new StreamSource(new StringReader(message)));
+    }
+
+    @Test(expectedExceptions = {NullPointerException.class })
+    public void testConfigureDscRequest_withMissingEmailAddress() throws Exception
+    {
+        final String message = "<ConfigureDscRequest xmlns=\"http://www.motorola.com/namespaces/dks/xsd/ddip/2_0\"><Name>John Smith</Name><Address>5 Walnut Grove, Horsham, PA</Address><PhoneNumber>215-555-1212</PhoneNumber></ConfigureDscRequest>";
+        unmarshaller.unmarshal(new StreamSource(new StringReader(message)));
+    }
+
+    @Test(expectedExceptions = {NullPointerException.class })
+    public void testConfigureDscRequest_withMissingPhoneNumber() throws Exception
+    {
+        final String message = "<ConfigureDscRequest xmlns=\"http://www.motorola.com/namespaces/dks/xsd/ddip/2_0\"><Name>John Smith</Name><Address>5 Walnut Grove, Horsham, PA</Address><EmailAddress>jsmith@cable.comcast.com</EmailAddress></ConfigureDscRequest>";
+        unmarshaller.unmarshal(new StreamSource(new StringReader(message)));
+    }
+
+    public void testDeeAddressRequest_withValidData() throws Exception
+    {
+        final String message = String.format("<DeeAddressRequest xmlns=\"http://www.motorola.com/namespaces/dks/xsd/ddip/2_0\"><SecurityDomain><KeyServerGroupNumber>%d</KeyServerGroupNumber><CategoryId>%d</CategoryId></SecurityDomain></DeeAddressRequest>", SECURITY_DOMAIN_KEY_SERVER_GROUP_NUMBER, SECURITY_DOMAIN_CATEGORY_ID);
+        final DeeAddressRequestMessage unmarshal = (DeeAddressRequestMessage)unmarshaller.unmarshal(new StreamSource(new StringReader(message)));
+
+        verifySecurityDomain(unmarshal);
+    }
+
+    @Test(expectedExceptions = {NullPointerException.class })
+    public void testDeeAddressRequest_withMissingKeyServerGroupNumber() throws Exception
+    {
+        final String message = "<DeeAddressRequest xmlns=\"http://www.motorola.com/namespaces/dks/xsd/ddip/2_0\"><SecurityDomain><CategoryId>1</CategoryId></SecurityDomain></DeeAddressRequest>";
+        unmarshaller.unmarshal(new StreamSource(new StringReader(message)));
+    }
+
+    @Test(expectedExceptions = {NumberFormatException.class })
+    public void testDeeAddressRequest_withInvalidKeyServerGroupNumber() throws Exception
+    {
+        final String message = "<DeeAddressRequest xmlns=\"http://www.motorola.com/namespaces/dks/xsd/ddip/2_0\"><SecurityDomain><KeyServerGroupNumber>abc</KeyServerGroupNumber><CategoryId>1</CategoryId></SecurityDomain></DeeAddressRequest>";
+        unmarshaller.unmarshal(new StreamSource(new StringReader(message)));
+    }
+
+    @Test(expectedExceptions = {NullPointerException.class })
+    public void testDeeAddressRequest_withMissingCategoryId() throws Exception
+    {
+        final String message = "<DeeAddressRequest xmlns=\"http://www.motorola.com/namespaces/dks/xsd/ddip/2_0\"><SecurityDomain><KeyServerGroupNumber>52</KeyServerGroupNumber></SecurityDomain></DeeAddressRequest>";
+        unmarshaller.unmarshal(new StreamSource(new StringReader(message)));
+    }
+
+    @Test(expectedExceptions = {NumberFormatException.class })
+    public void testDeeAddressRequest_withInvalidCategoryId() throws Exception
+    {
+        final String message = "<DeeAddressRequest xmlns=\"http://www.motorola.com/namespaces/dks/xsd/ddip/2_0\"><SecurityDomain><KeyServerGroupNumber>52</KeyServerGroupNumber><CategoryId>abc</CategoryId></SecurityDomain></DeeAddressRequest>";
+        unmarshaller.unmarshal(new StreamSource(new StringReader(message)));
+    }
+
+    public void testDksRecoveryRequest_withValidData() throws Exception
+    {
+        final int keyIndex = 10;
+        final boolean isKeyActive = true;
+        final RsaLevel2AuthenticationKeyParity keyParity = RsaLevel2AuthenticationKeyParity.N;
+        final boolean isKeyValid = true;
+        final byte[] publicKey = new byte[] {0x1, 0xA, 0x7, 0xF};
+        final byte[] recoveryInfo = new byte[] {0xE, 0xB, 0x4, 0xD};
+
+        final String message = String.format("<DksRecoveryRequest xmlns=\"http://www.motorola.com/namespaces/dks/xsd/ddip/2_0\"><SecurityDomain><KeyServerGroupNumber>%d</KeyServerGroupNumber><CategoryId>%d</CategoryId></SecurityDomain><RsaPublicKeyMessage index=\"%d\" active=\"%s\" keyParity=\"%s\" valid=\"%s\">%s</RsaPublicKeyMessage><SharedKeyRecoveryInfo>%s</SharedKeyRecoveryInfo></DksRecoveryRequest>", SECURITY_DOMAIN_KEY_SERVER_GROUP_NUMBER, SECURITY_DOMAIN_CATEGORY_ID, keyIndex, "true", keyParity, "true", Base64.encode(publicKey), Base64.encode(recoveryInfo));
+        final DksRecoveryRequestMessage unmarshal = (DksRecoveryRequestMessage)unmarshaller.unmarshal(new StreamSource(new StringReader(message)));
+
+        verifySecurityDomain(unmarshal);
+        assertThat(Long.valueOf(unmarshal.getRsaPublicKeyMessage().getIndex()).intValue(), is(keyIndex));
+        assertThat(unmarshal.getRsaPublicKeyMessage().isActive(), is(isKeyActive));
+        assertThat(RsaLevel2AuthenticationKeyParity.N, is(keyParity));
+        assertThat(unmarshal.getRsaPublicKeyMessage().isValid(), is(isKeyValid));
+        assertThat(unmarshal.getRsaPublicKeyMessage().getMessage(), is(publicKey));
+        assertThat(unmarshal.getSharedKeyRecoveryInfo().getBytes(), is(recoveryInfo));
+    }
+// TODO
+    @Test(expectedExceptions = {NullPointerException.class })
+    public void testDksRecoveryRequest_withMissingKeyIndex() throws Exception
+    {
+        final String message = String.format("<DksRecoveryRequest xmlns=\"http://www.motorola.com/namespaces/dks/xsd/ddip/2_0\"><SecurityDomain><KeyServerGroupNumber>%d</KeyServerGroupNumber><CategoryId>%d</CategoryId></SecurityDomain><RsaPublicKeyMessage index=\"10\" active=\"true\" keyParity=\"N\" valid=\"true\">%s</RsaPublicKeyMessage><SharedKeyRecoveryInfo>%s</SharedKeyRecoveryInfo></DksRecoveryRequest>", SECURITY_DOMAIN_KEY_SERVER_GROUP_NUMBER, SECURITY_DOMAIN_CATEGORY_ID, Base64.encode(new byte[] {0x1, 0xA, 0x7, 0xF}), Base64.encode(new byte[] {0xE, 0xB, 0x4, 0xD}));
+        unmarshaller.unmarshal(new StreamSource(new StringReader(message)));
+    }
+
+    @Test(expectedExceptions = {NumberFormatException.class })
+    public void testDksRecoveryRequest_withInvalidKeyIndex() throws Exception
+    {
+        final String message = String.format("<DksRecoveryRequest xmlns=\"http://www.motorola.com/namespaces/dks/xsd/ddip/2_0\"><SecurityDomain><KeyServerGroupNumber>%d</KeyServerGroupNumber><CategoryId>%d</CategoryId></SecurityDomain><RsaPublicKeyMessage index=\"10\" active=\"true\" keyParity=\"N\" valid=\"true\">%s</RsaPublicKeyMessage><SharedKeyRecoveryInfo>%s</SharedKeyRecoveryInfo></DksRecoveryRequest>", SECURITY_DOMAIN_KEY_SERVER_GROUP_NUMBER, SECURITY_DOMAIN_CATEGORY_ID, Base64.encode(new byte[] {0x1, 0xA, 0x7, 0xF}), Base64.encode(new byte[] {0xE, 0xB, 0x4, 0xD}));
+        unmarshaller.unmarshal(new StreamSource(new StringReader(message)));
+    }
+
+    @Test(expectedExceptions = {NullPointerException.class })
+    public void testDksRecoveryRequest_withMissingIsKeyActive() throws Exception
+    {
+        final String message = String.format("<DksRecoveryRequest xmlns=\"http://www.motorola.com/namespaces/dks/xsd/ddip/2_0\"><SecurityDomain><KeyServerGroupNumber>%d</KeyServerGroupNumber><CategoryId>%d</CategoryId></SecurityDomain><RsaPublicKeyMessage index=\"10\" active=\"true\" keyParity=\"N\" valid=\"true\">%s</RsaPublicKeyMessage><SharedKeyRecoveryInfo>%s</SharedKeyRecoveryInfo></DksRecoveryRequest>", SECURITY_DOMAIN_KEY_SERVER_GROUP_NUMBER, SECURITY_DOMAIN_CATEGORY_ID, Base64.encode(new byte[] {0x1, 0xA, 0x7, 0xF}), Base64.encode(new byte[] {0xE, 0xB, 0x4, 0xD}));
+        unmarshaller.unmarshal(new StreamSource(new StringReader(message)));
+    }
+
+//    @Test(expectedExceptions = {NumberFormatException.class })
+    public void testDksRecoveryRequest_withInvalidIsKeyActive() throws Exception
+    {
+        final String message = String.format("<DksRecoveryRequest xmlns=\"http://www.motorola.com/namespaces/dks/xsd/ddip/2_0\"><SecurityDomain><KeyServerGroupNumber>%d</KeyServerGroupNumber><CategoryId>%d</CategoryId></SecurityDomain><RsaPublicKeyMessage index=\"10\" active=\"true\" keyParity=\"N\" valid=\"true\">%s</RsaPublicKeyMessage><SharedKeyRecoveryInfo>%s</SharedKeyRecoveryInfo></DksRecoveryRequest>", SECURITY_DOMAIN_KEY_SERVER_GROUP_NUMBER, SECURITY_DOMAIN_CATEGORY_ID, Base64.encode(new byte[] {0x1, 0xA, 0x7, 0xF}), Base64.encode(new byte[] {0xE, 0xB, 0x4, 0xD}));
+        unmarshaller.unmarshal(new StreamSource(new StringReader(message)));
+    }
+
+    private void verifySecurityDomain(final DdipRequestMessage unmarshalledMessage)
+    {
+        assertThat(Integer.valueOf(unmarshalledMessage.getSecurityDomain().getKeyServerGroupNumber()).shortValue(), is(SECURITY_DOMAIN_KEY_SERVER_GROUP_NUMBER));
+        assertThat(Integer.valueOf(unmarshalledMessage.getSecurityDomain().getCategoryId()).shortValue(), is(SECURITY_DOMAIN_CATEGORY_ID));
+    }
+}

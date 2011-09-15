@@ -1,0 +1,18 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+/**
+ * Notifies the {@link RouteManager} of events.
+ */
+public interface RouteEstablisherNotifier
+{
+    /**
+     * Notifies that the session has been closed.
+     *
+     * <p>
+     * There is the potential for the this method to be called before the
+     * {@link RouteController} has been set.  This is not handled gracefully, nor should it be.
+     * </p>
+     */
+    void notifyRouteManagerThatSessionClosed();
+}

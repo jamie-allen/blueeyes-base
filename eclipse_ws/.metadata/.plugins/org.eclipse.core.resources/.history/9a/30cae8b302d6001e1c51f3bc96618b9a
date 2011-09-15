@@ -1,0 +1,10 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+/**
+ * Implementation of the public API for Stream Management.
+ *
+ * <p>This package provides the implementation of the public API.  This package is primarily
+ * concerned with configuring and applying a chain of packet filters, based on the stream type,
+ * to produce a result that is then forwarded to the TransportManager.</p>
+ *
+ */
+package com.ccadllc.firebird.dss.server.realtime.new.stream.manager.impl;

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns:context="http://www.springframework.org/schema/context"
+xmlns:osgix="http://www.springframework.org/schema/osgi-compendium"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+    http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
+    http://www.springframework.org/schema/osgi-compendium http://www.springframework.org/schema/osgi-compendium/spring-osgi-compendium.xsd">
+
+    <context:annotation-config />
+    
+    <bean id="defaultStreamManager" class="com.ccadllc.firebird.dss.server.realtime.standalone.stream.manager.impl.DefaultStreamManager">
+        <constructor-arg ref="queueBlockSenderExecutor" />
+        <constructor-arg ref="transportManager" />
+        <constructor-arg ref="realtimeSnapshotManager" />
+        <constructor-arg ref="configManager" />
+    </bean>
+
+    <bean id="streamManagerConfigurationListener" class="com.ccadllc.firebird.dss.server.realtime.stream.manager.impl.StreamManagerConfigurationListener">
+        <constructor-arg ref="defaultStreamManager"/>
+    </bean>
+
+    <bean id="queueBlockSenderExecutor" class="com.ccadllc.commons.util.concurrent.ExecutorFactoryBean">
+        <property name="executorName" value="StreamManager" />
+        <property name="corePoolSize" value="1" />
+    </bean>
+
+    <bean id="streamManagerApplicationContextListener" class="com.ccadllc.firebird.dss.server.realtime.stream.manager.impl.StreamManagerApplicationContextListener">
+        <constructor-arg ref="defaultStreamManager" />
+    </bean>
+</beans>

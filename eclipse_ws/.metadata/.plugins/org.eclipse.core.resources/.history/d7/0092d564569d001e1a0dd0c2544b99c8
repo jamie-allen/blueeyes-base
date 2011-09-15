@@ -1,0 +1,26 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dssrm.provisioning;
+
+import com.google.common.base.Preconditions;
+import java.util.UUID;
+import net.jcip.annotations.Immutable;
+
+/**
+ *
+ * Immutable snapshot of a blockset and its data.
+ */
+@Immutable
+public final class BlockSetSnapshot
+{
+    private final UUID id;
+
+    public BlockSetSnapshot(final UUID id)
+    {
+        this.id = id;
+    }
+
+    public UUID getId()
+    {
+        return id;
+    }
+}

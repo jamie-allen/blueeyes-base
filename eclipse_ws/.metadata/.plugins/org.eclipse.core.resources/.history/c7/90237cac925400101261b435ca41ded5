@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:osgi="http://www.springframework.org/schema/osgi"
+    xmlns:util="http://www.springframework.org/schema/util"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+        http://www.springframework.org/schema/osgi http://www.springframework.org/schema/osgi/spring-osgi.xsd
+        http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd">
+
+    <osgi:reference id="terminalRepository" interface="com.ccadllc.firebird.vms.terminals.domain.TerminalRepository" />
+
+    <osgi:reference id="terminalHandler" interface="com.ccadllc.firebird.vms.terminals.spi.TerminalHandler" cardinality="1..1" />
+
+    <osgi:reference id="eventAdmin" interface="org.osgi.service.event.EventAdmin" />
+
+    <osgi:reference id="transactionManager" interface="org.springframework.transaction.PlatformTransactionManager" />
+
+    <osgi:reference id="topologyModel" interface="com.ccadllc.firebird.vms.topology.core.TopologyModel" />
+
+    <osgi:reference id="operationManager" interface="com.ccadllc.firebird.vms.terminals.manager.OperationManager" cardinality="0..1"/>
+
+    <osgi:reference id="emmDeliveryRepository" interface="com.ccadllc.firebird.vms.terminals.domain.EmmDeliveryRepository"/>
+
+    <osgi:reference id="emmBuilderService" interface="com.ccadllc.firebird.vms.terminals.emmbuilder.EmmBuilderService"/>
+
+    <osgi:service interface="com.ccadllc.firebird.vms.terminals.authorizationsequencer.AuthorizationDeliveryService" ref="authorizationDeliveryService" />
+
+    <util:property-path id="eventTopics" path="eventHandler.topics"/>
+    <osgi:service interface="org.osgi.service.event.EventHandler" ref="eventHandler">
+        <osgi:service-properties>
+            <entry key="event.topics" value-ref="eventTopics" />
+        </osgi:service-properties>
+    </osgi:service>
+
+</beans>
+

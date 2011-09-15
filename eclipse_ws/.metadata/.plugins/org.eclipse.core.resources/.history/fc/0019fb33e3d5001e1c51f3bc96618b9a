@@ -1,0 +1,81 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.stream.manager.impl;
+
+import java.nio.ByteBuffer;
+import java.util.List;
+
+import com.ccadllc.firebird.vms.common.packetfiltering.ForwardingPacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilter;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
+
+/**
+ * Converts a network packet into an mpeg2 packet an writes 0 to the pid and 0 to the continuity counter.
+ * It then sends the packet to the multiplexer.
+ *
+ */
+public class Mpeg2Packetizer extends ForwardingPacketFilter
+{
+    private final Mpeg2Encoder encoder;
+
+    public Mpeg2Packetizer(final Mpeg2Encoder encoder, final PacketFilter sink)
+    {
+        super(sink);
+        Preconditions.checkNotNull(encoder, "encoder");
+        this.encoder = encoder;
+    }
+
+    @Override
+    public boolean insert(final byte[] block)
+    {
+        boolean isPayloadUnitStarted = true;
+        final ByteBuffer packetsToProcessBuffer = ByteBuffer.wrap(block);
+        final List<byte[]> packetsProcessed = Lists.newArrayList();
+
+        while (packetsToProcessBuffer.hasRemaining())
+        {
+            final byte[] currentPayload = calculateCurrentPayload(packetsToProcessBuffer, isPayloadUnitStarted);
+            final Mpeg2Packet currentPacket = new Mpeg2Packet(isPayloadUnitStarted, 0, 0, currentPayload);
+            final byte[] currentPacketsReadyForInsertion = encoder.encode(currentPacket);
+            packetsProcessed.add(currentPacketsReadyForInsertion);
+            isPayloadUnitStarted = false;
+        }
+
+        final ByteBuffer packetsProcessedBuffer = ByteBuffer.allocate(packetsProcessed.size() * Mpeg2Packet.PACKET_SIZE_IN_BYTES);
+        for (final byte[] packet : packetsProcessed)
+        {
+            packetsProcessedBuffer.put(packet);
+        }
+        packetsProcessedBuffer.flip();
+        final byte[] packetsToInsert = new byte[packetsProcessedBuffer.remaining()];
+        packetsProcessedBuffer.get(packetsToInsert);
+
+        return sink().insert(packetsToInsert);
+    }
+
+    private byte[] calculateCurrentPayload(final ByteBuffer packetsToProcessBuffer, final boolean isPayloadUnitStarted)
+    {
+        final byte[] currentPayload = new byte[Mpeg2Packet.PAYLOAD_SIZE_IN_BYTES];
+        int i = 0;
+        if (isPayloadUnitStarted)
+        {
+            currentPayload[0] = 0;
+            i++;
+        }
+
+        for (; i < Mpeg2Packet.PAYLOAD_SIZE_IN_BYTES; i++)
+        {
+            if (!packetsToProcessBuffer.hasRemaining())
+            {
+                currentPayload[i] = Mpeg2Packet.PADDING_BYTE;
+            }
+            else
+            {
+                currentPayload[i] = packetsToProcessBuffer.get();
+            }
+        }
+        return currentPayload;
+    }
+
+}

@@ -1,0 +1,127 @@
+/*
+ * Copyright 2008 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.stream.manager.impl;
+
+import net.jcip.annotations.Immutable;
+
+import org.apache.commons.lang.builder.EqualsBuilder;
+import org.apache.commons.lang.builder.HashCodeBuilder;
+import org.apache.commons.lang.builder.ToStringBuilder;
+
+import com.google.common.base.Preconditions;
+
+/**
+ * Represents the fields of an MPEG-2 packet that are required for encoding and decoding.
+ */
+@Immutable
+public final class Mpeg2Packet
+{
+    /** Number of bytes that make up an MPEG-2 packet header. */
+    public static final int HEADER_SIZE_IN_BYTES = 4;
+
+    /** Number of bytes that make up an MPEG-2 packet payload. */
+    public static final int PAYLOAD_SIZE_IN_BYTES = 184;
+
+    /** Number of bytes that make up an MPEG-2 packet. */
+    public static final int PACKET_SIZE_IN_BYTES = HEADER_SIZE_IN_BYTES + PAYLOAD_SIZE_IN_BYTES;
+
+    /** Sync byte value. */
+    public static final byte SYNC_BYTE = (byte)0x47;
+
+    /** Value used to pad packets whose payloads are less than a full packet. */
+    public static final byte PADDING_BYTE = (byte)0xFF;
+
+    /** Value of adaptation field control to indicate payload only. */
+    public static final int ADAPTATION_FIELD_CONTROL_PAYLOAD_ONLY = 1;
+
+    /** Maximum continuity counter. */
+    public static final int MAX_CONTINUITY_COUNTER = 16;
+
+    /** Maximum packet identifier. */
+    private static final int MAX_PID = 8191;
+
+
+    private final int continuityCounter;
+    private final int pid;
+    private final boolean payloadUnitStartIndicator;
+    private final byte[] payload;
+
+    /**
+     * Constructor.
+     *
+     * @param payloadUnitStartIndicator true when a new message begins in this packet
+     * @param pid packet identifier
+     * @param continuityCounter continuity counter
+     * @param payload packet payload
+     */
+    public Mpeg2Packet(final boolean payloadUnitStartIndicator, final int pid, final int continuityCounter, final byte[] payload)
+    {
+        this.payloadUnitStartIndicator = payloadUnitStartIndicator;
+
+        Preconditions.checkArgument(pid >= 0 && pid <= MAX_PID, "pid must be between 0 and %d. [%d]", MAX_PID, pid);
+        this.pid = pid;
+
+        Preconditions.checkArgument(continuityCounter >= 0 && continuityCounter <= MAX_CONTINUITY_COUNTER,
+            "continuity counter must be between 0 and %d. [%d]", MAX_CONTINUITY_COUNTER, continuityCounter);
+        this.continuityCounter = continuityCounter;
+
+        Preconditions.checkArgument(payload.length == PAYLOAD_SIZE_IN_BYTES,
+            "payload must be exactly %d bytes. [%d]", PAYLOAD_SIZE_IN_BYTES, payload.length);
+        this.payload = payload.clone();
+    }
+
+    /**
+     * Flag that determines whether or not a new message begins in this packet.
+     * @return true if a new message begins in this packet; false otherwise
+     */
+    public boolean isPayloadUnitStartIndicator()
+    {
+        return payloadUnitStartIndicator;
+    }
+
+    /**
+     * Gets the packet identifier (a.k.a., PID).
+     * @return pid
+     */
+    public int getPid()
+    {
+        return pid;
+    }
+
+    /**
+     * Gets the continuity counter.
+     * @return counter
+     */
+    public int getContinuityCounter()
+    {
+        return continuityCounter;
+    }
+
+    /**
+     * Gets a copy of the payload.
+     * @return copied payload
+     */
+    public byte[] getPayload()
+    {
+        return payload.clone();
+    }
+
+    @Override
+    public int hashCode()
+    {
+        return HashCodeBuilder.reflectionHashCode(this);
+    }
+
+    @Override
+    public boolean equals(final Object obj)
+    {
+        return EqualsBuilder.reflectionEquals(obj, this);
+    }
+
+    @Override
+    public String toString()
+    {
+        return ToStringBuilder.reflectionToString(this);
+    }
+}

@@ -1,0 +1,5 @@
+package com.lmax.disruptor.support;
+
+public class TestConsumer {
+
+}

@@ -1,0 +1,230 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.topology.estream;
+
+import java.util.Collections;
+import java.util.Map;
+import java.util.UUID;
+
+import javax.persistence.AttributeOverride;
+import javax.persistence.AttributeOverrides;
+import javax.persistence.Column;
+import javax.persistence.Embedded;
+import javax.persistence.Entity;
+import javax.persistence.FetchType;
+import javax.persistence.Id;
+import javax.persistence.PostPersist;
+import javax.persistence.PostRemove;
+import javax.persistence.PostUpdate;
+import javax.persistence.Table;
+
+import com.ccadllc.firebird.vms.topology.core.ElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.Searchable;
+import com.ccadllc.firebird.vms.topology.core.ServingLocationQName;
+import com.ccadllc.firebird.vms.topology.core.TrafficShapingProfile;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableElementaryStream;
+import com.ccadllc.firebird.vms.topology.spi.NotificationSink;
+
+import org.apache.commons.lang.builder.ToStringBuilder;
+import org.apache.commons.lang.builder.ToStringStyle;
+import org.apache.lucene.document.Document;
+import org.apache.lucene.document.Field;
+import org.apache.lucene.document.Field.Index;
+import org.apache.lucene.document.Field.Store;
+import org.hibernate.annotations.CollectionOfElements;
+import org.hibernate.annotations.MapKey;
+import org.hibernate.annotations.Type;
+import org.springframework.beans.factory.annotation.Configurable;
+import org.springframework.beans.factory.annotation.Required;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Maps;
+
+
+@Entity(name = "TopologyElementaryStream")
+@Table(name = "topology_elementary_stream")
+@Configurable
+public class ElementaryStreamEntity implements MutableElementaryStream
+{
+    @Id
+    @Type(type = "com.ccadllc.firebird.core.database.persistence.UUIDUserType")
+    private final UUID id;
+
+    @Column(unique = true)
+    private String name;
+
+    private String type;
+
+    @Embedded
+    @AttributeOverrides({
+        @AttributeOverride(name = "averageBytesPerSecond", column = @Column(name = "shaping_average", nullable = false)),
+        @AttributeOverride(name = "burstLimitInBytes", column = @Column(name = "shaping_burst", nullable = false)),
+        @AttributeOverride(name = "maxLatencyInSeconds", column = @Column(name = "shaping_latency", nullable = false))
+    })
+    private TrafficShapingProfile trafficShapingProfile;
+
+    @Embedded
+    @AttributeOverride(column = @Column(name = "location"), name = "qualifiedName")
+    private ServingLocationQName location;
+
+    @CollectionOfElements(fetch = FetchType.EAGER)
+    @MapKey(columns = { @Column(name = "parameter_key") })
+    @Column(name = "parameter_value")
+    private Map<String, String> properties;
+
+    private transient String oldName;
+
+    private transient NotificationSink notificationSink;
+
+    public ElementaryStreamEntity(final UUID id, final String name, final String typeId, final TrafficShapingProfile trafficShapingProfile, final ServingLocationQName location, final Map<String, String> properties)
+    {
+        Preconditions.checkNotNull(id, "id");
+        Preconditions.checkNotNull(name, "name");
+        Preconditions.checkNotNull(trafficShapingProfile, "trafficShapingProfile");
+
+        this.id = id;
+        this.name = name;
+        type = typeId;
+        this.trafficShapingProfile = trafficShapingProfile;
+        this.location = location;
+        this.properties = properties == null ? Collections.<String, String>emptyMap() : Maps.newHashMap(properties);
+    }
+
+    public ElementaryStreamEntity(final String name, final String typeId, final TrafficShapingProfile trafficShapingProfile, final ServingLocationQName location, final Map<String, String> properties)
+    {
+        this(UUID.randomUUID(), name, typeId, trafficShapingProfile, location, properties);
+    }
+
+    protected ElementaryStreamEntity()
+    {
+        id = null;
+    }
+
+    @Required
+    public void setNotificationSink(final NotificationSink sink)
+    {
+        notificationSink = sink;
+    }
+
+    @Override
+    public UUID getId()
+    {
+        return id;
+    }
+
+    @Override
+    public String getName()
+    {
+        return name;
+    }
+
+    @Override
+    public String getTypeId()
+    {
+        return type;
+    }
+
+    @Override
+    public TrafficShapingProfile getTrafficShapingProfile()
+    {
+        return trafficShapingProfile;
+    }
+
+    @Override
+    public Iterable<ServingLocationQName> getLocations()
+    {
+        return location == null ? Collections.<ServingLocationQName>emptySet() : Collections.singleton(location);
+    }
+
+    @Override
+    public ServingLocationQName getLocation()
+    {
+        return location;
+    }
+
+    @Override
+    public Map<String, String> getProperties()
+    {
+        return properties;
+    }
+
+    @Override
+    public void setName(final String newName)
+    {
+        Preconditions.checkNotNull(newName);
+
+        if (oldName == null)
+        {
+            oldName = name;
+        }
+        name = newName;
+    }
+
+    @Override
+    public void addLocation(final ServingLocationQName location)
+    {
+        setLocation(location);
+    }
+
+    @Override
+    public void removeLocation(final ServingLocationQName location)
+    {
+        if (location.equals(this.location))
+        {
+            this.location = null;
+        }
+    }
+
+    public void setLocation(final ServingLocationQName location)
+    {
+        this.location = location;
+    }
+
+    public void clearLocation()
+    {
+        setLocation(ServingLocationQName.ORPHANED);
+    }
+
+    @Override
+    public ElementaryStream copyOf()
+    {
+        return new ElementaryStreamEntity(id, name, type, trafficShapingProfile, location, properties);
+    }
+
+    @SuppressWarnings("unused")
+    @PostPersist
+    private void persisted()
+    {
+        notificationSink.elementaryStreamAdded(this);
+    }
+
+    @SuppressWarnings("unused")
+    @PostUpdate
+    private void updated()
+    {
+        notificationSink.elementaryStreamModified(this, oldName);
+    }
+
+    @SuppressWarnings("unused")
+    @PostRemove
+    private void removed()
+    {
+        notificationSink.elementaryStreamDeleted(this);
+    }
+
+    @Override
+    public Document toSearchDocument()
+    {
+        final Document document = new Document();
+        document.add(new Field(Searchable.SEARCH_FIELD_ID, getId().toString(), Store.YES, Index.NOT_ANALYZED));
+        document.add(new Field(Searchable.SEARCH_FIELD_TOPOLOGY_ELEMENT_TYPE, Searchable.SEARCH_FIELD_TOPOLOGY_ELEMENT_TYPE_STREAM, Store.YES, Index.NOT_ANALYZED));
+        document.add(new Field(Searchable.SEARCH_FIELD_TYPE, Searchable.SEARCH_FIELD_TOPOLOGY_ELEMENT_TYPE_STREAM, Store.NO, Index.NOT_ANALYZED));
+        document.add(new Field(Searchable.SEARCH_FIELD_NAME, getName(), Store.NO, Index.ANALYZED));
+        return document;
+    }
+
+    @Override
+    public String toString()
+    {
+        return ToStringBuilder.reflectionToString(this, ToStringStyle.SIMPLE_STYLE);
+    }
+}

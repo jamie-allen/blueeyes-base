@@ -1,0 +1,57 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.common;
+
+import net.jcip.annotations.Immutable;
+
+import org.apache.commons.lang.builder.EqualsBuilder;
+import org.apache.commons.lang.builder.HashCodeBuilder;
+import org.apache.commons.lang.builder.ToStringBuilder;
+
+import com.google.common.base.Preconditions;
+
+/**
+ * Snapshot of a range of integers.
+ */
+@Immutable
+public final class DefaultIntegerRangeSnapshot implements IntegerRangeSnapshot
+{
+    private final int begin;
+    private final int end;
+
+    public DefaultIntegerRangeSnapshot(final int begin, final int end)
+    {
+        Preconditions.checkArgument(end >= begin, "Beginning of the range must be smaller than the end value.");
+        this.begin = begin;
+        this.end = end;
+    }
+
+    public int getBegin()
+    {
+        return begin;
+    }
+
+    public int getEnd()
+    {
+        return end;
+    }
+
+    @Override
+    public int hashCode()
+    {
+        return HashCodeBuilder.reflectionHashCode(this);
+    }
+
+    @Override
+    public boolean equals(final Object obj)
+    {
+        return EqualsBuilder.reflectionEquals(this, obj);
+    }
+
+    @Override
+    public String toString()
+    {
+        return ToStringBuilder.reflectionToString(this);
+    }
+}

@@ -1,0 +1,126 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter;
+
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.createPidSpecificNameExtension;
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.createRouteMxBeanName;
+
+import java.util.Collection;
+
+import com.ccadllc.firebird.dss.server.common.PacketFilterChainController;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.management.JmxRouteNotificationManager;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+import com.ccadllc.firebird.vms.common.packetfiltering.AbstractPacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.CompositePacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilter;
+
+import net.jcip.annotations.ThreadSafe;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
+
+/**
+ * Controller managing the packet filters required to transform Mpeg2 external
+ * route data into data blocks and insert them on the stream manager.
+ */
+@ThreadSafe
+public class PidChainController extends AbstractPacketFilter implements PacketFilterChainController<Collection<Long>>
+{
+    private static final String PID_PARAMETER = "pid";
+    private static final String PID_MAPPINGS_PARAMETER = "pid mappings";
+    private static final String ROUTE_SNAPSHOT_PARAMETER = "route snapshot";
+    private static final String STREAM_IDS_PARAMETER = "stream ids collection";
+    private static final String STREAM_MANAGER_PARAMETER = "stream manager";
+
+    private final Logger logger = LoggerFactory.getLogger(PidChainController.class);
+    private final Integer pid;
+    private final CompositePacketFilter chain;
+    private final Inserter inserter;
+    private volatile boolean disposed;
+
+    /** Lock used when manipulating the streamIds collection. */
+    private final Object lock = new Object();
+
+    public PidChainController(final Integer pid, final RouteSnapshot route, final StreamManager streamManager,
+        final JmxRouteNotificationManager jmxRouteNotificationManager, final String notificationsPrefixString)
+    {
+        Preconditions.checkNotNull(pid, PID_PARAMETER);
+        Preconditions.checkNotNull(route, ROUTE_SNAPSHOT_PARAMETER);
+        Preconditions.checkNotNull(route.getPidMappings(), PID_MAPPINGS_PARAMETER);
+        Preconditions.checkNotNull(route.getPidMappings().get(pid), STREAM_IDS_PARAMETER);
+        Preconditions.checkNotNull(streamManager, STREAM_MANAGER_PARAMETER);
+
+        inserter = new Inserter(streamManager, route.getPidMappings().get(pid),
+            createRouteMxBeanName(route, createPidSpecificNameExtension(pid, "Streams")));
+        final PacketFilter blockTransformer = new Mpeg2BlockTransformer(inserter, jmxRouteNotificationManager,
+            String.format("%s For pid %d", notificationsPrefixString, pid));
+        final PacketFilter blockTransformerStatistics = new Mpeg2PacketStatisticsCollector(blockTransformer, route,
+            createPidSpecificNameExtension(pid, "Mpeg2ToBlockTransformerStatistics"));
+
+        chain = new CompositePacketFilter(ImmutableList.of(blockTransformerStatistics, blockTransformer, inserter));
+        this.pid = pid;
+    }
+
+    @Override
+    public boolean insert(final byte[] packet)
+    {
+        synchronized (lock)
+        {
+            ensureNotDisposed();
+            return chain.insert(packet);
+        }
+    }
+
+    @Override
+    public void dispose()
+    {
+        logger.debug("Disposing filter chain for pid {}.", pid);
+        synchronized (lock)
+        {
+            chain.dispose();
+            disposed = true;
+        }
+    }
+
+    @Override
+    public void describeTo(final StringBuilder builder, final boolean detailed)
+    {
+        chain.describeTo(builder, detailed);
+    }
+
+    @Override
+    public void update(final Collection<Long> streamIds)
+    {
+        logger.debug("Updating filter chain for pid {}.", pid);
+        Preconditions.checkNotNull(streamIds, STREAM_IDS_PARAMETER);
+
+        synchronized (lock)
+        {
+            ensureNotDisposed();
+            getInserter().setStreamIds(streamIds);
+        }
+    }
+
+    @Override
+    public String toString(final boolean detailed)
+    {
+        return chain.toString(true);
+    }
+
+    private void ensureNotDisposed()
+    {
+        if (disposed)
+        {
+            logger.warn("Action called on disposed filter chain for pid {}.", pid);
+            throw new IllegalStateException("Object has been disposed.");
+        }
+    }
+
+    public Inserter getInserter()
+    {
+        return inserter;
+    }
+}

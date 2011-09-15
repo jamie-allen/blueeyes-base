@@ -1,0 +1,217 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dssrm.provisioning;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.util.List;
+import java.util.UUID;
+
+import com.ccadllc.firebird.core.base.common.util.MatcherPredicate;
+import com.ccadllc.firebird.vms.dssrm.core.BlockSetDescription;
+import com.ccadllc.firebird.vms.dssrm.core.DataStreamServerResourceManager;
+import com.ccadllc.firebird.vms.dssrm.core.PeriodicData;
+import com.ccadllc.firebird.vms.dssrm.core.PeriodicDescription;
+import com.ccadllc.firebird.vms.dssrm.core.RouteDescription;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.TopologyModel;
+import com.ccadllc.firebird.vms.topology.core.TopologyService;
+
+import org.hamcrest.Matcher;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Required;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.google.common.base.Function;
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
+
+public class DefaultDataStreamServerResourceManager implements DataStreamServerResourceManager
+{
+    private final Logger logger = LoggerFactory.getLogger(DefaultDataStreamServerResourceManager.class);
+    private TopologyService topologyService;
+    private PeriodicRepository periodicRepository;
+    private BlockSetRepository blockSetRepository;
+//    private RouteRepository routeRepository;
+    private MulticastInputStreamManager multicastInputStreamManager;
+
+    @Required
+    public void setTopologyservice(final TopologyService topologyService)
+    {
+        this.topologyService = topologyService;
+    }
+
+    @Required
+    public void setPeriodicRepository(final PeriodicRepository periodicRepository)
+    {
+        this.periodicRepository = periodicRepository;
+    }
+
+    @Required
+    public void setBlockSetRepository(final BlockSetRepository blockSetRepository)
+    {
+        this.blockSetRepository = blockSetRepository;
+    }
+
+    @Required
+    public void setMulticastInputStreamManager(final MulticastInputStreamManager multicastInputStreamManager)
+    {
+        this.multicastInputStreamManager = multicastInputStreamManager;
+    }
+
+//    @Required
+//    public void setRouteRepository(final RouteRepository routeRepository)
+//    {
+//        this.routeRepository = routeRepository;
+//    }
+
+    @Transactional
+    public PeriodicDescription queryForPeriodic(final Matcher<PeriodicDescription> matcher)
+    {
+        Preconditions.checkArgument(matcher != null, "Matcher must not be null");
+        return Iterables.getOnlyElement(queryForPeriodics(matcher));
+    }
+
+    @Transactional
+    public Iterable<PeriodicDescription> queryForPeriodics(final Matcher<PeriodicDescription> matcher)
+    {
+        final List<PeriodicEntity> periodics = periodicRepository.getAll();
+        final List<PeriodicDescription> descriptions = Lists.transform(periodics, periodicEntityTransformer());
+        return (matcher == null ? descriptions : Iterables.filter(descriptions, MatcherPredicate.from(matcher)));
+    }
+
+    @Transactional
+    public void addPeriodic(final PeriodicDescription periodic, final PeriodicData data)
+    {
+        final TopologyModel topologyModel = topologyService.getLiveModel();
+        final ElementaryStream stream = topologyModel.getElementaryStreamById(periodic.getStreamId());
+        Preconditions.checkNotNull(stream);
+        final PeriodicEntity entity = new PeriodicEntity(periodic, data);
+        logger.debug("persist periodic with data {} of type {}", entity.getData(), entity.getDataType());
+        periodicRepository.persist(entity);
+    }
+
+    @Transactional
+    public void deletePeriodic(final UUID id)
+    {
+        final PeriodicEntity entity = periodicRepository.get(id);
+        if (entity != null)
+        {
+            periodicRepository.delete(entity);
+        }
+
+        // TODO Not-too-eager deletion of stream if this is last periodic on stream!!!
+        // Or is this done in the realizer???
+    }
+
+    @Transactional
+    public BlockSetDescription queryForBlockSet(final Matcher<BlockSetDescription> matcher)
+    {
+        Preconditions.checkArgument(matcher != null, "Matcher must not be null");
+        return Iterables.getOnlyElement(queryForBlockSets(matcher));
+    }
+
+    public Iterable<BlockSetDescription> queryForBlockSets(final Matcher<BlockSetDescription> matcher)
+    {
+        final List<BlockSetEntity> blockSets = blockSetRepository.getAll(); // Block Set repository???
+        final List<BlockSetDescription> blockSetDescriptions = Lists.transform(blockSets, blockSetEntityTransformer());
+        return (matcher == null ? blockSetDescriptions : Iterables.filter(blockSetDescriptions, MatcherPredicate.from(matcher)));
+    }
+
+    @Transactional
+    public UUID addBlockSet(final BlockSetDescription blockSet, final InputStream blockSetData) throws IOException
+    {
+        final BlockSetEntity entity = new BlockSetEntity(blockSet, blockSetData);
+        blockSetRepository.persist(entity);
+        return entity.getId();
+    }
+
+    @Transactional
+    public void deleteBlockSet(final UUID blockSetId)
+    {
+        final BlockSetEntity entity = blockSetRepository.get(blockSetId);
+        if (entity != null)
+        {
+            blockSetRepository.delete(entity);
+        }
+    }
+
+    private Function<PeriodicEntity, PeriodicDescription> periodicEntityTransformer()
+    {
+        return new Function<PeriodicEntity, PeriodicDescription>()
+        {
+            public PeriodicDescription apply(final PeriodicEntity from)
+            {
+                final PeriodicDescription.Builder description = new PeriodicDescription.Builder()
+                        .streamId(from.getStreamId())
+                        .id(from.getId())
+                        .metering(from.getMeteringType())
+                        .startsAt(from.getStartTime())
+                        .stopsAt(from.getStopTime())
+                        .addProperties(from.getProperties())
+                        .insertEvery(from.getInsertionRate()
+                );
+
+                return description.build();
+            }
+        };
+    }
+
+    private Function<BlockSetEntity, BlockSetDescription> blockSetEntityTransformer()
+    {
+        return new Function<BlockSetEntity, BlockSetDescription>()
+        {
+            public BlockSetDescription apply(final BlockSetEntity from)
+            {
+                final List<com.ccadllc.firebird.vms.dssrm.core.BlockDescriptor> blockDescriptors = Lists.newArrayList();
+                for (final BlockDescriptor blockDescriptor : from.getBlockDescriptors())
+                {
+                    blockDescriptors.add(new com.ccadllc.firebird.vms.dssrm.core.BlockDescriptor(blockDescriptor.getNumberOfBlocks(), blockDescriptor.getBlockByteSize()));
+                }
+                final BlockSetDescription.Builder descriptionBuilder = new BlockSetDescription.Builder()
+                        .id(from.getId())
+                        .addBlockDescriptors(blockDescriptors)
+                        .addProperties(from.getProperties()
+               );
+
+               return descriptionBuilder.build();
+           }
+        };
+    }
+
+    public InetSocketAddress establishTcpRoute(final RouteDescription route)
+    {
+        return null;
+    }
+
+    public InetAddress establishUdpRoute(final RouteDescription route)
+    {
+        // TODO
+        return null;
+    }
+
+    public RouteDescription queryForUdpRoute(final Matcher<RouteDescription> matcher)
+    {
+        // TODO
+        return null;
+    }
+
+    public Iterable<RouteDescription> queryForUdpRoutes(final Matcher<RouteDescription> matcher)
+    {
+        // TODO
+        return null;
+    }
+
+    public void updateUdpRoute(final RouteDescription route)
+    {
+        // TODO
+    }
+
+    public void removeUdpRoute(final UUID routeId)
+    {
+        // TODO
+    }
+}

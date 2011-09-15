@@ -1,0 +1,112 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.stream.manager.impl;
+
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.util.Arrays;
+
+
+import org.easymock.EasyMock;
+import org.easymock.IArgumentMatcher;
+
+/** Utility methods for working with {@link Mpeg2Packet} in tests. */
+public final class Mpeg2PacketTestUtils
+{
+    private Mpeg2PacketTestUtils()
+    {
+        // Private to prevent instantiation
+    }
+
+    public static int aPid()
+    {
+        return 1;
+    }
+
+    public static byte[] aSmallBlock()
+    {
+        return new byte[10];
+    }
+
+    public static byte[] aLargeBlock()
+    {
+        return new byte[200];
+    }
+
+    public static byte[] aPacket()
+    {
+        return new byte[188];
+    }
+
+    public static InetSocketAddress aDestination()
+    {
+        return InetSocketAddress.createUnresolved("127.0.0.1", 5000);
+    }
+
+    public static Mpeg2Packet packetWithPidAndData(final int pid, final byte[] data)
+    {
+        EasyMock.reportMatcher(new IArgumentMatcher()
+        {
+            @Override
+            public void appendTo(final StringBuffer buffer)
+            {
+                buffer.append("packetWithPidAndData(").append(pid).append(", ").append(Arrays.toString(data)).append(")");
+            }
+
+            @Override
+            public boolean matches(final Object obj)
+            {
+                if (!(obj instanceof Mpeg2Packet))
+                {
+                    return false;
+                }
+
+                final Mpeg2Packet packet = (Mpeg2Packet)obj;
+                final byte[] payload = convertDataToPayload(data, packet);
+                return packet.getPid() == pid && Arrays.equals(packet.getPayload(), payload);
+            }
+
+            private byte[] convertDataToPayload(final byte[] data, final Mpeg2Packet packet)
+            {
+                final ByteBuffer buffer = ByteBuffer.allocate(Mpeg2Packet.PAYLOAD_SIZE_IN_BYTES);
+                if (packet.isPayloadUnitStartIndicator())
+                {
+                    buffer.put((byte)0);
+                }
+                buffer.put(data);
+                while (buffer.remaining() > 0)
+                {
+                    buffer.put(Mpeg2Packet.PADDING_BYTE);
+                }
+                buffer.flip();
+                final byte[] payload = buffer.array();
+                return payload;
+            }
+        });
+        return null;
+    }
+
+    public static Mpeg2Packet packetWithContinuityCounter(final int continuityCounter)
+    {
+        EasyMock.reportMatcher(new IArgumentMatcher()
+        {
+            @Override
+            public void appendTo(final StringBuffer buffer)
+            {
+                buffer.append("packetWithContinuityCounter(").append(continuityCounter).append(")");
+            }
+
+            @Override
+            public boolean matches(final Object obj)
+            {
+                if (!(obj instanceof Mpeg2Packet))
+                {
+                    return false;
+                }
+
+                final Mpeg2Packet packet = (Mpeg2Packet)obj;
+                return packet.getContinuityCounter() == continuityCounter;
+            }
+        });
+        return null;
+    }
+}

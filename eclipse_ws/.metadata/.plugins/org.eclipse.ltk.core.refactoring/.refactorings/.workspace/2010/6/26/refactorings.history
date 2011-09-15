@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Delete resource &apos;ccad-firebird-vms-common-packet-filtering&apos;" deleteContents="false" description="Delete resource &apos;ccad-firebird-vms-common-packet-filtering&apos;" element1="/ccad-firebird-vms-common-packet-filtering" flags="7" id="org.eclipse.ltk.core.refactoring.delete.resources" resources="1" stamp="1277217998680"/>
+</session>

@@ -1,0 +1,39 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.topology.core;
+
+import org.hamcrest.Matcher;
+
+/**
+ * Utility class that provides matchers for {@link Stream}s.
+ *
+ * @see TopologyModel#queryForElementaryStreams(Matcher)
+ * @see TopologyModel#queryForTransportStreams(Matcher)
+ */
+public class StreamMatchers
+{
+    /**
+     * Prevents instantiation.
+     */
+    protected StreamMatchers()
+    {
+        // Nothing to do.
+    }
+//
+//    public static Matcher<Stream> isOrphaned()
+//    {
+//        return new TypeSafeMatcher<Stream>() {
+//
+//            @Override
+//            public boolean matchesSafely(final Stream toMatch)
+//            {
+//                return ServingLocationQName.ORPHANED.equals(toMatch.getLocation());
+//            }
+//
+//            @Override
+//            public void describeTo(final Description desc)
+//            {
+//                desc.appendText("is assigned to no location");
+//            }
+//        };
+//    }
+}

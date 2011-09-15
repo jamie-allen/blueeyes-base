@@ -1,0 +1,1873 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.it;
+
+import static com.ccadllc.firebird.core.test.support.osgi.options.Options.artifact;
+import static com.ccadllc.firebird.core.test.support.osgi.options.Options.bundles;
+import static com.ccadllc.firebird.core.test.support.osgi.options.Options.group;
+import static com.ccadllc.firebird.dss.it.RemoteMessageUtility.asMessageObject;
+import static com.ccadllc.firebird.dss.it.RemoteMessageUtility.asXml;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.greaterThan;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.notNullValue;
+
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.Socket;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Semaphore;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import javax.jms.JMSException;
+import javax.jms.TextMessage;
+import javax.management.MBeanServer;
+import javax.management.ObjectName;
+import javax.management.openmbean.CompositeDataSupport;
+import javax.management.openmbean.TabularDataSupport;
+import javax.xml.bind.JAXBException;
+
+import com.ccadllc.commons.util.BitInputStream;
+import com.ccadllc.commons.util.MapUtility;
+import com.ccadllc.firebird.core.test.support.osgi.AbstractWebOsgiIntegrationTest;
+import com.ccadllc.firebird.core.test.support.osgi.options.Options;
+import com.ccadllc.firebird.core.test.support.osgi.options.OsgiConfiguration;
+import com.ccadllc.firebird.dss.common.datatypes.RouteDataType;
+import com.ccadllc.firebird.dss.common.datatypes.StreamSummary;
+import com.ccadllc.firebird.dss.common.remote.messages.AddAncillaryStreamRequest;
+import com.ccadllc.firebird.dss.common.remote.messages.AddBlockSetRequest;
+import com.ccadllc.firebird.dss.common.remote.messages.AddBlockSetResponse;
+import com.ccadllc.firebird.dss.common.remote.messages.AddComponentStreamRequest;
+import com.ccadllc.firebird.dss.common.remote.messages.BlockDescriptor;
+import com.ccadllc.firebird.dss.common.remote.messages.BlockRouteData;
+import com.ccadllc.firebird.dss.common.remote.messages.BlockSetDescriptor;
+import com.ccadllc.firebird.dss.common.remote.messages.CreateIpDirectTransportStreamRequest;
+import com.ccadllc.firebird.dss.common.remote.messages.CreateMpeg2TransportStreamRequest;
+import com.ccadllc.firebird.dss.common.remote.messages.CreateStandaloneStreamRequest;
+import com.ccadllc.firebird.dss.common.remote.messages.CreateStandaloneStreamResponse;
+import com.ccadllc.firebird.dss.common.remote.messages.DeleteProgramRequest;
+import com.ccadllc.firebird.dss.common.remote.messages.DestinationInfo;
+import com.ccadllc.firebird.dss.common.remote.messages.ErrorResponse;
+import com.ccadllc.firebird.dss.common.remote.messages.IntegerRangeSummary;
+import com.ccadllc.firebird.dss.common.remote.messages.MeteringType;
+import com.ccadllc.firebird.dss.common.remote.messages.MpegPacketRouteData;
+import com.ccadllc.firebird.dss.common.remote.messages.OkResponse;
+import com.ccadllc.firebird.dss.common.remote.messages.PidMapping;
+import com.ccadllc.firebird.dss.common.remote.messages.QueryForUdpRoutesRequest;
+import com.ccadllc.firebird.dss.common.remote.messages.QueryForUdpRoutesResponse;
+import com.ccadllc.firebird.dss.common.remote.messages.StreamDestinationInfo;
+import com.ccadllc.firebird.dss.common.remote.messages.TransmissionType;
+import com.ccadllc.firebird.dss.common.remote.messages.UdpRouteSummary;
+import com.ccadllc.firebird.dss.common.remote.messages.UpdateIpDirectTransportStreamDestinationsRequest;
+import com.ccadllc.firebird.dss.common.remote.messages.UpdateMpeg2TransportStreamDestinationsRequest;
+import com.ccadllc.firebird.dss.common.remote.messages.UpdateStandaloneStreamDestinationsRequest;
+import com.ccadllc.firebird.dss.common.remote.messages.UpdateStreamShapingPolicyRequest;
+import com.ccadllc.firebird.dss.server.common.PeriodicDataType;
+import com.ccadllc.firebird.dss.server.common.blocks.JRubyBlockGenerator;
+import com.ccadllc.firebird.dss.server.configuration.blockset.domain.BlockSetRepository;
+import com.ccadllc.firebird.dss.server.provisioning.remote.messaging.handler.MeteringTypeTransformer;
+
+import org.apache.activemq.broker.BrokerService;
+import org.apache.activemq.store.memory.MemoryPersistenceAdapter;
+import org.apache.commons.httpclient.HttpClient;
+import org.apache.commons.httpclient.methods.InputStreamRequestEntity;
+import org.apache.commons.httpclient.methods.PutMethod;
+import org.apache.commons.lang.ArrayUtils;
+import org.apache.commons.lang.StringUtils;
+import org.osgi.framework.Bundle;
+import org.osgi.framework.BundleContext;
+import org.osgi.framework.BundleException;
+import org.osgi.framework.ServiceReference;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jms.core.JmsTemplate;
+
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
+
+/** Convenience base class for writing integration tests for DSS bundles. */
+public abstract class AbstractDssOsgiIntegrationTest extends AbstractWebOsgiIntegrationTest
+{
+    public static final int MAX_PID = 8191;
+    public static final int MIN_PID = 0;
+    public static final int MAX_UDP_PORT_NUMBER = 65535;
+    public static final int MIN_UDP_PORT_NUMBER = 1024;
+    public static final String IP_STRING = "127.0.0.1";
+    public static final String IP_STRING2 = "127.0.0.2";
+    public static final String IP_STRING3 = "127.0.0.3";
+    public static final int TRANSPORT_STREAM_ID = 123;
+
+    public static final int PORT1 = System.getProperty("dssit.datagram.socket.port1") == null ? 5006 : Integer.parseInt(System
+        .getProperty("dssit.datagram.socket.port1"));
+
+    public static final int PORT2 = System.getProperty("dssit.datagram.socket.port2") == null ? 5007 : Integer.parseInt(System
+        .getProperty("dssit.datagram.socket.port2"));
+
+    public static final int PORT3 = System.getProperty("dssit.datagram.socket.port3") == null ? 5008 : Integer.parseInt(System
+        .getProperty("dssit.datagram.socket.port3"));
+
+    public static final int PORT4 = System.getProperty("dssit.datagram.socket.port4") == null ? 5009 : Integer.parseInt(System
+        .getProperty("dssit.datagram.socket.port4"));
+
+    public static final byte TEST_BLOCK_DATA_VALUE = (byte)0x64;
+
+    public static final int MPEG_PADDING_BYTE = 0xFF;
+
+    public static final int MPEG_PACKET_SIZE = 188;
+
+    // TODO this is also in StubDssOutputHandler
+    public static final int MAX_BUFFER_VALUE = 1024;
+
+    /** MPEG Packet Size minus header of 4 bytes. */
+    public static final int MPEG_PACKET_PAYLOAD_SIZE = 184;
+
+    /** The first MPEG Packet in a series needs to have a one byte start indicator. */
+    public static final int MPEG_PACKET_PAYLOAD_SIZE_FOR_FIRST_IN_SERIES = 183;
+
+    public static final int MAX_MPEG_PACKETS_IN_UDP_DATAGRAM = 7;
+
+    public static final int MAX_AVERAGE = 50000;
+
+    public static final int MAX_BURST = 2444;
+
+    public static final int MAX_LATENCY = 60;
+
+    public static final int PID_MINIMUM = 0;
+
+    public static final int PID_OUT1 = 1234;
+
+    public  static final int PID_OUT2 = 1235;
+
+    public static final int VALID_PID = 0x1503;
+
+    public static final int VALID_PID2 = 0x1504;
+
+    // Maximum is 13 bit integer (2^13-1)
+    public static final int PID_MAXIMUM = 8191;
+    public static final long SHAPING_PARAM_TOO_LARGE_VALUE = 2147483648L;
+    public static final byte[] CONTENTS_OF_BLOCKSET = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09};
+    public static final int NUMBER_OF_BLOCKS = 2;
+    public static final int SIZE_OF_BLOCK = 5;
+
+
+    public static final StreamDestinationInfo DESTINATION1 = new StreamDestinationInfo(IP_STRING, PORT1);
+    public static final StreamDestinationInfo DESTINATION2 = new StreamDestinationInfo(IP_STRING, PORT2);
+    public static final List<StreamDestinationInfo> TS_DESTINATION = Lists.newArrayList(new StreamDestinationInfo(IP_STRING, PORT1));
+
+    protected static Integer nextValidPid = 0;
+    protected static final String SNAPSHOT_BUNDLE = "com.ccadllc.firebird.dss.server.realtime.snapshot.manager";
+    protected static final String MXBEAN_PROPERTIES_KEY = "Properties";
+    protected static final String PERIODIC_PROPERTIES_KEY = "message-type";
+    protected static final String PERIODIC_PROPERTIES_VALUE = "cvt";
+    protected static final String STREAM_PROPERTIES_KEY = "dta.key";
+    protected static final String STREAM_PROPERTIES_VALUE = "network.stream";
+    protected static final String TRANSPORT_STREAM_PROPERTIES_KEY = "stream.name";
+    protected static final String TRANSPORT_STREAM_PROPERTIES_VALUE = "transport stream";
+    protected static final String ROUTE_PROPERTIES_KEY = "name";
+    protected static final String ROUTE_PROPERTIES_VALUE = "my route";
+
+    private static final Logger logger = LoggerFactory.getLogger(AbstractDssOsgiIntegrationTest.class);
+    private static final int TCP_PAYLOAD_SIZE_HEADER_LENGTH = 4;
+
+    @SuppressWarnings("unused")
+    private static final MeteringType METERING_TYPE = MeteringType.EVENLY_SPACED;
+
+    private static boolean stubJmsBrokerStarted;
+
+    public final List<IntegerRangeSummary> reservedPidRanges = Lists.newArrayList(new IntegerRangeSummary(1, 2));
+    public final List<IntegerRangeSummary> reservedProgramNumberRange = Lists.newArrayList(new IntegerRangeSummary(4, 5));
+
+    public final Map<String, String> streamProperties = Collections.unmodifiableMap(MapUtility.<String, String>toMap(STREAM_PROPERTIES_KEY, STREAM_PROPERTIES_VALUE));
+    public final Map<String, String> periodicProperties = Collections.unmodifiableMap(MapUtility.<String, String>toMap(PERIODIC_PROPERTIES_KEY, PERIODIC_PROPERTIES_VALUE));
+    public final Map<String, String> routeProperties = Collections.unmodifiableMap(MapUtility.<String, String>toMap(ROUTE_PROPERTIES_KEY, ROUTE_PROPERTIES_VALUE));
+    public final Map<String, String> blockSetProperties = Collections.unmodifiableMap(MapUtility.<String, String>toMap("blockSetKey1", "blockSetValue1", "blockSetKey2", "blockSetValue2"));
+    public final Map<String, String> transportStreamProperties = Collections.unmodifiableMap(MapUtility.<String, String>toMap("createTSKey", "createTSValue"));
+    public final Map<String, String> programProperties = Collections.unmodifiableMap(MapUtility.<String, String>toMap("programKey1", "programValue1", "programKey2", "programValue2"));
+    public final Map<String, String> componentStreamProperties = Collections.unmodifiableMap(MapUtility.<String, String>toMap("compKey1", "compValue1", "compKey2", "compValue2"));
+    public final Map<String, String> ancillaryStreamProperties = Collections.unmodifiableMap(MapUtility.<String, String>toMap("ancKey1", "ancValue1", "ancKey2", "ancValue2"));
+
+    @Autowired
+    protected JmsTemplate jmsTemplate;
+
+    @Autowired
+    protected JdbcTemplate jdbcTemplate;
+
+    protected StubDssOutputHandler outputHandler;
+    protected StubDssClient dssClient;
+
+    @OsgiConfiguration Options systemUnderTest = bundles(
+        group("com.ccadllc.firebird.vms",
+            artifact("ccad-firebird-dss-server-configuration-manager"),
+            artifact("ccad-firebird-dss-common-datatypes"),
+            artifact("ccad-firebird-dss-common-remote-messages"),
+            artifact("ccad-firebird-dss-server-common"),
+            artifact("ccad-firebird-dss-server-configuration-blockset-domain"),
+            artifact("ccad-firebird-dss-server-configuration-stream-domain"),
+            artifact("ccad-firebird-dss-server-configuration-route-domain"),
+            artifact("ccad-firebird-dss-server-realtime-timer-manager"),
+            artifact("ccad-firebird-dss-server-realtime-stream-manager"),
+            artifact("ccad-firebird-dss-server-realtime-snapshot-manager"),
+            artifact("ccad-firebird-dss-server-realtime-transport-manager"),
+            artifact("ccad-firebird-dss-server-realtime-external-route-manager"),
+            artifact("ccad-firebird-dss-server-provisioning-remote-messaging-handler"),
+            artifact("ccad-firebird-dss-server-provisioning-facade")
+        ));
+
+    @OsgiConfiguration Options supportingBundles = bundles(
+        artifact("org.apache.activemq", "com.springsource.org.apache.activemq"),
+        artifact("commons-io", "commons-io"),
+        artifact("commons-pool", "commons-pool"),
+        artifact("commons-collections", "commons-collections"),
+        artifact("commons-math", "commons-math"),
+        artifact("org.apache.commons", "com.springsource.org.apache.commons.discovery"),
+        group("org.apache.geronimo.specs",
+            artifact("geronimo-j2ee-management_1.1_spec"),
+            artifact("geronimo-jms_1.1_spec")),
+        group("org.springframework",
+            artifact("org.springframework.jms")),
+        group("com.ccadllc.firebird.vms",
+            artifact("ccad-firebird-vms-common-packet-filtering"),
+            artifact("ccad-firebird-vms-common-mpeg2-psi")),
+        artifact("org.jruby", "com.springsource.org.jruby"),
+        artifact("com.ccadllc.firebird.libs", "javax.script-jruby-engine"),
+        group("com.ccadllc.firebird.core",
+            artifact("ccad-firebird-core-base-common")),
+        group("org.springframework.osgi",
+            artifact("spring-osgi-web-extender"),
+            artifact("spring-osgi-web")),
+        artifact("org.eclipse.equinox", "event"),
+        artifact("net.sourceforge.cglib", "com.springsource.net.sf.cglib"),
+        artifact("com.ccadllc.commons", "ccad-commons-messaging"),
+        group("org.apache.mina",
+            artifact("mina-core"))
+    );
+
+    @OsgiConfiguration Options persistence = bundles(
+        group("com.ccadllc.firebird.core",
+            artifact("ccad-firebird-core-database-datasource"),
+            artifact("ccad-firebird-core-database-db-migrate"),
+            artifact("ccad-firebird-core-database-persistence"),
+            artifact("ccad-firebird-core-database-c3p0-driver-support")),
+        artifact("com.mchange.c3p0", "com.springsource.com.mchange.v2.c3p0"),
+        group("com.ccadllc.firebird.libs",
+            artifact("org.hibernate-hibernate-entitymanager"),
+            artifact("org.liquibase-liquibase-core")),
+        artifact("org.dom4j", "com.springsource.org.dom4j"),
+        artifact("org.hsqldb", "com.springsource.org.hsqldb"),
+        group("org.springframework",
+            artifact("org.springframework.transaction"),
+            artifact("org.springframework.orm"),
+            artifact("org.springframework.jdbc")),
+        artifact("javax.persistence", "com.springsource.javax.persistence"),
+        artifact("org.apache.geronimo.specs", "geronimo-jta_1.1_spec")
+    );
+
+    private BrokerService broker;
+
+    @Override
+    protected void onSetUp() throws Exception
+    {
+        dssClient = new StubDssClient(jmsTemplate);
+        outputHandler = new StubDssOutputHandler();
+        startJmsBroker();
+        super.onSetUp();
+    }
+
+    @Override
+    protected void onTearDown() throws Exception
+    {
+        for (final Long periodicId : dssClient.getAllPeriodicIds())
+        {
+            deletePeriodic(periodicId);
+        }
+        for (final Long routeId : dssClient.getAllRouteIds())
+        {
+            dssClient.removeRoute(routeId);
+        }
+
+        for (final int transportStreamId : dssClient.getAllTransportStreamIds())
+        {
+            dssClient.deleteTransportStream(transportStreamId);
+        }
+        deleteAllBlockSets();
+
+        jdbcTemplate.execute("DELETE FROM periodic_property");
+        jdbcTemplate.execute("DELETE FROM periodic");
+        jdbcTemplate.execute("DELETE FROM stream_property");
+        jdbcTemplate.execute("DELETE FROM stream_destination");
+        jdbcTemplate.execute("DELETE FROM transport_stream_in_use_pids");
+        jdbcTemplate.execute("DELETE FROM transport_stream_in_use_program_numbers");
+        jdbcTemplate.execute("DELETE FROM transport_stream_ancillary_stream");
+        jdbcTemplate.execute("DELETE FROM transport_stream_property");
+        jdbcTemplate.execute("DELETE FROM transport_stream_destination");
+        jdbcTemplate.execute("DELETE FROM transport_stream_reserved_pid_range");
+        jdbcTemplate.execute("DELETE FROM transport_stream_reserved_program_number_range");
+        jdbcTemplate.execute("DELETE FROM program_property");
+        jdbcTemplate.execute("DELETE FROM program");
+        jdbcTemplate.execute("DELETE FROM transport_stream");
+        jdbcTemplate.execute("DELETE FROM stream");
+
+        outputHandler.close();
+        //stopJmsBroker();
+        super.onTearDown();
+    }
+
+    protected Integer getNextUniqueStreamPid()
+    {
+        if (++nextValidPid > PID_MAXIMUM)
+        {
+            throw new RuntimeException("PIDs used for integration tests exceeded max: " + PID_MAXIMUM);
+        }
+
+        return nextValidPid;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    protected void preProcessBundleContext(final BundleContext platformBundleContext) throws Exception
+    {
+        super.preProcessBundleContext(platformBundleContext);
+    }
+
+    private void startJmsBroker() throws Exception
+    {
+        if (!stubJmsBrokerStarted)
+        {
+            try
+            {
+                broker = new BrokerService();
+                broker.setPersistent(false);
+                broker.setPersistenceAdapter(new MemoryPersistenceAdapter());
+                broker.addConnector("tcp://localhost:61621");
+                broker.start();
+                stubJmsBrokerStarted = true;
+            }
+            // CHECKSTYLE:OFF
+            catch (final Exception e)
+            // CHECKSTYLE:ON
+            {
+                logger.error("Failed to start ActiveMQ broker due to exception.", e);
+                throw e;
+            }
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private void stopJmsBroker() throws Exception
+    {
+        broker.stop();
+    }
+
+    @Override
+    protected boolean createManifestOnlyFromTestClass()
+    {
+        return false;
+    }
+
+    @Override
+    protected Iterable<String> getAdditionalPackageImports()
+    {
+        return Iterables.concat(super.getAdditionalPackageImports(), Arrays.asList("javax.jms", "org.springframework.jms.core",
+            "org.apache.activemq.command", "org.apache.activemq", "org.apache.activemq.pool", "org.apache.activemq.command",
+            "org.apache.activemq.broker", "org.springframework.jdbc.datasource", "com.mchange.v2.c3p0"));
+    }
+
+    @Override
+    protected String[] getConfigLocations()
+    {
+        return new String[] {"/context.xml" };
+    }
+
+    /**
+     * Sends a message to the DSS interface and waits for response.
+     *
+     * @param request request to send
+     * @param type type of request
+     * @return DSS response
+     * @throws JMSException if a messaging exception occurs
+     */
+    protected TextMessage sendAndWait(final String request, final String type) throws JMSException
+    {
+        return dssClient.sendAndWait(request, type);
+    }
+
+    protected JdbcTemplate getJdbcTemplate()
+    {
+        return jdbcTemplate;
+    }
+
+    /**
+     * Verifies that the DSS response is non-error.
+     *
+     * @param response non erroneous response
+     * @throws JMSException on issue processing response text
+     */
+    protected void verifyOkResponse(final TextMessage response) throws JMSException
+    {
+        assertThat(String.format("Expected an Ok response and instead got: %s", response), response.getJMSType(),
+            is(OkResponse.class.getSimpleName()));
+    }
+
+    /**
+     * Verifies that the DSS response is non-error.
+     *
+     * @param response non erroneous response
+     * @throws JMSException on issue processing response text
+     */
+    protected void verifyNotErrorResponse(final TextMessage response) throws JMSException
+    {
+        assertThat(String.format("Expected a response that was not an error: %s", response), response.getJMSType(),
+            not(ErrorResponse.class.getSimpleName()));
+    }
+
+    /**
+     * Verifies that the DSS response is a particular error.
+     *
+     * @param response actual response
+     * @param expectedError expected error response
+     * @throws JMSException on issue processing response text
+     * @throws JAXBException on issue processing the error message
+     */
+    protected void verifyErrorResponseIgnoringDetails(final TextMessage response, final ErrorResponse expectedError)
+        throws JMSException, JAXBException
+    {
+        assertThat(response, notNullValue());
+        final ErrorResponse actualResponse = asMessageObject(response.getText(), ErrorResponse.class);
+        assertThat(actualResponse.getSummary(), is(expectedError.getSummary()));
+    }
+
+    protected void verifyIsErrorResponse(final TextMessage response) throws JMSException, JAXBException
+    {
+        assertThat(response, notNullValue());
+        assertThat(response.getJMSType(), is(ErrorResponse.class.getSimpleName()));
+        final ErrorResponse actualResponse = asMessageObject(response.getText(), ErrorResponse.class);
+        assertThat(actualResponse, notNullValue());
+    }
+
+    protected String randomAddAncillaryStreamToTransportStream() throws JAXBException
+    {
+        return createAddAncillaryRequestToXml(TRANSPORT_STREAM_ID, getNextUniqueStreamPid(), MAX_AVERAGE, MAX_BURST, MAX_LATENCY, streamProperties);
+    }
+
+    protected void addMpegStream(final Long id, final Integer pid, final String destinationAddress, final int destinationPort, final int maxAverageRate, final int maxBurstSize, final int maxShapingLatency)
+    {
+        final int streamId = getJdbcTemplate().update("INSERT INTO stream (id,pid,dtype,max_average_rate,max_burst_size,max_shaping_latency,transmission_type) values (?,?,?,?,?,?,?)",
+            new Object[] {id, pid, "StandaloneStream", maxAverageRate, maxBurstSize, maxShapingLatency, TransmissionType.MPEG2});
+        getJdbcTemplate().update("INSERT INTO stream_destination (inet_address,port,stream_destination_id) values (?,?,?)",
+            new Object[] {destinationAddress, destinationPort, streamId });
+    }
+
+    protected void addDsgBtStream(final Long id, final String destinationAddress, final int destinationPort, final int maxAverageRate, final int maxBurstSize, final int maxShapingLatency)
+    {
+        final int streamId = getJdbcTemplate().update("INSERT INTO stream (id,dtype,max_average_rate,max_burst_size,max_shaping_latency,transmission_type) values (?,?,?,?,?,?,?)",
+            new Object[] {id, "StandaloneStream", maxAverageRate, maxBurstSize, maxShapingLatency, TransmissionType.DSG_BROADCAST_TUNNEL});
+        getJdbcTemplate().update("INSERT INTO stream_destination (inet_address,port,stream_destination_id) values (?,?,?)",
+            new Object[] {destinationAddress, destinationPort, streamId });
+    }
+
+    protected void addPeriodic(final Long periodicId, final long streamId, final String data, final long startTime,
+        final Long stopTime, final int insertionRate, final MeteringType meteringType)
+    {
+        getJdbcTemplate().update(
+            "INSERT INTO periodic (id,stream_id,data_type,data,start_time,stop_time,insertion_rate,metering_type) values (?,?,?,?,?,?,?)",
+            new Object[] {periodicId, streamId, PeriodicDataType.FUNCTION, data, new Date(startTime), new Date(stopTime),
+                insertionRate, meteringType});
+    }
+
+    protected void verifyNumberOfStreams(final int numberOfStreams)
+    {
+        final List<?> results = getJdbcTemplate().queryForList("SELECT * FROM stream;");
+        assertThat(String.format("The expected number of streams is %s, while the actual is %s", numberOfStreams, results.size()),
+            numberOfStreams, is(results.size()));
+    }
+
+    protected void verifyNumberOfTransportStreams(final int numberOfTransportStreams)
+    {
+        final List<?> results = getJdbcTemplate().queryForList("SELECT * FROM transport_stream;");
+        assertThat(String.format("The expected number of transport streams is %s, while the actual is %s", numberOfTransportStreams, results.size()),
+            numberOfTransportStreams, is(results.size()));
+    }
+
+    protected void verifyNumberOfRoutes(final int numberOfRoutes)
+    {
+        final List<?> results = getJdbcTemplate().queryForList("SELECT * FROM route;");
+        assertThat(String.format("The expected number of routes is %s, while the actual is %s", numberOfRoutes, results.size()),
+            numberOfRoutes, is(results.size()));
+    }
+
+    protected void verifyNumberOfPeriodics(final int numberOfPeriodics)
+    {
+        final List<?> results = getJdbcTemplate().queryForList("SELECT * FROM periodic;");
+        assertThat(String.format("The expected number of periodics is %s, while the actual is %s", numberOfPeriodics, results
+            .size()), numberOfPeriodics, is(results.size()));
+    }
+
+    protected void verifyStreamExists(final Long id)
+    {
+        verifyStreamExists(id, true);
+    }
+
+    protected void verifyTransportStreamExists(final int id)
+    {
+        verifyTransportStreamExists(id, true);
+    }
+
+    protected void verifyStreamDoesNotExist(final Long id)
+    {
+        verifyStreamExists(id, false);
+    }
+
+    protected void verifyTransportStreamDoesNotExist(final int id)
+    {
+        verifyTransportStreamExists(id, false);
+    }
+
+    protected void verifyRouteDoesNotExist(final Long id)
+    {
+        verifyRouteExists(id, false);
+    }
+
+    /**
+     * Verifies if a stream exists with the given id.
+     *
+     * @param id stream to verify
+     * @param verifyExists true it this method should verify that it exists, false if it should verify that it does not exist
+     */
+    private void verifyStreamExists(final Long id, final boolean verifyExists)
+    {
+        final List<?> results = getJdbcTemplate()
+            .queryForList("SELECT stream.id FROM stream WHERE stream.id=?", new Object[] {id });
+        if (verifyExists)
+        {
+            assertThat(String.format("The stream with id %s should exist, but it does not.", id), results.size(), is(1));
+        }
+        else
+        {
+            assertThat(String.format("The stream with id %s should not exist, but it does.", id), results.size(), is(0));
+        }
+    }
+
+    /**
+     * Verifies if a transport stream exists with the given id.
+     *
+     * @param id transport stream to verify
+     * @param verifyExists true it this method should verify that it exists, false if it should verify that it does not exist
+     */
+    private void verifyTransportStreamExists(final int id, final boolean verifyExists)
+    {
+        final List<?> results = getJdbcTemplate()
+            .queryForList("SELECT transport_stream.id FROM transport_stream WHERE transport_stream.id=?", new Object[] {id });
+        if (verifyExists)
+        {
+            assertThat(String.format("The transport stream with id %s should exist, but it does not.", id), results.size(), is(1));
+        }
+        else
+        {
+            assertThat(String.format("The transport stream with id %s should not exist, but it does.", id), results.size(), is(0));
+        }
+    }
+
+    private void verifyRouteExists(final Long id, final boolean verifyExists)
+    {
+        final List<?> results = getJdbcTemplate()
+            .queryForList("SELECT route.id FROM route WHERE route.id=?", new Object[] {id });
+        if (verifyExists)
+        {
+            assertThat(String.format("The route with id %s should exist, but it does not.", id), results.size(), is(1));
+        }
+        else
+        {
+            assertThat(String.format("The route with id %s should not exist, but it does.", id), results.size(), is(0));
+        }
+    }
+
+    protected void verifyDestinationExists(final String destinationAddress, final int destinationPort)
+    {
+        verifyDestinationExists(destinationAddress, destinationPort, true);
+    }
+
+    protected void verifyDestinationDoesNotExist(final String destinationAddress, final int destinationPort)
+    {
+        verifyDestinationExists(destinationAddress, destinationPort, false);
+    }
+
+    /**
+     * Verifies if a destination exists for the given destination address and port.
+     *
+     * @param destinationAddress hostname or ip address of the destination
+     * @param destinationPort port of the destination
+     * @param verifyExists true it this method should verify that it exists, false if it should verify that it does not exist
+     */
+    private void verifyDestinationExists(final String destinationAddress, final int destinationPort, final boolean verifyExists)
+    {
+        final List<?> results = getJdbcTemplate().queryForList(
+            "SELECT * FROM stream_destination WHERE stream_destination.inet_address=? and stream_destination.port=?  ",
+            new Object[] {destinationAddress, destinationPort });
+        if (verifyExists)
+        {
+            assertThat(String.format("The destination with ip address %s should exist, but it does not.", destinationAddress),
+                results.size(), is(1));
+        }
+        else
+        {
+            assertThat(String.format("The destination with ip address %s should exist, but it does not.", destinationAddress),
+                results.size(), is(0));
+        }
+    }
+
+    /**
+     * Verifies if a destination exists for the given stream.
+     *
+     * @param destinationAddress hostname or ip address of the destination
+     * @param destinationPort port of the destination
+     * @param streamId id of the stream destination to verify
+     */
+    protected void verifyDestinationExistsForStream(final String destinationAddress, final int destinationPort, final Long streamId)
+    {
+        final List<?> results = getJdbcTemplate()
+            .queryForList(
+                "SELECT * FROM stream_destination WHERE stream_destination.inet_address=? and stream_destination.port=?  and stream_destination_id=?",
+                new Object[] {destinationAddress, destinationPort, streamId });
+        assertThat(String.format("The destination with ip address %s should exist, but it does not.", destinationAddress), results
+            .size(), is(1));
+    }
+
+    /**
+     * Verifies if number of stream destination's exists.
+     *
+     * @param id stream destination id to verify
+     * @param numberOfDestination number of distinations expected
+     */
+    protected void verifyNumberOfStreamDestinations(final Long id, final int numberOfDestination)
+    {
+        final List<?> results = getJdbcTemplate()
+            .queryForList(
+                "SELECT stream_destination.stream_destination_id FROM stream_destination WHERE stream_destination.stream_destination_id=?",
+                new Object[] {id });
+
+        assertThat(numberOfDestination, is(results.size()));
+    }
+
+    /**
+     * Verifies if a stream exists with the given shaping parameters.
+     *
+     * @param id stream to verify
+     * @param maxAverageRate maximum average bytes per second
+     * @param maxBurstSize maximum burst size in bytes
+     * @param maxShapingLatency maximum shaping latency seconds of delayed packets
+     */
+    private void verifyExpectedStreamShapingParameters(final Long id, final int maxAverageRate,
+        final int maxBurstSize, final int maxShapingLatency)
+    {
+        final List<?> results = getJdbcTemplate()
+            .queryForList("SELECT stream.id FROM stream WHERE stream.id=? and stream.max_average_rate=? and stream.max_burst_size=? and stream.max_shaping_latency=?",
+                new Object[] {id, maxAverageRate, maxBurstSize, maxShapingLatency});
+        assertThat(String.format("The stream with id %s should have maxAverageRate = %s, maxBurstSize = %s, maxShapingLatency = %s, but different values were found.",
+            id, maxAverageRate, maxBurstSize, maxShapingLatency), results.size(), is(1));
+    }
+
+    protected void verifyPeriodicPersisted(final Long id)
+    {
+        assertThat(String.format("The periodic with id %s should exist, but it does not.", id), periodicPersisted(id), is(true));
+    }
+
+    protected void verifyPeriodicNotPersisted(final Long id)
+    {
+        assertThat(String.format("The periodic with id %s should not exist, but it does.", id), periodicPersisted(id), not(true));
+    }
+
+    protected boolean periodicPersisted(final Long id)
+    {
+        final List<?> results = getJdbcTemplate().queryForList("SELECT periodic.id FROM periodic WHERE periodic.id=?",
+            new Object[] {id });
+        return results.size() == 1;
+    }
+
+    protected Long getStreamIdForPeriodic(final Long id)
+    {
+        return getJdbcTemplate().queryForLong("SELECT periodic.stream_id FROM periodic WHERE periodic.id=?",
+            new Object[] {id });
+    }
+
+    protected void verifyPeriodicExistsByStreamId(final Long id)
+    {
+        assertThat(String.format("The periodic with id %s should exist, but it does not.", id), periodicExistsByStreamId(id),
+            is(true));
+    }
+
+    protected void verifyPeriodicDoesNotExistByStreamId(final Long id)
+    {
+        assertThat(String.format("The periodic with id %s should not exist, but it does.", id), periodicExistsByStreamId(id),
+            not(true));
+    }
+
+    protected boolean periodicExistsByStreamId(final Long id)
+    {
+        final List<?> results = getJdbcTemplate().queryForList("SELECT periodic.id FROM periodic WHERE periodic.stream_id=?",
+            new Object[] {id });
+        return results.size() == 1;
+    }
+
+    /**
+     * Get the stream id from the create response message.
+     *
+     * @param message response message
+     * @return stream id
+     * @throws Exception if an exception occurs.
+     */
+    protected Long getStreamIdFromCreateResponse(final TextMessage message) throws Exception
+    {
+        final CreateStandaloneStreamResponse response = asMessageObject(message.getText(), CreateStandaloneStreamResponse.class);
+        return response.getId();
+    }
+
+    /**
+     * Creates a blocks array with one block with specified length.
+     *
+     * @param length length of the block
+     * @return pupulated blocks array
+     */
+    private byte[][] createSingleBlock(final int length)
+    {
+        final byte[][] blocks = new byte[1][length];
+        Arrays.fill(blocks[0], TEST_BLOCK_DATA_VALUE);
+        return blocks;
+    }
+
+    protected void verifyDatagramPacketForCorrectMpegContent(final Integer pid, final int mpegPacketCountInDatagram,
+        final int mpegPacketDataLength, final DatagramPacket packet) throws Exception
+    {
+        final int[] mpegPacketCountInDatagrams = new int[] {mpegPacketCountInDatagram };
+        final int[] mpegPacketDataLengths = new int[] {mpegPacketDataLength };
+        verifyDatagramPacketsForCorrectMpegContent(pid, mpegPacketCountInDatagrams, mpegPacketDataLengths, packet);
+    }
+
+    protected void verifyDatagramPacketForCorrectMpegContent(final Integer pid, final int mpegPacketCountInDatagram,
+        final int[] mpegPacketDataLengths, final DatagramPacket packet) throws Exception
+    {
+        final int[] mpegPacketCountInDatagrams = new int[] {mpegPacketCountInDatagram };
+        verifyDatagramPacketsForCorrectMpegContent(pid, mpegPacketCountInDatagrams, mpegPacketDataLengths, packet);
+    }
+
+    /**
+     * UDP does not guarantee packet arrivals in the order that they were sent. However, since it is an integration test and always
+     * uses the loop back IP address, we assume that the UDP packets are going to arrive in the order that they were sent.
+     *
+     * @param pid packet identifier for MPEG stream
+     * @param mpegPacketsDatagram
+     * @param mpegPacketDataLengths
+     * @param packets
+     */
+    protected void verifyDatagramPacketsForCorrectMpegContent(final Integer pid, final int[] mpegPacketsDatagram,
+        final int[] mpegPacketDataLengths, final DatagramPacket... packets) throws Exception
+    {
+        ByteArrayInputStream is = null;
+        BitInputStream bs = null;
+        int contCounter = 0;
+        int mpegPacketCounter = 0;
+        try
+        {
+            int i = 0;
+            for (final DatagramPacket packet : packets)
+            {
+                assertThat(packet.getLength(), is(mpegPacketsDatagram[i] * MPEG_PACKET_SIZE));
+                final byte[] data = packet.getData();
+                int dataBufferIndex = 0;
+
+                for (int j = 0; j < mpegPacketsDatagram[i]; j++)
+                {
+                    is = new ByteArrayInputStream(data, dataBufferIndex, dataBufferIndex + MPEG_PACKET_SIZE);
+                    bs = new BitInputStream(is);
+                    boolean startPayload = false;
+                    if (j == 0 && i == 0)
+                    {
+                        startPayload = true;
+                    }
+                    verifyMpegPacketHeader(bs, pid, startPayload, contCounter);
+                    verifyMpegPacketPayload(bs, mpegPacketDataLengths[mpegPacketCounter], startPayload);
+
+                    dataBufferIndex = dataBufferIndex + MPEG_PACKET_SIZE;
+                    contCounter++;
+                    contCounter = contCounter == 16 ? 0 : contCounter;
+                    mpegPacketCounter++;
+                }
+                i++;
+            }
+        }
+        finally
+        {
+            try
+            {
+                is.close();
+                bs.close();
+            }
+            catch (final IOException e)
+            {
+                // Ignore; without this catch, if an exception was thrown while a stream was positioned mid-byte, the close will fail
+            }
+        }
+    }
+
+    private void verifyMpegPacketHeader(final BitInputStream bs, final Integer pid, final boolean payloadStart,
+        final int continuityCounter) throws Exception
+    {
+        final int syncByte = bs.read();
+        assertThat(syncByte, is(0x47));
+
+        final int transportErrorIndicatorBit = bs.readBits(1);
+        assertThat(transportErrorIndicatorBit, is(0));
+
+        final int payloadUnitStartIndicatorBit = bs.readBits(1);
+        assertPayloadStartIndicator(payloadStart, payloadUnitStartIndicatorBit);
+
+        final int transportPriorityBit = bs.readBits(1);
+        assertThat(transportPriorityBit, is(0));
+
+        final int pidBits = bs.readBits(13);
+        assertThat(pidBits, is(pid));
+
+        final int trasportScramblingControlBits = bs.readBits(2);
+        assertThat(trasportScramblingControlBits, is(0));
+
+        final int adaptationFieldControlBits = bs.readBits(2);
+        assertThat(adaptationFieldControlBits, is(1));
+
+        final int continuityCounterBits = bs.readBits(4);
+        assertThat(continuityCounterBits, is(continuityCounter));
+    }
+
+    private void assertPayloadStartIndicator(final boolean payloadStart, final int payloadUnitStartIndicatorBit)
+    {
+        if (payloadStart)
+        {
+            assertThat(payloadUnitStartIndicatorBit, is(1));
+        }
+        else
+        {
+            assertThat(payloadUnitStartIndicatorBit, is(0));
+        }
+    }
+
+    private void verifyMpegPacketPayload(final BitInputStream bs, final int blockSize, final boolean firstPacket) throws Exception
+    {
+        int payloadLength = MPEG_PACKET_PAYLOAD_SIZE;
+        if (firstPacket)
+        {
+            final int firstByteOfPayloadInFirstPacket = bs.read();
+            assertThat(firstByteOfPayloadInFirstPacket, is(0));
+            payloadLength = MPEG_PACKET_PAYLOAD_SIZE_FOR_FIRST_IN_SERIES;
+        }
+        for (int i = 0; i < blockSize; i++)
+        {
+            final int payloadByte = bs.read();
+            assertThat(payloadByte, is((int)TEST_BLOCK_DATA_VALUE));
+        }
+        for (int i = 0; i < payloadLength - blockSize; i++)
+        {
+            final int payloadByte = bs.read();
+            assertThat(payloadByte, is(MPEG_PADDING_BYTE));
+        }
+    }
+
+    protected long setupDataForPeriodicFiringToTrigger(final Integer pid, final TransmissionType transmissionType, final int maxAverageRate, final int maxBurstSize, final int maxShapingLatency, final int insertionRate, final int blockSize,
+        final StreamDestinationInfo... desintationInfos) throws Exception
+    {
+        final long streamId = createStream(streamProperties, pid, transmissionType, maxAverageRate, maxBurstSize, maxShapingLatency, desintationInfos);
+        return addUnendingPeriodic(streamId, blockSize, insertionRate);
+    }
+
+    protected String updateStreamRequestToXml(final long streamId, final StreamDestinationInfo... desintationInfos) throws UnknownHostException, JAXBException
+    {
+        final List<StreamDestinationInfo> destinations = prepareDestinationInfo(desintationInfos);
+        return asXml(new UpdateStandaloneStreamDestinationsRequest(streamId, destinations));
+    }
+
+    private List<StreamDestinationInfo> prepareDestinationInfo(final StreamDestinationInfo... desintationInfos)
+    {
+        final List<StreamDestinationInfo> destinations = new ArrayList<StreamDestinationInfo>();
+
+        if (desintationInfos != null)
+        {
+            destinations.addAll(Arrays.asList(desintationInfos));
+        }
+
+        return destinations;
+    }
+
+    private List<DestinationInfo> prepareDestinationInfo(final DestinationInfo... destinationInfos)
+    {
+        final List<DestinationInfo> destinations = new ArrayList<DestinationInfo>();
+        destinations.addAll(Arrays.asList(destinationInfos));
+        return destinations;
+    }
+
+    protected String updateStandaloneStreamDestinationsRequestToXml(final long streamId, final StreamDestinationInfo... desintationInfos)
+        throws UnknownHostException, JAXBException
+    {
+        final List<StreamDestinationInfo> destinations = prepareDestinationInfo(desintationInfos);
+        return asXml(new UpdateStandaloneStreamDestinationsRequest(streamId, destinations));
+    }
+
+    private String updateStreamShapingPolicyRequestToXml(final long streamId, final int maxAverageRate, final int maxBurstSize, final int maxShapingLatency)
+        throws UnknownHostException, JAXBException
+    {
+        return asXml(new UpdateStreamShapingPolicyRequest(streamId, maxAverageRate, maxBurstSize, maxShapingLatency));
+    }
+
+    protected String createDeleteProgramRequestToXml(final int transportStreamId, final int programNumber) throws JAXBException
+    {
+        final DeleteProgramRequest deleteProgramRequest = new DeleteProgramRequest(transportStreamId, programNumber);
+        return asXml(deleteProgramRequest);
+    }
+
+    protected String createAddAncillaryRequestToXml(final int transportStreamId, final int pid, final int maxAverageRate, final int maxBurstSize, final int maxShapingLatency, final Map<String, String> properties) throws JAXBException
+    {
+        final AddAncillaryStreamRequest addAncillaryStreamRequest = new AddAncillaryStreamRequest(transportStreamId, pid, maxAverageRate, maxBurstSize, maxShapingLatency, properties);
+        return asXml(addAncillaryStreamRequest);
+    }
+    protected String createAddComponentRequestToXml(final int transportStreamId, final int programNumber, final int componentStreamType, final int maxAverageRate, final int maxBurstSize, final int maxShapingLatency, final Map<String, String> properties) throws JAXBException
+    {
+        final AddComponentStreamRequest addComponentStreamRequest = new AddComponentStreamRequest(transportStreamId, programNumber, componentStreamType, maxAverageRate, maxBurstSize, maxShapingLatency, properties);
+        return asXml(addComponentStreamRequest);
+    }
+
+    protected String createStreamRequestToXml(final Map<String, String> properties, final Integer pid, final TransmissionType transmissionType, final int maxAverageRate, final int maxBurstSize, final int maxShapingLatency, final StreamDestinationInfo... destinationInfos)
+        throws UnknownHostException, JAXBException
+    {
+        final List<StreamDestinationInfo> destinations = prepareDestinationInfo(destinationInfos);
+        final CreateStandaloneStreamRequest createStandaloneStreamRequest = new CreateStandaloneStreamRequest(properties, pid, destinations, transmissionType, maxAverageRate, maxBurstSize, maxShapingLatency);
+        return asXml(createStandaloneStreamRequest);
+    }
+
+    protected String createMpeg2TransportStreamRequestToXml(final Map<String, String> properties, final Integer networkPid,
+        final List<IntegerRangeSummary> reservedPidRanges, final List<IntegerRangeSummary> reservedProgramNumberRanges, final StreamDestinationInfo... destinationInfos)
+        throws UnknownHostException, JAXBException
+    {
+        final List<StreamDestinationInfo> destinations = prepareDestinationInfo(destinationInfos);
+        final CreateMpeg2TransportStreamRequest createMpeg2TransportStreamRequest = new CreateMpeg2TransportStreamRequest(destinations, networkPid, reservedPidRanges, reservedProgramNumberRanges, properties);
+        return asXml(createMpeg2TransportStreamRequest);
+    }
+
+    protected String updateMpeg2TransportStreamDestinationsRequestToXml(final int id, final StreamDestinationInfo... destinationInfos)
+        throws UnknownHostException, JAXBException
+    {
+        final List<StreamDestinationInfo> destinations = prepareDestinationInfo(destinationInfos);
+        final UpdateMpeg2TransportStreamDestinationsRequest updateMpeg2TransportStreamDestinationsRequest = new UpdateMpeg2TransportStreamDestinationsRequest(id, destinations);
+        return asXml(updateMpeg2TransportStreamDestinationsRequest);
+    }
+
+    protected String createIpDirectTransportStreamRequestToXml(final Map<String, String> properties, final int basePort, final Integer networkPid,
+        final List<IntegerRangeSummary> reservedPidRanges, final List<IntegerRangeSummary> reservedProgramNumberRanges, final DestinationInfo... destinationInfos)
+        throws UnknownHostException, JAXBException
+    {
+        final List<DestinationInfo> destinations = prepareDestinationInfo(destinationInfos);
+        final CreateIpDirectTransportStreamRequest createIpDirectTransportStreamRequest = new CreateIpDirectTransportStreamRequest(destinations, basePort, networkPid, reservedPidRanges, reservedProgramNumberRanges, properties);
+        return asXml(createIpDirectTransportStreamRequest);
+    }
+
+    protected String updateIpDirectTransportStreamDestinationsRequestToXml(final int id, final DestinationInfo... destinationInfos)
+        throws UnknownHostException, JAXBException
+    {
+        final List<DestinationInfo> destinations = prepareDestinationInfo(destinationInfos);
+        final UpdateIpDirectTransportStreamDestinationsRequest updateIpDirectTransportStreamDestinationsRequest = new UpdateIpDirectTransportStreamDestinationsRequest(id, destinations);
+        return asXml(updateIpDirectTransportStreamDestinationsRequest);
+    }
+
+    protected String randomDeleteProgramRequestToXml() throws JAXBException
+    {
+        return createDeleteProgramRequestToXml(TRANSPORT_STREAM_ID, 1);
+    }
+
+    protected String randomAddAncillaryStreamToTransportStreamToXml() throws JAXBException
+    {
+        return createAddAncillaryRequestToXml(TRANSPORT_STREAM_ID, getNextUniqueStreamPid(), MAX_AVERAGE, MAX_BURST, MAX_LATENCY, streamProperties);
+    }
+
+    protected String randomAddComponentStreamToTransportStreamToXml() throws JAXBException
+    {
+        return createAddComponentRequestToXml(TRANSPORT_STREAM_ID, 1, 1, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, streamProperties);
+    }
+
+    protected String randomUpdateStandAloneStreamDestinationsRequestToXml() throws UnknownHostException, JAXBException
+    {
+        return updateStandaloneStreamDestinationsRequestToXml(2L, new StreamDestinationInfo(IP_STRING, PORT1));
+    }
+
+    protected String randomUpdateStreamShapingPolicyRequestToXml() throws UnknownHostException, JAXBException
+    {
+        return updateStreamShapingPolicyRequestToXml(2L, MAX_AVERAGE, MAX_BURST, MAX_LATENCY);
+    }
+
+    protected String randomCreateMpeg2StreamRequestToXml() throws UnknownHostException, JAXBException
+    {
+        return createStreamRequestToXml(streamProperties, getNextUniqueStreamPid(), TransmissionType.MPEG2, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, new StreamDestinationInfo(IP_STRING, PORT1));
+    }
+
+    protected String randomUpdateMpeg2TransportStreamDestinationsRequestToXml(final int id) throws UnknownHostException, JAXBException
+    {
+        return updateMpeg2TransportStreamDestinationsRequestToXml(id, new StreamDestinationInfo(IP_STRING3, PORT3));
+    }
+
+    protected String randomCreateIpDirectTransportStreamRequestToXml() throws UnknownHostException, JAXBException
+    {
+        return createIpDirectTransportStreamRequestToXml(streamProperties, 5001, 6888, reservedPidRanges, reservedProgramNumberRange, new DestinationInfo(IP_STRING));
+    }
+
+    protected String randomUpdateIpDirectTransportStreamDestinationsRequestToXml(final int id) throws UnknownHostException, JAXBException
+    {
+        return updateIpDirectTransportStreamDestinationsRequestToXml(id, new DestinationInfo(IP_STRING3));
+    }
+
+    protected long createStream(final Integer pid, final TransmissionType transmissionType, final int maxAverageRate, final int maxBurstSize, final int maxShapingLatency) throws Exception
+    {
+        return createStream(streamProperties, pid, transmissionType, maxAverageRate, maxBurstSize, maxShapingLatency, new StreamDestinationInfo(IP_STRING, PORT1));
+    }
+
+    protected long createStreamOnAddressAndPort(final Integer pid, final TransmissionType transmissionType, final int maxAverageRate,
+        final int maxBurstSize, final int maxShapingLatency, final String ipAddress, final int port) throws Exception
+    {
+        return createStream(streamProperties, pid, transmissionType, maxAverageRate, maxBurstSize, maxShapingLatency, new StreamDestinationInfo(ipAddress, port));
+    }
+
+    protected long createAMpegStream(final Integer pid, final String ipAddress, final int port) throws Exception
+    {
+        return (createStreamOnAddressAndPort(pid, TransmissionType.MPEG2, MAX_AVERAGE, MAX_BUFFER_VALUE, MAX_LATENCY,
+            ipAddress, port));
+    }
+
+    /**
+     * Creates a stream through the DSS via messaging.
+     *
+     * @param properties properties of the stream
+     * @param pid packet identifier for MPEG stream, null for other stream types
+     * @param destinationInfos destinations to add to the streams
+     * @param transmissionType type of the stream
+     * @return stream id
+     * @throws UnknownHostException
+     * @throws JMSException
+     */
+    protected long createStream(final Map<String, String> properties, final Integer pid, final TransmissionType transmissionType, final int maxAverageRate, final int maxBurstSize, final int maxShapingLatency, final StreamDestinationInfo... destinationInfos) throws Exception
+    {
+        return dssClient.createStream(properties, pid, destinationInfos, transmissionType, maxAverageRate, maxBurstSize, maxShapingLatency);
+    }
+
+    /**
+     * Creates a MPEG2 transport stream through the DSS via messaging.
+     *
+     * @param destinationInfos destinations to add to the streams
+     * @param networkPid network pid of the transport stream if not null
+     * @param reservedPidRanges pid value ranges which should not be used
+     * @return reservedProgramNumberRanges program number value ranges which should not be used
+     * @param properties properties of the stream
+     * @throws UnknownHostException
+     * @throws JMSException
+     */
+    protected int createMpeg2TransportStream(final List<StreamDestinationInfo> destinationInfos, final Integer networkPid, final List<IntegerRangeSummary> reservedPidRanges, final List<IntegerRangeSummary> reservedProgramNumberRanges, final Map<String, String> properties) throws Exception
+    {
+        return dssClient.createMpeg2TransportStream(destinationInfos, networkPid, reservedPidRanges, reservedProgramNumberRanges, properties);
+    }
+
+    /**
+     * Adds a periodic through the DSS via messaging.
+     *
+     * @param streamId stream id
+     * @param blockSize length of the data block to generate
+     * @param insertionRate the periodic insertion rate
+     * @throws JMSException if a messaging exception occurs
+     * @throws JAXBException of a marshalling exception occurs
+     */
+    protected long addUnendingPeriodic(final long streamId, final int blockSize, final int insertionRate) throws JMSException,
+        JAXBException
+    {
+        return addPeriodic(periodicProperties, streamId, blockSize, System.currentTimeMillis(), null, insertionRate);
+    }
+
+    /**
+     * Adds a periodic through the DSS via messaging.
+     *
+     * @param streamId stream id
+     * @param blockSize length of the data block to generate
+     * @param startTime periodic start time
+     * @param stopTime periodic stop time
+     * @param insertionRate the periodic insertion rate
+     * @throws JMSException if a messaging exception occurs
+     * @throws JAXBException of a marshalling exception occurs
+     */
+    protected long addPeriodic(final Map<String, String> properties, final long streamId, final int blockSize, final long startTime, final Long stopTime, final int insertionRate) throws JMSException, JAXBException
+    {
+        final byte[][] blocks = createSingleBlock(blockSize);
+        final String rubyScript = JRubyBlockGenerator.generateRubyMethodForBlocks(blocks);
+        return dssClient.addPeriodic(properties, streamId, rubyScript, com.ccadllc.firebird.dss.common.datatypes.MeteringType.FRONT_LOADED, new Date(startTime), (stopTime == null) ? null : new Date(stopTime), insertionRate);
+    }
+
+    /**
+     * Adds a periodic associated with a block set through the DSS via messaging.
+     *
+     * @param startTime periodic start time
+     * @param stopTime periodic stop time
+     * @param insertionRate the periodic insertion rate
+     * @param streamId stream id
+     * @param blockSetId block set id to assign to the periodic.
+     * @param meteringType how the periodic should be metered
+     * @throws JMSException if a messaging exception occurs
+     * @throws JAXBException of a marshalling exception occurs
+     */
+    protected long addBlockSetPeriodic(final Map<String, String> properties, final long startTime, final Long stopTime, final int insertionRate, final long streamId, final long blockSetId, final MeteringType meteringType) throws JMSException, JAXBException
+    {
+        return dssClient.addPeriodic(properties, streamId, blockSetId, new MeteringTypeTransformer().apply(meteringType), new Date(startTime), (stopTime == null) ? null : new Date(stopTime), insertionRate);
+    }
+
+    /**
+     * Adds a periodic associated with a data block through the DSS via messaging.
+     *
+     * @param streamId stream id
+     * @param blockSize length of the data block to generate
+     * @param insertionRate the periodic insertion rate
+     * @param startTime periodic start time
+     * @param stopTime periodic stop time
+     * @throws JMSException if a messaging exception occurs
+     * @throws JAXBException of a marshalling exception occurs
+     */
+    protected long addDataBlockPeriodic(final Map<String, String> properties, final long streamId, final int blockSize, final long startTime, final Long stopTime,
+        final int insertionRate) throws JMSException, JAXBException
+    {
+        return dssClient.addPeriodic(properties, streamId, createSingleBlock(blockSize), com.ccadllc.firebird.dss.common.datatypes.MeteringType.FRONT_LOADED, new Date(startTime), (stopTime == null) ? null : new Date(stopTime), insertionRate);
+    }
+
+    protected long createStreamAndVerifyStreamAndDestinationExistence(final Integer pid, final TransmissionType transmissionType, final StreamDestinationInfo... desintationInfos) throws Exception
+    {
+        final Long streamId = createStream(streamProperties, pid, transmissionType, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, desintationInfos);
+        verifyStreamExists(streamId);
+        verifyNumberOfStreamDestinations(streamId, desintationInfos.length);
+        return streamId;
+    }
+
+    protected void createStreamIllegallyAndVerifyErrorResponseIgnoringDetails(final Map<String, String> properties, final Integer pid, final TransmissionType transmissionType, final int maxAverageRate, final int maxBurstSize, final int maxShapingLatency, final String expectedErrorSummary, final StreamDestinationInfo... destinationInfos) throws Exception
+    {
+        final List<StreamDestinationInfo> destinationSchemas = Lists.newArrayList();
+        destinationSchemas.addAll(Arrays.asList(destinationInfos));
+
+        final CreateStandaloneStreamRequest createStreamSchema = new CreateStandaloneStreamRequest(properties, pid, destinationSchemas, transmissionType, maxAverageRate, maxBurstSize, maxShapingLatency);
+
+        final TextMessage message = sendAndWait(asXml(createStreamSchema), CreateStandaloneStreamRequest.class.getSimpleName());
+        verifyErrorResponseIgnoringDetails(message, new ErrorResponse(expectedErrorSummary));
+    }
+
+    protected void createStreamIllegallyAndVerifyErrorResponse(final Map<String, String> properties, final Integer pid, final TransmissionType transmissionType, final int maxAverageRate, final int maxBurstSize, final int maxShapingLatency, final StreamDestinationInfo... destinationInfos)
+        throws Exception
+    {
+        final String request;
+        if (!ArrayUtils.isEmpty(destinationInfos))
+        {
+            final List<StreamDestinationInfo> destinationSchemas = Lists.newArrayList();
+            destinationSchemas.addAll(Arrays.asList(destinationInfos));
+
+            final CreateStandaloneStreamRequest createStreamSchema = new CreateStandaloneStreamRequest(properties, pid, destinationSchemas, transmissionType, maxAverageRate, maxBurstSize, maxShapingLatency);
+            request = asXml(createStreamSchema);
+        }
+        else
+        {
+            request = String
+                .format(
+                    "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><createStreamRequest type='%s' pid='%s'></createStreamRequest>",
+                    transmissionType, pid);
+        }
+
+        final TextMessage message = sendAndWait(request, CreateStandaloneStreamRequest.class.getSimpleName());
+        verifyIsErrorResponse(message);
+    }
+
+    protected void sendIllegalAddAncillaryStreamRequestAndVerifyErrorResponse(final String illegalRequest) throws Exception
+    {
+        final TextMessage message = sendAndWait(illegalRequest, AddAncillaryStreamRequest.class.getSimpleName());
+        verifyIsErrorResponse(message);
+    }
+
+    protected void sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(final String illegalRequest) throws Exception
+    {
+        final TextMessage message = sendAndWait(illegalRequest, AddComponentStreamRequest.class.getSimpleName());
+        verifyIsErrorResponse(message);
+    }
+
+    protected void sendIllegalCreateStreamRequestAndVerifyErrorResponse(final String illegalRequest) throws Exception
+    {
+        final TextMessage message = sendAndWait(illegalRequest, CreateStandaloneStreamRequest.class.getSimpleName());
+        verifyIsErrorResponse(message);
+    }
+
+    protected void sendIllegalCreateMpeg2TransportStreamRequestAndVerifyErrorResponse(final String illegalRequest) throws Exception
+    {
+        final TextMessage message = sendAndWait(illegalRequest, CreateMpeg2TransportStreamRequest.class.getSimpleName());
+        verifyIsErrorResponse(message);
+    }
+
+    protected void sendIllegalUpdateMpeg2TransportStreamDestinationsRequestAndVerifyErrorResponse(final String illegalRequest) throws Exception
+    {
+        final TextMessage message = sendAndWait(illegalRequest, UpdateMpeg2TransportStreamDestinationsRequest.class.getSimpleName());
+        verifyIsErrorResponse(message);
+    }
+
+    protected void sendIllegalCreateIpDirectTransportStreamRequestAndVerifyErrorResponse(final String illegalRequest) throws Exception
+    {
+        final TextMessage message = sendAndWait(illegalRequest, CreateIpDirectTransportStreamRequest.class.getSimpleName());
+        verifyIsErrorResponse(message);
+    }
+
+    protected void sendIllegalUpdateIpDirectTransportStreamDestinationsRequestAndVerifyErrorResponse(final String illegalRequest) throws Exception
+    {
+        final TextMessage message = sendAndWait(illegalRequest, UpdateIpDirectTransportStreamDestinationsRequest.class.getSimpleName());
+        verifyIsErrorResponse(message);
+    }
+
+    protected void updateStreamAndVerifyStreamAndDestinationExists(final Long streamId, final StreamDestinationInfo... desintationInfos) throws Exception
+    {
+        final String request = updateStreamRequestToXml(streamId, desintationInfos);
+        final TextMessage response = sendAndWait(request, UpdateStandaloneStreamDestinationsRequest.class.getSimpleName());
+
+        verifyStreamExists(streamId);
+        verifyNumberOfStreamDestinations(streamId, desintationInfos.length);
+        for (final StreamDestinationInfo destinationInfo : desintationInfos)
+        {
+            verifyDestinationExistsForStream(destinationInfo.getIpAddress(), destinationInfo.getPort(), streamId);
+        }
+        verifyNotErrorResponse(response);
+    }
+
+    protected void updateStreamShapingPolicyAndVerify(final Long streamId, final int maxAverageRate, final int maxBurstSize, final int maxShapingLatency) throws Exception
+    {
+        final String request = updateStreamShapingPolicyRequestToXml(streamId, maxAverageRate, maxBurstSize, maxShapingLatency);
+        final TextMessage response = sendAndWait(request, UpdateStreamShapingPolicyRequest.class.getSimpleName());
+
+        verifyStreamExists(streamId);
+        verifyExpectedStreamShapingParameters(streamId, maxAverageRate, maxBurstSize, maxShapingLatency);
+        verifyNotErrorResponse(response);
+    }
+
+    protected void sendUpdateStandaloneStreamDestinationsRequestAndVerifyErrorResponse(final String request) throws Exception
+    {
+        final TextMessage response = sendAndWait(request, UpdateStandaloneStreamDestinationsRequest.class.getSimpleName());
+        verifyIsErrorResponse(response);
+    }
+
+    protected void sendUpdateStreamShapingPolicyRequestAndVerifyErrorResponse(final String request) throws Exception
+    {
+        final TextMessage response = sendAndWait(request, UpdateStreamShapingPolicyRequest.class.getSimpleName());
+        verifyIsErrorResponse(response);
+    }
+
+    protected void sendQueryForUdpRoutesAndVefiryErrorResponse(final String request) throws Exception
+    {
+        final TextMessage response = sendAndWait(request, QueryForUdpRoutesRequest.class.getSimpleName());
+        verifyIsErrorResponse(response);
+    }
+
+    protected void deletePeriodic(final Long periodicId) throws Exception
+    {
+        dssClient.deletePeriodic(periodicId);
+    }
+
+    protected void deleteStream(final Long streamId) throws Exception
+    {
+        verifyOkResponse(dssClient.deleteStream(streamId));
+    }
+
+    protected int establishTcpRouteWithBlockData(final Long... streamIds) throws Exception
+    {
+        return dssClient.establishTcpRoute(new BlockRouteData(Sets.newHashSet(streamIds)));
+    }
+
+    protected void verifyPropertiesInJmxInstrumentation(final MBeanServer mbs, final ObjectName mbeanName,
+        final Map<String, String> expectedProperties) throws Exception
+    {
+        for (final String expectedPropertyKey : expectedProperties.keySet())
+        {
+            final CompositeDataSupport properties = (CompositeDataSupport)((TabularDataSupport)mbs.getAttribute(mbeanName,
+                    MXBEAN_PROPERTIES_KEY)).get(new Object[] {expectedPropertyKey });
+            assertThat(properties.values().size(), is(2));
+            assertTrue(properties.containsValue(expectedProperties.get(expectedPropertyKey)));
+        }
+    }
+
+    protected void deleteBlockSet(final long blockId) throws JMSException, JAXBException
+    {
+        verifyOkResponse(dssClient.deleteBlockSet(blockId));
+    }
+
+    protected void deleteAllBlockSets() throws JMSException, JAXBException
+    {
+        verifyOkResponse(dssClient.deleteAllBlockSets());
+    }
+
+    protected long addBlockSet() throws JMSException, JAXBException
+    {
+        final AddBlockSetRequest addBlockSetRequest = new AddBlockSetRequest(null, createDescriptors());
+        final TextMessage message = sendAndWait(asXml(addBlockSetRequest), AddBlockSetRequest.class.getSimpleName());
+
+        final AddBlockSetResponse response = asMessageObject(message.getText(), AddBlockSetResponse.class);
+        final Matcher matcher = Pattern.compile("\\d{13,}").matcher(response.getUrl());
+        matcher.find();
+        final long blockSetId = Long.parseLong(matcher.group());
+        assertThat(blockSetId, greaterThan(0L));
+        return blockSetId;
+    }
+
+    protected AddBlockSetResponse addBlockSetWithResponse(final int numberOfBlocks, final int blockSize) throws JMSException, JAXBException
+    {
+        final TextMessage message = sendAndWait(randomAddBlockSetRequestToXml(numberOfBlocks, blockSize), AddBlockSetRequest.class.getSimpleName());
+        verifyNotErrorResponse(message);
+        final AddBlockSetResponse response = asMessageObject(message.getText(), AddBlockSetResponse.class);
+        return response;
+    }
+
+    protected String randomAddBlockSetRequestToXml(final int numberOfBlocks, final int blockSize) throws JAXBException
+    {
+        final List<BlockDescriptor> descriptorsSchema = Lists.newArrayList();
+        descriptorsSchema.add(new BlockDescriptor(numberOfBlocks, blockSize));
+        final BlockSetDescriptor descriptorSchema = new BlockSetDescriptor(descriptorsSchema);
+        final AddBlockSetRequest addBlockSetRequestSchema = new AddBlockSetRequest(null, descriptorSchema);
+        return asXml(addBlockSetRequestSchema);
+    }
+
+    private BlockSetDescriptor createDescriptors()
+    {
+        final Collection<BlockDescriptor> descriptors = new ArrayList<BlockDescriptor>();
+        descriptors.add(new BlockDescriptor(5, 6));
+        descriptors.add(new BlockDescriptor(10, 11));
+        return new BlockSetDescriptor(descriptors);
+    }
+
+    /**
+     * @return The bundle's configured data directory where files are to be written and read from.
+     */
+    protected File getDataDirectory()
+    {
+        final URI uri;
+        File dataDirectory = null;
+        try
+        {
+            uri = new URI(String.format("%s/blockset/", bundleContext.getProperty("osgi.instance.area")));
+            dataDirectory = new File(uri);
+            dataDirectory.mkdirs();
+            return dataDirectory;
+        }
+        catch (final URISyntaxException e)
+        {
+            //
+        }
+        return dataDirectory;
+    }
+
+    protected void verifyBlockSetsExist(final Integer expectedNumberOfBlockSets)
+    {
+        final File fileDir = new File(getDataDirectory(), "");
+        int fileCount = 0;
+        for (final File file : fileDir.listFiles())
+        {
+            if (!file.isDirectory() && file.getName().endsWith(".bs"))
+            {
+                fileCount++;
+            }
+        }
+        assertThat(String.format("Number of block set files does not match the expected count in directory: %s", fileDir), fileCount, is(expectedNumberOfBlockSets));
+    }
+
+    protected void deleteAllBlockSetFiles()
+    {
+        final File fileDir = new File(getDataDirectory(), "");
+        for (final File file : fileDir.listFiles())
+        {
+            if (!file.isDirectory() && file.getName().endsWith(".bs"))
+            {
+                assertThat(String.format("Unable to delete file %s", file.getName()), file.delete(), is(true));
+            }
+        }
+    }
+
+    protected void deleteBlockSetFile(final long blockSetId)
+    {
+        final String fileName = blockSetId + ".bs";
+        final File file = new File(getDataDirectory(), fileName);
+        assertThat(String.format("Unable to delete file %s", fileName), file.delete(), is(true));
+    }
+
+    protected void writeBlockSet(final long blockSetId) throws IOException
+    {
+        // Write out a block set file for deletion.
+        final ServiceReference serviceReference = bundleContext.getServiceReference(BlockSetRepository.class.getName());
+        final BlockSetRepository blockSetRepository = (BlockSetRepository)bundleContext.getService(serviceReference);
+        final ByteArrayInputStream inputStream = new ByteArrayInputStream(StringUtils.rightPad("A", 140).getBytes());
+        blockSetRepository.write(blockSetId, inputStream);
+        inputStream.close();
+    }
+
+    protected boolean putBlocksetAndWait(final InputStream stream, final String url) throws JMSException, IOException
+    {
+        for (int i = 0; i < 5; i++)
+        {
+            final String realUrl = String.format("http://%s:%s", "localhost", url);
+            final PutMethod method = new PutMethod(realUrl);
+            method.setRequestEntity(new InputStreamRequestEntity(stream));
+            method.setContentChunked(true);
+            try
+            {
+                // Using with HTTP client, as currently HTTPS is unsupported
+                final HttpClient httpClient = new HttpClient();
+                final int port = 8095;
+                httpClient.getHostConfiguration().setHost("localhost", port);
+
+                httpClient.executeMethod(method);
+                final int responseCode = method.getStatusCode();
+                if (responseCode >= 200 && responseCode < 300)
+                {
+                    // Return when we have successfully put the blockset on the server.
+                    final Long validId = Long.parseLong(method.getResponseHeader("Block-Set-Id").getValue());
+                    assertThat(validId, notNullValue());
+                    return true;
+                }
+            }
+            finally
+            {
+                method.releaseConnection();
+            }
+            try
+            {
+                Thread.sleep(500L);
+            }
+            catch (final InterruptedException e)
+            {
+                e.printStackTrace();
+            }
+        }
+        return false;
+    }
+
+    protected long addAndTransferBlockset(final byte[] blockSetContents, final int numberOfBlocks, final int blockSize) throws Exception
+    {
+        final ByteArrayInputStream inStream = new ByteArrayInputStream(blockSetContents);
+
+        final AddBlockSetResponse response = addBlockSetWithResponse(numberOfBlocks, blockSize);
+        putBlocksetAndWait(inStream, response.getUrl());
+        inStream.close();
+        return getBlockSetId(response);
+    }
+
+    protected void startAndWaitForBundle(final String symbolicName) throws BundleException
+    {
+        final Bundle bundle = getBundleReferenceBySymbolicName(symbolicName);
+        bundle.start();
+        waitOnContextCreation(symbolicName);
+    }
+
+    protected void stopAndWaitForBundle(final String symbolicName) throws Exception
+    {
+        final Bundle bundle = getBundleReferenceBySymbolicName(symbolicName);
+        bundle.stop();
+        waitForBundleShutdown(bundle);
+    }
+
+    protected Bundle getBundleReferenceBySymbolicName(final String symbolicName)
+    {
+        for (final Bundle bundle : bundleContext.getBundles())
+        {
+            if (bundle.getSymbolicName().equals(symbolicName))
+            {
+                return bundle;
+            }
+        }
+        throw new IllegalStateException("Unable to get a reference to the bundle." + symbolicName);
+    }
+
+    private long getBlockSetId(final AddBlockSetResponse response)
+    {
+        final Matcher matcher = Pattern.compile("\\d{13,}").matcher(response.getUrl());
+        matcher.find();
+        final long blockSetId = Long.parseLong(matcher.group());
+        assertThat(blockSetId, greaterThan(0L));
+        return blockSetId;
+    }
+
+    protected long addBlockSetPeriodicAndVerifyPersited(final long streamId, final long blockSetId, final MeteringType meteringType) throws Exception
+    {
+        final long periodicId = addBlockSetPeriodic(periodicProperties, System.currentTimeMillis(), null, 1, streamId, blockSetId, meteringType);
+        verifyPeriodicPersisted(periodicId);
+        return periodicId;
+    }
+
+    protected long addFunctionPeriodicAndVerifyPersisted(final long streamId) throws Exception
+    {
+        final long periodicId = addUnendingPeriodic(streamId, MPEG_PACKET_PAYLOAD_SIZE_FOR_FIRST_IN_SERIES, 1);
+        verifyPeriodicPersisted(periodicId);
+        return periodicId;
+    }
+
+    protected long createMPEG2Stream(final int port, final String ipAddress) throws Exception
+    {
+        final long streamId = createStreamOnAddressAndPort(getNextUniqueStreamPid(), TransmissionType.MPEG2, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, ipAddress, port);
+        return streamId;
+    }
+
+    protected void verifyPacketContainsExpectedBytesOfDataInFirstMpegPacketOfDataGramPacket(final DatagramPacket packet, final int dataByteCount) throws Exception
+    {
+        final byte[] actualData = ArrayUtils.subarray(packet.getData(), 4, dataByteCount + 5);
+        final byte[] data = new byte[dataByteCount + 1];
+        Arrays.fill(data, 0, dataByteCount, TEST_BLOCK_DATA_VALUE);
+        Arrays.fill(data, dataByteCount, dataByteCount + 1, (byte)0xFF);
+        assertThat(actualData, is(data));
+    }
+
+    /**
+     * Given a port and an array of MappingVerifiers, this method will assert that data is received from a UDP
+     * source on each of the out bound destinations in the MappingVerifiers.
+     *
+     * Example Usage:
+     *
+     *   final byte[] payload = new byte[188];
+     *   Arrays.fill(payload, (byte)0xFF);
+     *   final MappingVerifier verifier = new MappingVerifier(payload, new MappingVerifierComposite("127.0.0.1", 1234, true));
+     *   assertDataReceived(5678, verifier);
+     *
+     *
+     * @param inPort in bound port.
+     * @param verifiers array of verifiers to validate.
+     * @throws Exception
+     */
+    protected void assertDataReceivedForUdpSource(final int inPort, final MappingVerifier... verifiers) throws Exception
+    {
+        int testsPassed = 0;
+        int numOfDestinations = 0;
+
+        for (final MappingVerifier pidMappingVerifier : verifiers)
+        {
+            numOfDestinations += pidMappingVerifier.getStreamDestinationMappingInfos().size();
+
+            testsPassed += (dataReceivedInAllDestinationsFromUdpSource(inPort, pidMappingVerifier)).size();
+        }
+
+        assertThat(String.format("Expected %d tests to pass, %d actually passed. Please check debug log for additional information.", numOfDestinations, testsPassed), testsPassed, is(numOfDestinations));
+    }
+
+    /**
+     * Given a port and an array of MappingVerifiers, this method will assert that data is received
+     *  from a TCP Source on each of the out bound destinations in the MappingVerifiers.
+     *
+     * Example Usage:
+     *
+     *   final byte[] payload = new byte[188];
+     *   Arrays.fill(payload, (byte)0xFF);
+     *   final MappingVerifier verifier = new MappingVerifier(payload, new MappingVerifierComposite("127.0.0.1", 1234, true));
+     *   assertDataReceived(5678, verifier);
+     *
+     *
+     * @param inSocket in bound port.
+     * @param verifiers array of verifiers to validate.
+     * @throws Exception
+     */
+    protected void assertDataReceivedForTcpSource(final Socket inSocket, final MappingVerifier... verifiers) throws Exception
+    {
+        int testsPassed = 0;
+        int numOfDestinations = 0;
+
+        for (final MappingVerifier pidMappingVerifier : verifiers)
+        {
+            numOfDestinations += pidMappingVerifier.getStreamDestinationMappingInfos().size();
+            testsPassed += (dataReceivedInAllDestinationsFromTcpSource(inSocket, pidMappingVerifier)).size();
+        }
+
+        assertThat(String.format("Expected %d tests to pass, %d actually passed. Please check debug log for additional information.", numOfDestinations, testsPassed), testsPassed, is(numOfDestinations));
+    }
+
+    /**
+     * Given a port and an array of MappingVerifiers, this method ensures that data is received
+     * on each of the out bound destinations in the MappingVerifiers.
+     *
+     * @param inPort in bound port.
+     * @param verifiers array of verifiers to validate.
+     * @throws Exception
+     */
+    protected void dataReceived(final int inPort, final MappingVerifier... verifiers) throws Exception
+    {
+        for (final MappingVerifier pidMappingVerifier : verifiers)
+        {
+            dataReceivedInAllDestinationsFromUdpSource(inPort, pidMappingVerifier);
+        }
+    }
+
+    /*
+     * This method verifies data is received in all out bound destinations.
+     *
+     * A dataListenerThread is started for each destination, listening on the specified UDP port number inboundPort.
+     * The origPayload (specified in  mappingVerifier) is sent to inboundPort.
+     * For each destination if isMapped is true, the listener thread should receive a packet corresponding to the origPayload.
+     * If isMapped is false, the listener thread should not receive the packet.
+     *
+     * inboundPort UDP port where the incoming packets come from.
+     * pidMappingVerifier information of stream destinations to verify.
+     * return list of destination index which received expected data.
+     */
+    protected List<Integer> dataReceivedInAllDestinationsFromTcpSource(final Socket inboundSocket, final MappingVerifier mappingVerifier) throws Exception
+    {
+        final List<Integer> passedStreams = Lists.newArrayList();
+        final List<MappingVerifierComposite> destinationMappingInfos = mappingVerifier.getStreamDestinationMappingInfos();
+        final int numOfDestinations = destinationMappingInfos.size();
+        final CountDownLatch startSignal = new CountDownLatch(1);
+        final CountDownLatch doneSignal = new CountDownLatch(numOfDestinations);
+        final byte[] messageToSend;
+
+        if (mappingVerifier.getStreamDestinationMappingInfos().get(0).getType() == RouteDataType.BLOCKS)
+        {
+            messageToSend = payloadDataWithTcpLengthHeader(mappingVerifier.getOrigPayload());
+        }
+        else
+        {
+            messageToSend = mappingVerifier.getOrigPayload();
+        }
+
+        createAndStartListenerThreadsOnDestinations(passedStreams, destinationMappingInfos, numOfDestinations, startSignal, doneSignal, mappingVerifier.getOrigPayload());
+        try
+        {
+            logger.debug("Establishing tcp connection to to port {}", inboundSocket);
+            startSignal.countDown();
+            inboundSocket.getOutputStream().write(messageToSend);
+            logger.debug("Sent data via a tcp connection {} of size {}", messageToSend, messageToSend.length);
+        }
+        catch (final IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+        finally
+        {
+            doneSignal.await();
+        }
+        return passedStreams;
+    }
+
+    /*
+     * This method verifies data is received in all out bound destinations.
+     *
+     * A dataListenerThread is started for each destination, listening on the specified UDP port number inboundPort.
+     * The origPayload (specified in  mappingVerifier) is sent to inboundPort.
+     * For each destination if isMapped is true, the listener thread should receive a packet corresponding to the origPayload.
+     * If isMapped is false, the listener thread should not receive the packet.
+     *
+     * inboundPort UDP port where the incoming packets come from.
+     * pidMappingVerifier information of stream destinations to verify.
+     * return list of destination index which received expected data.
+     */
+    protected List<Integer> dataReceivedInAllDestinationsFromUdpSource(final int inboundPort, final MappingVerifier mappingVerifier) throws Exception
+    {
+        final List<Integer> passedStreams = Lists.newArrayList();
+        final List<MappingVerifierComposite> destinationMappingInfos = mappingVerifier.getStreamDestinationMappingInfos();
+        final int numOfDestinations = destinationMappingInfos.size();
+        final CountDownLatch startSignal = new CountDownLatch(1);
+        final CountDownLatch doneSignal = new CountDownLatch(numOfDestinations);
+        final byte[] udpPayload = mappingVerifier.getOrigPayload();
+
+        createAndStartListenerThreadsOnDestinations(passedStreams, destinationMappingInfos, numOfDestinations, startSignal, doneSignal, udpPayload);
+
+        final DatagramSocket socket = new DatagramSocket();
+        try
+        {
+            final DatagramPacket packet = new DatagramPacket(udpPayload, udpPayload.length, destinationMappingInfos.get(0).getSocketAddress().getAddress(), inboundPort);
+            startSignal.countDown();
+            socket.send(packet);
+        }
+        catch (final IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+        finally
+        {
+            doneSignal.await();
+            socket.close();
+        }
+        return passedStreams;
+    }
+
+    protected byte[] payloadDataWithTcpLengthHeader(final byte[] payload)
+    {
+        final int dataLength = payload.length;
+        final byte[] messageToSend = new byte[dataLength + TCP_PAYLOAD_SIZE_HEADER_LENGTH];
+
+        messageToSend[0] = (byte)(((dataLength & 0xFF000000) >> 24) & 0xFF);
+        messageToSend[1] = (byte)(((dataLength & 0x00FF0000) >> 16) & 0xFF);
+        messageToSend[2] = (byte)(((dataLength & 0x0000FF00) >> 8) & 0xFF);
+        messageToSend[3] = (byte)(((dataLength & 0x000000FF)) & 0xFF);
+
+        System.arraycopy(payload, 0, messageToSend, 4, dataLength);
+        return messageToSend;
+    }
+
+
+    private void createAndStartListenerThreadsOnDestinations(final List<Integer> passedStreams, final List<MappingVerifierComposite> destinationMappingInfos, final int numOfDestinations, final CountDownLatch startSignal, final CountDownLatch doneSignal, final byte[] udpPayload)
+    {
+        final ResultSetter setter = new ResultSetter()
+        {
+            public synchronized void setResult(final boolean succeeded, final int myIndex, final String resultString)
+            {
+                if (succeeded)
+                {
+                    passedStreams.add(myIndex);
+                }
+                else
+                {
+                    logger.error(String.format("Listener thread%d %s.", myIndex, resultString));
+                }
+            }
+        };
+
+        for (int i = 0; i < numOfDestinations; i++)
+        {
+            final DataListenerThread thread = new DataListenerThread(startSignal, doneSignal, setter, destinationMappingInfos.get(i), udpPayload, i, outputHandler);
+            thread.start();
+        }
+    }
+
+    public interface ResultSetter
+    {
+        void setResult(boolean succeeded, int myIndex, String failureString);
+    }
+
+    protected byte[] getDummyMpegPacket(final int inPid)
+    {
+        // adaptation field is not set.
+        final byte[] mpeg2Packet = new byte[188];
+        Arrays.fill(mpeg2Packet, (byte)0xFF);
+        final int startIndicatorAndPid = 0x0000FFFF & (0x00004000 | inPid);
+        final byte adaptationAndContinuityCounter = 0x10;
+
+        int mpeg2PacketIndex = 0;
+        final byte[] mpeg2HeaderWithStartIndicatorSet = new byte[4];
+        mpeg2HeaderWithStartIndicatorSet[0] = 0x47;
+        mpeg2HeaderWithStartIndicatorSet[1] = (byte)(0x000000FF & (startIndicatorAndPid >> 8));
+        mpeg2HeaderWithStartIndicatorSet[2] = (byte)(0x000000FF & startIndicatorAndPid);
+        mpeg2HeaderWithStartIndicatorSet[3] = adaptationAndContinuityCounter;
+
+        System.arraycopy(mpeg2HeaderWithStartIndicatorSet, 0, mpeg2Packet, mpeg2PacketIndex, mpeg2HeaderWithStartIndicatorSet.length);
+        mpeg2PacketIndex = mpeg2HeaderWithStartIndicatorSet.length;
+        mpeg2Packet[mpeg2PacketIndex++] = (byte)0x00;
+        final byte[] block27Bytes3ByteDescriptor = new byte[] {(byte)0xC2, (byte)0x30, (byte)0x1B, (byte)0x00, (byte)0x01, (byte)0x02, (byte)0x02, (byte)0x25, (byte)0x08, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x05, (byte)0x00, (byte)0x25, (byte)0x10, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x05, (byte)0x00, (byte)0x93, (byte)0x03, (byte)0xF5, (byte)0x00, (byte)0x00, (byte)0xE8, (byte)0x9A, (byte)0x46, (byte)0x50};
+        System.arraycopy(block27Bytes3ByteDescriptor, 0, mpeg2Packet, mpeg2PacketIndex, block27Bytes3ByteDescriptor.length);
+        mpeg2PacketIndex += block27Bytes3ByteDescriptor.length;
+        Arrays.fill(mpeg2Packet, mpeg2PacketIndex, 188, (byte)0xFF);
+
+        return mpeg2Packet;
+    }
+
+    protected byte[] getDummyBlockData()
+    {
+        final byte[] data = new byte[183];
+        Arrays.fill(data, (byte)0x64);
+        return data;
+    }
+
+    protected long establishAUdpRouteWithMpegData(final int port, final List<PidMapping> pidMappings) throws JMSException, JAXBException
+    {
+        return dssClient.establishUdpRoute(port, new MpegPacketRouteData(pidMappings));
+    }
+
+    protected int establishATcpRouteWithMpegData(final List<PidMapping> pidMappings) throws JMSException, JAXBException
+    {
+        return dssClient.establishTcpRoute(new MpegPacketRouteData(pidMappings));
+    }
+
+    protected long establishAUdpRouteWithBlockData(final int port, final Set<Long> streamIds) throws JMSException, JAXBException
+    {
+        return dssClient.establishUdpRoute(port, new BlockRouteData(streamIds));
+    }
+
+    protected int establishATcpRouteWithBlockData(final Set<Long> streamIds) throws Exception
+    {
+        return dssClient.establishTcpRoute(new BlockRouteData(streamIds));
+    }
+
+    protected void updateARouteWithBlockData(final long routeId, final Set<Long> streamIds) throws JAXBException, JMSException
+    {
+        dssClient.updateRoute(routeId, new BlockRouteData(streamIds));
+    }
+
+    protected List<UdpRouteSummary> queryForRoutesByProperties(final Map<String, String> properties) throws JMSException,
+    JAXBException
+    {
+        final TextMessage response = dssClient.queryForRoutesByProperties(properties);
+        final QueryForUdpRoutesResponse actualResponse = asMessageObject(response.getText(), QueryForUdpRoutesResponse.class);
+        final List<UdpRouteSummary> routes = actualResponse.getUdpRoutes();
+        return routes;
+    }
+
+    protected String replaceDataInXmlElement(final String xmlToModify, final String elementName, final String value)
+    {
+        final String expression = "<" + elementName + ">.+</" + elementName + ">";
+        return xmlToModify.replaceAll(expression, "<" + elementName + ">" + value + "</" + elementName + ">");
+    }
+
+    protected void listenForPacketsAtDestination(final Semaphore packetsReceived, final DatagramSocket anotherDatagramSocket,
+        final DatagramPacket anotherPacket)
+    {
+        final Runnable r = new Runnable()
+        {
+            public void run()
+            {
+                try
+                {
+                    outputHandler.receivePackets(anotherDatagramSocket, anotherPacket);
+                    packetsReceived.release();
+                }
+                catch (final Exception e)
+                {
+                    throw new RuntimeException(e);
+                }
+            }
+        };
+        new Thread(r).start();
+    }
+
+    protected MpegPacketRouteData anMpegPacketRouteData(final int streamPort, final String streamAddress, final int pidNumber) throws Exception
+    {
+        final long streamId = createMPEG2Stream(streamPort, streamAddress);
+        final PidMapping pidMapping = new PidMapping(pidNumber, Lists.newArrayList(streamId));
+        final MpegPacketRouteData mpegPacketRouteData = new MpegPacketRouteData(Collections.singletonList(pidMapping));
+        return mpegPacketRouteData;
+    }
+
+    protected StreamSummary queryForStreamById(final long streamId) throws JMSException, JAXBException
+    {
+        for (final StreamSummary stream : dssClient.queryForStreams(Maps.<String, String>newHashMap()))
+        {
+            if (stream.getId() == streamId)
+            {
+                return stream;
+            }
+        }
+        return null;
+    }
+
+    protected void verifyStreamPidOutsideReservedPidRanges(final StreamSummary stream, final List<IntegerRangeSummary> reservedPidRanges)
+    {
+        for (final IntegerRangeSummary pidRange : reservedPidRanges)
+        {
+            assertFalse("Stream PID found in reserved range.", stream.getPid() >= pidRange.getBegin() && stream.getPid() <= pidRange.getEnd());
+        }
+    }
+}

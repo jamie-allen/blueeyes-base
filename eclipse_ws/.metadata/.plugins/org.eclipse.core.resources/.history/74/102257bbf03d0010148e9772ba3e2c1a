@@ -1,0 +1,108 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.common;
+
+import java.nio.ByteBuffer;
+
+import com.ccadllc.commons.util.ByteUtility;
+import com.ccadllc.firebird.vms.common.packetfiltering.ForwardingPacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.Packet;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.Packets;
+
+import net.jcip.annotations.GuardedBy;
+import net.jcip.annotations.ThreadSafe;
+
+import com.google.common.base.Preconditions;
+
+/**
+ * Multiplexes blocks by inserting pid and continuity counter and releases the packets in correct order.
+ */
+@ThreadSafe
+public class Multiplexer extends ForwardingPacketFilter
+{
+    private static final Logger logger = LoggerFactory.getLogger(Multiplexer.class);
+    
+    /** Mpeg2Packet indexes. */
+    public static final int SYNC_BYTE_INDEX = 0;
+    public static final int PID_TOP_BYTE_INDEX = 1;
+    public static final int PID_BOTTOM_BYTE_INDEX = 2;
+    public static final int CC_BYTE_INDEX = 3;
+
+    /** PID masks for the first 4 bytes of the Mpeg2Packet. */
+    public static final int PID_MASK = 0x001fff00;
+    public static final int FIRST_4_BYTES_WITHOUT_PID_MASK = 0xffe000ff;
+
+    /** Continuity counter masks for the first 4 bytes of the Mpeg2Packet. */
+    public static final int CC_MASK = 0x0000000f;
+    public static final int FIRST_4_BYTES_WITHOUT_CC_MASK = 0xfffffff0;
+
+    private final Object lock = new Object();
+    private int continuityCounter = -1;
+    private final int shiftedPid;
+
+    public Multiplexer(final int pid, final PacketFilter sink)
+    {
+        super(sink);
+        // The bottom bit of the pid starts at the bottom of the third byte. Therefore the passed in pid
+        // must be shifted 8 positions to the left.
+        shiftedPid = pid << 8;
+    }
+
+    @Override
+    @GuardedBy("lock")
+    public boolean insert(final Packet packets)
+    {
+        synchronized (lock)
+        {
+            // Ensure that the block of packets is divisible by 188.
+            Preconditions.checkArgument(packets.getData().length % Mpeg2Packet.PACKET_SIZE_IN_BYTES == 0, "block size not a multiple of Mpeg2 packet size");
+
+            final ByteBuffer packetsToProcessBuffer = ByteBuffer.wrap(packets.getData());
+            while (packetsToProcessBuffer.hasRemaining())
+            {
+                final byte[] packet = new byte[Mpeg2Packet.PACKET_SIZE_IN_BYTES];
+                for (int i = 0; i < Mpeg2Packet.PACKET_SIZE_IN_BYTES; i++)
+                {
+                    packet[i] = packetsToProcessBuffer.get();
+                }
+
+                // Convert the first 4 bytes in the packet to an integer.
+                final byte[] first4Bytes = new byte[] {packet[SYNC_BYTE_INDEX],
+                    packet[PID_TOP_BYTE_INDEX],
+                    packet[PID_BOTTOM_BYTE_INDEX],
+                    packet[CC_BYTE_INDEX]};
+
+                // Convert the first 4 bytes to an int.
+                final int first4BytesAsInt = ByteUtility.toInteger(first4Bytes);
+
+                // Replace the existing pid with the new pid value.
+                final int first4BytesWithCorrectedPid = (shiftedPid & PID_MASK) | (first4BytesAsInt & FIRST_4_BYTES_WITHOUT_PID_MASK);
+
+                // Replace the existing continuity counter with the new value.
+                int first4BytesWithCorrectedPidAndCc = (nextContinuityCounter() & CC_MASK) | (first4BytesWithCorrectedPid & FIRST_4_BYTES_WITHOUT_CC_MASK);
+
+                // Replace the first 4 bytes in the mpeg2 packet.
+                for (int i = 3; i >= 0; i--)
+                {
+                    packet[i] = (byte)first4BytesWithCorrectedPidAndCc;
+                    first4BytesWithCorrectedPidAndCc >>= 8;
+                }
+
+                if (!sink().insert(Packets.wrap(packet)))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private int nextContinuityCounter()
+    {
+        ++continuityCounter;
+        continuityCounter %= Mpeg2Packet.MAX_CONTINUITY_COUNTER;
+        return continuityCounter;
+    }
+
+}

@@ -1,0 +1,141 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import static org.easymock.EasyMock.expect;
+
+import java.util.Collections;
+import java.util.Set;
+
+import com.ccadllc.commons.util.concurrent.ExecutorBuilder;
+import com.ccadllc.firebird.dss.common.datatypes.RouteDataType;
+import com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.management.JmxRouteNotificationManager;
+
+import org.easymock.EasyMock;
+
+import com.google.common.collect.Maps;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Multimaps;
+import com.google.common.collect.Sets;
+
+public final class RouteManagerUnitTestUtility
+{
+    private static final Long STREAM_ID1 = 1L;
+    private static final Long STREAM_ID2 = 2L;
+    private static final Long STREAM_ID3 = 3L;
+    private static final Integer PID1 = 1503;
+    private static final Integer PID2 = 1504;
+
+    private RouteManagerUnitTestUtility()
+    {
+    }
+
+    public static RouteSnapshot createUdpBlockRouteSnapshot(final long id, final int port, final Set<Long> streamIds)
+    {
+        return createBlockRouteSnapshot(id, "127.0.0.1", port, streamIds, TransportProtocolType.UDP, RouteDataType.BLOCKS);
+    }
+
+    public static RouteSnapshot createUdpMpeg2RouteSnapshot(final long id, final int port,
+        final Multimap<Integer, Long> pidStreamMappings)
+    {
+        return createMpeg2RouteSnapshot(id, "127.0.0.1", port, pidStreamMappings, TransportProtocolType.UDP,
+            RouteDataType.MPEG_PACKETS);
+    }
+
+    public static RouteSnapshot createTcpMpeg2RouteSnapshot(final long id, final int port,
+        final Multimap<Integer, Long> pidStreamMappings)
+    {
+        return createMpeg2RouteSnapshot(id, "127.0.0.1", port, pidStreamMappings, TransportProtocolType.TCP,
+            RouteDataType.MPEG_PACKETS);
+    }
+
+    public static RouteSnapshot createTcpBlockRouteSnapshot(final long id, final int port, final Set<Long> streamIds)
+    {
+        return createBlockRouteSnapshot(id, "127.0.0.1", port, streamIds, TransportProtocolType.TCP, RouteDataType.BLOCKS);
+    }
+
+    public static JmxRouteNotificationManager getStubbedNotifier()
+    {
+        return new JmxRouteNotificationManager(new ExecutorBuilder("testExecutor").setCorePoolSize(1).build());
+    }
+
+    public static Set<Long> getEmptyStreamsList()
+    {
+        return Collections.emptySet();
+    }
+
+    private static RouteSnapshot createMpeg2RouteSnapshot(final long id, final String ipAddress, final int port,
+        final Multimap<Integer, Long> pidMappings, final TransportProtocolType type, final RouteDataType routeDataType)
+    {
+        final RouteSnapshot mockRouteSnapshot = EasyMock.createNiceMock(RouteSnapshot.class);
+        expect(mockRouteSnapshot.getId()).andStubReturn(id);
+        expect(mockRouteSnapshot.getPort()).andStubReturn(port);
+        expect(mockRouteSnapshot.getPidMappings()).andStubReturn(pidMappings);
+        expect(mockRouteSnapshot.getDataType()).andStubReturn(routeDataType);
+        expect(mockRouteSnapshot.getTransportProtocolType()).andStubReturn(type);
+        if (type == TransportProtocolType.UDP)
+        {
+            expect(mockRouteSnapshot.getProperties()).andStubReturn(Maps.<String, String>newHashMap());
+        }
+        EasyMock.replay(mockRouteSnapshot);
+        return mockRouteSnapshot;
+    }
+
+    private static RouteSnapshot createBlockRouteSnapshot(final long id, final String ipAddress, final int port,
+        final Set<Long> streamIds, final TransportProtocolType type, final RouteDataType routeDataType)
+    {
+        final RouteSnapshot mockRouteSnapshot = EasyMock.createNiceMock(RouteSnapshot.class);
+        expect(mockRouteSnapshot.getId()).andStubReturn(id);
+        expect(mockRouteSnapshot.getPort()).andStubReturn(port);
+        expect(mockRouteSnapshot.getStreamIds()).andStubReturn(streamIds);
+        expect(mockRouteSnapshot.getDataType()).andStubReturn(routeDataType);
+        expect(mockRouteSnapshot.getTransportProtocolType()).andStubReturn(type);
+        if (type == TransportProtocolType.UDP)
+        {
+            expect(mockRouteSnapshot.getProperties()).andStubReturn(Maps.<String, String>newHashMap());
+        }
+        EasyMock.replay(mockRouteSnapshot);
+        return mockRouteSnapshot;
+    }
+
+    public static Multimap<Integer, Long> createPidStreamMappings()
+    {
+        final Multimap<Integer, Long> pidStreamMappings = createEmptyPidMappings();
+        pidStreamMappings.put(PID1, STREAM_ID1);
+        pidStreamMappings.put(PID1, STREAM_ID2);
+        pidStreamMappings.put(PID2, STREAM_ID2);
+        pidStreamMappings.put(PID2, STREAM_ID3);
+        return pidStreamMappings;
+    }
+
+    public static Multimap<Integer, Long> createPidStreamMappingFromStreamIds(final Set<Long> streamIds)
+    {
+        final Multimap<Integer, Long> pidStreamMappings = createEmptyPidMappings();
+        for (final Long streamId : streamIds)
+        {
+            pidStreamMappings.put(PID1, streamId);
+        }
+
+        return pidStreamMappings;
+    }
+
+    public static Multimap<Integer, Long> createEmptyPidMappings()
+    {
+        return Multimaps.<Integer, Long>newArrayListMultimap();
+    }
+
+    public static Set<Long> createStreamIdsList()
+    {
+        final Set<Long> streamIds = createEmptyStreamIdsList();
+        streamIds.add(STREAM_ID1);
+        streamIds.add(STREAM_ID2);
+        streamIds.add(STREAM_ID3);
+        return streamIds;
+    }
+
+    public static Set<Long> createEmptyStreamIdsList()
+    {
+        return Sets.newHashSet();
+    }
+}

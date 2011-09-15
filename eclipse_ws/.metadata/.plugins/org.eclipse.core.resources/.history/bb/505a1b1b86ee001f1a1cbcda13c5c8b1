@@ -1,0 +1,303 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.core.base.common.util;
+
+import javax.xml.xpath.XPath;
+import javax.xml.xpath.XPathConstants;
+import javax.xml.xpath.XPathExpressionException;
+import javax.xml.xpath.XPathFactory;
+
+import org.apache.commons.lang.StringUtils;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+
+/** Utility methods for working with XPath expressions. */
+public final class XPathUtility
+{
+    private static final ThreadLocal<XPath> XPATH = new ThreadLocal<XPath>()
+    {
+        @Override
+        protected XPath initialValue()
+        {
+            return XPathFactory.newInstance().newXPath();
+        }
+    };
+
+    /** Private constructor to prevent instantiation. */
+    private XPathUtility()
+    {
+    }
+
+    /**
+     * Parses a <code>NodeList</code> from a given expression.
+     *
+     * @param item to evaluate for list
+     * @param expression XPath expression used to evaluate the item
+     * @return list of nodes
+     * @throws IllegalArgumentException thrown if the list is not detected.
+     */
+    public static NodeList parseNodeList(final Node item, final String expression)
+    {
+        try
+        {
+            return (NodeList)XPATH.get().evaluate(expression, item, XPathConstants.NODESET);
+        }
+        catch (final XPathExpressionException xpee)
+        {
+            throw new IllegalArgumentException(xpee);
+        }
+    }
+
+    /**
+     * Parses a <code>Node</code> from a given expression.
+     *
+     * @param item to evaluate for node
+     * @param expression XPath expression used to evaluate the item
+     * @return nested node
+     * @throws IllegalArgumentException thrown if the node is not detected.
+     */
+    public static Node parseNode(final Node item, final String expression)
+    {
+        try
+        {
+            return (Node)XPATH.get().evaluate(expression, item, XPathConstants.NODE);
+        }
+        catch (final XPathExpressionException xpee)
+        {
+            throw new IllegalArgumentException(xpee);
+        }
+    }
+
+    /**
+     * Parses a required <code>NodeList</code> from a given expression, raising an error if none exists.
+     *
+     * @param item to evaluate for list
+     * @param expression XPath expression used to evaluate the item
+     * @param errorMessage to use if required list can not be returned.
+     * @return list of nodes
+     * @throws IllegalArgumentException thrown if the required list is not detected.
+     */
+    public static NodeList parseRequiredNodeList(final Node item, final String expression, final String errorMessage)
+    {
+        try
+        {
+            final NodeList nodes = (NodeList)XPATH.get().evaluate(expression, item, XPathConstants.NODESET);
+            if (nodes.getLength() == 0)
+            {
+                throw new IllegalArgumentException(errorMessage);
+            }
+            return nodes;
+        }
+        catch (final XPathExpressionException xpee)
+        {
+            throw new IllegalArgumentException(errorMessage, xpee);
+        }
+    }
+
+    /**
+     * Parses a required long from a given expression, raising an error if none exists.
+     *
+     * @param item to evaluate for long
+     * @param expression XPath expression used to evaluate the item
+     * @param errorMessage to use if required long can not be returned.
+     * @return long value
+     * @throws IllegalArgumentException thrown if the required long is not detected.
+     */
+    public static long parseRequiredLong(final Node item, final String expression, final String errorMessage)
+    {
+        try
+        {
+            return Long.parseLong(XPATH.get().evaluate(expression, item));
+        }
+        catch (final NumberFormatException nfe)
+        {
+            throw new IllegalArgumentException(errorMessage, nfe);
+        }
+        catch (final XPathExpressionException xpee)
+        {
+            throw new IllegalArgumentException(errorMessage, xpee);
+        }
+    }
+
+    /**
+     * Parses a long from a given expression.
+     *
+     * @param item to evaluate for long
+     * @param expression XPath expression used to evaluate the item
+     * @return long value
+     * @throws IllegalArgumentException thrown if the long is not detected.
+     */
+    public static Long parseLong(final Node item, final String expression)
+    {
+        try
+        {
+            final String longValue = XPATH.get().evaluate(expression, item);
+            if (StringUtils.isNotEmpty(longValue))
+            {
+                return Long.parseLong(longValue);
+            }
+            else
+            {
+                return null;
+            }
+        }
+        catch (final NumberFormatException nfe)
+        {
+            throw new IllegalArgumentException(nfe);
+        }
+        catch (final XPathExpressionException xpee)
+        {
+            throw new IllegalArgumentException(xpee);
+        }
+    }
+
+    /**
+     * Parses a required integer from a given expression, raising an error if none exists.
+     *
+     * @param item to evaluate for integer
+     * @param expression XPath expression used to evaluate the item
+     * @param errorMessage to use if required integer can not be returned.
+     * @return integer value
+     * @throws IllegalArgumentException thrown if the required integer is not detected.
+     */
+    public static int parseRequiredInt(final Node item, final String expression, final String errorMessage)
+    {
+        try
+        {
+            return Integer.parseInt(XPATH.get().evaluate(expression, item));
+        }
+        catch (final NumberFormatException nfe)
+        {
+            throw new IllegalArgumentException(errorMessage, nfe);
+        }
+        catch (final XPathExpressionException xpee)
+        {
+            throw new IllegalArgumentException(errorMessage, xpee);
+        }
+    }
+
+    /**
+     * Parses an integer from a given expression.
+     *
+     * @param item to evaluate for integer
+     * @param expression XPath expression used to evaluate the item
+     * @return integer value
+     */
+    public static Integer parseInt(final Node item, final String expression)
+    {
+        try
+        {
+            final String intValue = XPATH.get().evaluate(expression, item);
+            if (StringUtils.isNotEmpty(intValue))
+            {
+                return Integer.parseInt(intValue);
+            }
+            else
+            {
+                return null;
+            }
+        }
+        catch (final NumberFormatException nfe)
+        {
+            throw new IllegalArgumentException(nfe);
+        }
+        catch (final XPathExpressionException xpee)
+        {
+            throw new IllegalArgumentException(xpee);
+        }
+    }
+
+    /**
+     * Parses a required boolean from a given expression, raising an error if none exists.
+     *
+     * @param item to evaluate for boolean
+     * @param expression XPath expression used to evaluate the item
+     * @param errorMessage to use if required integer can not be returned.
+     * @return boolean value
+     * @throws IllegalArgumentException thrown if the required integer is not detected.
+     */
+    public static boolean parseRequiredBoolean(final Node item, final String expression, final String errorMessage)
+    {
+        final Boolean value = parseBoolean(item, expression);
+        if (value == null)
+        {
+            throw new IllegalArgumentException(errorMessage);
+        }
+
+        return value;
+    }
+
+    /**
+     * Parses an boolean from a given expression.
+     *
+     * @param item to evaluate for boolean
+     * @param expression XPath expression used to evaluate the item
+     * @return boolean value
+     */
+    public static Boolean parseBoolean(final Node item, final String expression)
+    {
+        try
+        {
+            final String value = XPATH.get().evaluate(expression, item);
+            if (StringUtils.isNotEmpty(value))
+            {
+                return TextParsingUtility.validateBooleanStringValue(value);
+//                return Boolean.parseBoolean(value);
+            }
+            else
+            {
+                return null;
+            }
+        }
+        catch (final XPathExpressionException xpee)
+        {
+            throw new IllegalArgumentException(xpee);
+        }
+    }
+
+    /**
+     * Parses a string from a given expression.
+     *
+     * @param item to evaluate for integer
+     * @param expression XPath expression used to evaluate the item
+     * @return string value
+     * @throws IllegalArgumentException thrown if the string is not detected
+     */
+    public static String parseString(final Node item, final String expression)
+    {
+        try
+        {
+            return XPATH.get().evaluate(expression, item);
+        }
+        catch (final XPathExpressionException xpee)
+        {
+            throw new IllegalArgumentException(xpee);
+        }
+    }
+
+    /**
+     * Parses a string from a given expression.
+     *
+     * @param item to evaluate for integer
+     * @param expression XPath expression used to evaluate the item
+     * @param errorMessage to use if required integer can not be returned
+     * @return string value
+     * @throws IllegalArgumentException thrown if the string is not detected
+     */
+    public static String parseRequiredString(final Node item, final String expression, final String errorMessage)
+    {
+        try
+        {
+            final String str = XPATH.get().evaluate(expression, item);
+            if (StringUtils.isEmpty(str))
+            {
+                throw new IllegalArgumentException(errorMessage);
+            }
+            return str;
+        }
+        catch (final XPathExpressionException xpee)
+        {
+            throw new IllegalArgumentException(errorMessage, xpee);
+        }
+    }
+
+}

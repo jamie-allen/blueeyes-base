@@ -1,0 +1,8 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+/**
+ * Public API for managing routes.  Only TCP transient routes should be provisioned 
+ * through this external interface, as UDP persistent routes are provisioned via
+ * the reception of OSGi events from the RealTimeSnapshotManager.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager;
+

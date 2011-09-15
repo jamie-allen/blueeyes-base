@@ -1,0 +1,64 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.topology.core;
+
+import net.jcip.annotations.Immutable;
+
+import org.apache.commons.lang.builder.EqualsBuilder;
+import org.apache.commons.lang.builder.HashCodeBuilder;
+import org.hamcrest.Matcher;
+
+import com.google.common.base.Preconditions;
+
+
+@Immutable
+public final class StreamQualifier
+{
+    private final String id;
+    private final String name;
+    private final Matcher<Stream> matcher;
+
+    public StreamQualifier(final String id, final String name, final Matcher<Stream> matcher)
+    {
+        Preconditions.checkNotNull(id, "id");
+        Preconditions.checkNotNull(name, "name");
+        Preconditions.checkNotNull(matcher, "matcher");
+
+
+        this.id = id;
+        this.name = name;
+        this.matcher = matcher;
+    }
+
+    public String getId()
+    {
+        return id;
+    }
+
+    public String getName()
+    {
+        return name;
+    }
+
+    public Matcher<Stream> getMatcher()
+    {
+        return matcher;
+    }
+
+    @Override
+    public int hashCode()
+    {
+        return HashCodeBuilder.reflectionHashCode(this);
+    }
+
+    @Override
+    public boolean equals(final Object obj)
+    {
+        return EqualsBuilder.reflectionEquals(this, obj);
+    }
+
+    @Override
+    public String toString()
+    {
+        return id;
+    }
+}

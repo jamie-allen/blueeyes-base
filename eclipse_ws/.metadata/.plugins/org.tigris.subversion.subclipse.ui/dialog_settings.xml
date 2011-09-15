@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<section name="Workbench">
+	<item value="2214" key="ExportRemoteFolderDialog.location.x"/>
+	<item value="371" key="RevertDialog.location.x"/>
+	<item value="1865" key="DifferencesDialog.location.x"/>
+	<item value="1" key="RevertDialog.sortColumn"/>
+	<item value="214" key="RevertDialog.location.y"/>
+	<item value="428" key="ExportRemoteFolderDialog.location.y"/>
+	<item value="538" key="RevertDialog.size.x"/>
+	<item value="426" key="RevertDialog.size.y"/>
+	<item value="150" key="HistoryTableProvider.SVNHistoryPage.Date"/>
+	<item value="421" key="DifferencesDialog.size.y"/>
+	<item value="https://acropolis/svn/repos/firebird/vms/dss-plugin/branches/RB_3.0/server/configuration/stream-domain/src/main/resources/META-INF/liquibase/changeLog.xml" key="UrlCombo.ccad-firebird-dss-server-configuration-stream-domain.0"/>
+	<item value="1071" key="DifferencesDialog.size.x"/>
+	<item value="320" key="DifferencesDialog.location.y"/>
+	<item value="555" key="CommitDialog.weights.0"/>
+	<item value="https://acropolis/svn/repos/firebird/vms/dss-plugin/branches/RB_3.0/server/configuration/route-domain/src/main/resources/META-INF/liquibase/changeLog.xml" key="UrlCombo.ccad-firebird-dss-server-configuration-route-domain.0"/>
+	<item value="477" key="ChooseUrlDialog.size.x"/>
+	<item value="444" key="CommitDialog.weights.1"/>
+	<item value="351" key="ChooseUrlDialog.size.y"/>
+	<item value="694" key="ShowDifferencesAsUnifiedDiffDialogWC.size.x"/>
+	<item value="457" key="MarkResolvedDialog.location.x"/>
+	<item value="341" key="ShowDifferencesAsUnifiedDiffDialogWC.size.y"/>
+	<item value="187" key="MarkResolvedDialog.location.y"/>
+	<item value="915" key="AnnotateDialog.location.x"/>
+	<item value="324" key="AnnotateDialog.location.y"/>
+	<item value="150" key="RevertDialog.column3"/>
+	<item value="150" key="RevertDialog.column2"/>
+	<item value="561" key="RevertDialog.column1"/>
+	<item value="148" key="CommitDialog.location.y"/>
+	<item value="361" key="CommitDialog.location.x"/>
+	<item value="20" key="RevertDialog.column0"/>
+	<item value="530" key="MarkResolvedDialog.size.x"/>
+	<item value="411" key="MarkResolvedDialog.size.y"/>
+	<item value="false" key="RevertDialog.sortReversed"/>
+	<item value="2053" key="ShowDifferencesAsUnifiedDiffDialogWC.location.x"/>
+	<item value="373" key="ShowDifferencesAsUnifiedDiffDialogWC.location.y"/>
+	<item value="414" key="AnnotateDialog.size.y"/>
+	<item value="525" key="AnnotateDialog.size.x"/>
+	<item value="259" key="ExportRemoteFolderDialog.size.y"/>
+	<item value="373" key="ExportRemoteFolderDialog.size.x"/>
+	<item value="1" key="CommitDialog.sortColumn"/>
+	<item value="150" key="CommitDialog.column2"/>
+	<item value="549" key="CommitDialog.column1"/>
+	<item value="2162" key="ChooseUrlDialog.location.x"/>
+	<item value="582" key="HistoryTableProvider.SVNHistoryPage.Comment"/>
+	<item value="309" key="ChooseUrlDialog.location.y"/>
+	<item value="150" key="CommitDialog.column3"/>
+	<item value="20" key="CommitDialog.column0"/>
+	<item value="78" key="HistoryTableProvider.SVNHistoryPage.Revision"/>
+	<item value="79" key="HistoryTableProvider.SVNHistoryPage.Author"/>
+	<item value="false" key="CommitDialog.sortReversed"/>
+	<item value="558" key="CommitDialog.size.x"/>
+	<item value="525" key="CommitDialog.size.y"/>
+	<section name="NewLocationWizard">
+		<list key="ConfigurationWizardMainPage.STORE_URL_ID">
+			<item value="https://acropolis/svn/repos/firebird"/>
+		</list>
+	</section>
+	<section name="SynchronizeResourceSelectionDialog">
+		<item value="" key="SynchronizeResourceSelectionDialog.STORE_WORKING_SETS"/>
+	</section>
+</section>

@@ -1,0 +1,159 @@
+/*
+ * Copyright 2006 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.commons.util.concurrent.support;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
+import net.jcip.annotations.ThreadSafe;
+
+/**
+ * <code>ExecutorService</code> implementation that delegates all operations to another <code>ExecutorService</code>.
+ * <p>
+ * This class is intended to be subclassed to provide selective custom implementations of the methods of
+ * <code>ExecutorService</code>.
+ * </p>
+ */
+@ThreadSafe
+public class DelegatingExecutorService implements ExecutorService
+{
+    /**
+     * <code>ExecutorService</code> to delegate to.
+     */
+    private final ExecutorService target;
+
+    /**
+     * Constructs a <code>DelegatingExecutorService</code>.
+     * 
+     * @param target service to delegate to
+     */
+    public DelegatingExecutorService(final ExecutorService target)
+    {
+        assert target != null;
+
+        this.target = target;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public boolean awaitTermination(final long timeout, final TimeUnit unit) throws InterruptedException
+    {
+        return target.awaitTermination(timeout, unit);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public void execute(final Runnable command)
+    {
+        target.execute(command);
+    }
+
+    /**
+     * Gets the <code>ExecutorService</code> to delegate to.
+     * 
+     * @return non-null <code>ExecutorService</code>
+     */
+    protected ExecutorService getTarget()
+    {
+        return target;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public <T> List<Future<T>> invokeAll(final Collection tasks) throws InterruptedException
+    {
+        return (T)target.invokeAll(tasks);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public <T> List<Future<T>> invokeAll(final Collection tasks, final long timeout, final TimeUnit unit)
+        throws InterruptedException
+    {
+        return (List<Future<T>>)target.invokeAll(tasks, timeout, unit);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public <T> T invokeAny(final Collection tasks) throws InterruptedException, ExecutionException
+    {
+        return (T)target.invokeAny(tasks);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public <T> T invokeAny(final Collection tasks, final long timeout, final TimeUnit unit) throws InterruptedException,
+        ExecutionException, TimeoutException
+    {
+        return (T)target.invokeAny(tasks, timeout, unit);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public boolean isShutdown()
+    {
+        return target.isShutdown();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public boolean isTerminated()
+    {
+        return target.isTerminated();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public void shutdown()
+    {
+        target.shutdown();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public List<Runnable> shutdownNow()
+    {
+        return target.shutdownNow();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public <T> Future<T> submit(final Callable<T> task)
+    {
+        return target.submit(task);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public Future<?> submit(final Runnable task)
+    {
+        return target.submit(task);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public <T> Future<T> submit(final Runnable task, final T result)
+    {
+        return target.submit(task, result);
+    }
+}

@@ -1,0 +1,134 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.core.serviceability.reporter.impl.report;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.util.Date;
+import java.util.Map;
+
+import com.ccadllc.firebird.core.serviceability.reporter.ReportGenerationException;
+import com.ccadllc.firebird.core.serviceability.reporter.ReportType;
+
+import net.sf.json.JSONObject;
+import net.sf.json.JsonConfig;
+import net.sf.json.util.CycleDetectionStrategy;
+
+import org.joda.time.DateTime;
+import org.joda.time.DateTimeZone;
+import org.joda.time.format.ISODateTimeFormat;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/** Writes report data to a stream. */
+public class StreamWriterJsonReport implements Report
+{
+    private static final String REPORT_TYPE = "reportType";
+    private static final String REPORT_DATETIME = "reportDateTime";
+
+    private OutputStreamWriter streamWriter;
+
+    private final Logger logger = LoggerFactory.getLogger(StreamWriterJsonReport.class);
+
+    private final JsonConfig jsonConfig;
+
+    public StreamWriterJsonReport(final OutputStream stream)
+    {
+        setStreamWriter(new OutputStreamWriter(stream));
+        jsonConfig = new JsonConfig();
+        jsonConfig.registerJsonValueProcessor(Object.class, new SpecialNumberValueProcessor());
+//        jsonConfig.registerJsonValueProcessor(Double.class, new SpecialNumberValueProcessor());
+//        jsonConfig.registerJsonValueProcessor(Float.class, new SpecialNumberValueProcessor());
+        jsonConfig.setCycleDetectionStrategy(CycleDetectionStrategy.NOPROP);
+//        jsonConfig.registerJsonValueProcessor(Date.class, new DateProcessor());
+    }
+
+    protected void setStreamWriter(final OutputStreamWriter streamWriter)
+    {
+        this.streamWriter = streamWriter;
+    }
+
+
+    @Override
+    public void end()
+    {
+        logger.trace("End report");
+        try
+        {
+            streamWriter.append("}}");
+        }
+        catch (final IOException ioex)
+        {
+            throw ReportGenerationException.newException("Error writing closing of report", ioex);
+        }
+        try
+        {
+            streamWriter.flush();
+        }
+        catch (final IOException ioex)
+        {
+            throw ReportGenerationException.newException("Exception while attempting to flush report stream.", ioex);
+        }
+    }
+
+    @Override
+    public void start(final ReportType reportType)
+    {
+        try
+        {
+            streamWriter.append("{\"diagnostic-report\":{ ");
+            appendKeyValue(REPORT_TYPE, reportType.toString());
+            streamWriter.append(",");
+            appendKeyValue(REPORT_DATETIME, ISODateTimeFormat.basicDateTimeNoMillis().print(new DateTime(DateTimeZone.UTC)));
+        }
+        catch (final IOException ioex)
+        {
+            throw ReportGenerationException.newException("Error writing opening of report", ioex);
+        }
+
+        logger.trace("Start report");
+    }
+
+    private void appendKeyValue(final String key, final String value) throws IOException
+    {
+        streamWriter.append("\"").append(key).append("\"").append(": ").append("\"").append(value).append("\"");
+    }
+
+    @Override
+    public void write(final String bundleName, final Map<String, Object> data)
+    {
+        final StringBuffer jsonBuffer = new StringBuffer();
+        try
+        {
+            jsonBuffer.append(",");
+
+            final JSONObject dataObject = JSONObject.fromObject(data, jsonConfig);
+            jsonBuffer.append("\"")
+                .append(bundleName)
+                .append("\":")
+                .append(dataObject.toString(1));
+        }
+        catch (final RuntimeException rex)
+        {
+            logger.error("Exception occurred while formatting report data for bundle {}. Data was {}",  new Object[] {bundleName, data});
+            logger.error("Exception: ", rex);
+        }
+        try
+        {
+            if (logger.isTraceEnabled())
+            {
+                logger.trace("json data {}", jsonBuffer.toString());
+            }
+            streamWriter.write(jsonBuffer.toString());
+        }
+        catch (final IOException ioex)
+        {
+            throw new ReportGenerationException("Exception while writing to report output stream.", ioex);
+        }
+
+
+    }
+
+}

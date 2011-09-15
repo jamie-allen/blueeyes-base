@@ -1,0 +1,424 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.standalone.stream.manager;
+
+import static com.ccadllc.firebird.dss.common.datatypes.TransmissionType.DSG_BROADCAST_TUNNEL;
+import static com.ccadllc.firebird.dss.common.datatypes.TransmissionType.IP_DIRECT;
+import static com.ccadllc.firebird.dss.common.datatypes.TransmissionType.MPEG2;
+import static com.ccadllc.firebird.dss.server.configuration.manager.ConfigManager.MTU_SIZE;
+import static org.easymock.EasyMock.createControl;
+import static org.easymock.EasyMock.expect;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.net.InetSocketAddress;
+import java.util.Collections;
+import java.util.Dictionary;
+import java.util.HashMap;
+import java.util.Hashtable;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentMap;
+
+import com.ccadllc.commons.util.MapUtility;
+import com.ccadllc.commons.util.concurrent.CallbackSupportingScheduledExecutorService;
+import com.ccadllc.commons.util.concurrent.ExecutorBuilder;
+import com.ccadllc.firebird.dss.common.datatypes.StreamType;
+import com.ccadllc.firebird.dss.common.datatypes.TransmissionType;
+import com.ccadllc.firebird.dss.server.common.OsgiEventPropertyKeys;
+import com.ccadllc.firebird.dss.server.common.PacketFilterChainController;
+import com.ccadllc.firebird.dss.server.common.StreamSnapshot;
+import com.ccadllc.firebird.dss.server.configuration.manager.ConfigManager;
+import com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.impl.DefaultStreamManager;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.impl.DsgBtPacketizer;
+import com.ccadllc.firebird.dss.server.realtime.transport.manager.TransportManager;
+import com.ccadllc.firebird.vms.common.packetfiltering.CompositePacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilter;
+
+import org.easymock.EasyMock;
+import org.easymock.IMocksControl;
+import org.osgi.service.event.Event;
+import org.springframework.util.ReflectionUtils;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.DataProvider;
+import org.testng.annotations.Test;
+
+import com.google.common.collect.Sets;
+
+@Test
+public class DefaultStreamManagerTest
+{
+    private static final int MAX_AVERAGE = 10;
+    private static final int MAX_BURST = 20;
+    private static final int MAX_LATENCY = 30;
+    private static final int DEFAULT_MTU_SIZE = 1500;
+    private static final int IP_HEADER_SIZE = 20;
+    private static final int UDP_HEADER_SIZE = 8;
+    private static final int BT_HEADER_SIZE = 4;
+    private static final int MAX_UDP_SIZE = 65535;
+    private static final int MIN_MTU_SIZE = IP_HEADER_SIZE + UDP_HEADER_SIZE;
+    private static final int MAX_MTU_SIZE = IP_HEADER_SIZE + MAX_UDP_SIZE;
+
+    private static final Map<String, String> STREAM_PROPERTIES = MapUtility.toMap("dta.key", "network.stream");
+
+    private IMocksControl mocks;
+    private TransportManager mockTransportManager;
+    private RealTimeSnapshotManager mockRealTimeSnapshotManager;
+    private CallbackSupportingScheduledExecutorService executor;
+    private ConfigManager mockConfigManager;
+    private int portId = 5000;
+    private DefaultStreamManager streamManager;
+
+    @BeforeMethod
+    public void setUp() throws IOException
+    {
+        mocks = createControl();
+        executor = new ExecutorBuilder("testExecutor").setCorePoolSize(1).build();
+
+        mockTransportManager = EasyMock.createNiceMock(TransportManager.class);
+        EasyMock.replay(mockTransportManager);
+
+        mockRealTimeSnapshotManager = mocks.createMock(RealTimeSnapshotManager.class);
+        mockConfigManager = mocks.createMock(ConfigManager.class);
+
+        mocks.makeThreadSafe(true);
+    }
+
+    @AfterMethod
+    public void tearDown()
+    {
+        if (streamManager != null)
+        {
+            streamManager.shutdown();
+        }
+    }
+
+    /**
+     * This test does the following:
+     *      Creates new instance of stream manager.
+     *      Verifies that the filter chain controllers cache is empty.
+     *      Performs an insert of a stream who's id does not exist in the filter chain controllers cache.
+     *      Verifies that the cache contains a key of new stream ID passed on insert.
+     *
+     * @throws InterruptedException if an interrupt exception occurs
+     * @throws IOException
+     */
+    @SuppressWarnings("unchecked")
+    @Test(dataProvider = "streamTypes")
+    public void testSetupFilterChainControllersWithNoExistingSnapshots(final TransmissionType transmissionType, final StreamType type) throws InterruptedException, IOException
+    {
+        addConfigurationAdminExpectationForMtu("1500");
+
+        expect(mockRealTimeSnapshotManager.getStreams()).andReturn(Collections.EMPTY_MAP);
+        expect(mockRealTimeSnapshotManager.getStream(1L)).andReturn(createMockStreamSnapshot(transmissionType, type, 1L, 55, MAX_AVERAGE, MAX_BURST, MAX_LATENCY));
+
+        mocks.replay();
+        streamManager = createAndInitializeStreamManager();
+        final ConcurrentMap<Long, PacketFilterChainController> streamHandlers = getFilterChainControllersCache(streamManager);
+        assertThat(streamHandlers.size(), is(0));
+
+        streamManager.insert("test".getBytes(), 1L, transmissionType);
+
+        // Allow time for the executor to fire.
+        Thread.sleep(1000);
+
+        assertThat(streamHandlers.size(), is(1));
+        mocks.verify();
+    }
+
+    @Test(dataProvider = "streamTypes")
+    public void testSetupFilterChainControllersWithMultipleExistingSnapshots(final TransmissionType transmissionType, final StreamType type) throws InterruptedException, IOException
+    {
+        addConfigurationAdminExpectationForMtu("1500");
+        expectGetStreamsToReturnTwoDefaultStreamsOfTheSpecifiedType(transmissionType, type);
+
+        expect(mockRealTimeSnapshotManager.getStream(3L)).andReturn(createMockStreamSnapshot(transmissionType, type, 3L, 55, MAX_AVERAGE + 20, MAX_BURST + 30, MAX_LATENCY + 40));
+
+        mocks.replay();
+        streamManager = createAndInitializeStreamManager();
+        final ConcurrentMap<Long, PacketFilterChainController> streamHandlers = getFilterChainControllersCache(streamManager);
+
+        //Validate that the filter chain controller cache contains two elements.
+        assertThat(streamHandlers.size(), is(2));
+
+        // Insert a stream that doesn't exist in the manager.
+        streamManager.insert("test".getBytes(), 3L, transmissionType);
+
+        // Allow time for the executor to fire.
+        Thread.sleep(1000);
+
+        //Verify that the filter chain controllers are put into the cache for that stream.
+        assertThat(streamHandlers.size(), is(3));
+        mocks.verify();
+    }
+
+    @Test(dataProvider = "streamTypes")
+    public void insertDataWithExistingFilterChainControllerForStream(final TransmissionType transmissionType, final StreamType type) throws InterruptedException, IOException
+    {
+        addConfigurationAdminExpectationForMtu("1500");
+        expectGetStreamsToReturnTwoDefaultStreamsOfTheSpecifiedType(transmissionType, type);
+
+        mocks.replay();
+        streamManager = createAndInitializeStreamManager();
+        final ConcurrentMap<Long, PacketFilterChainController> streamHandlers = getFilterChainControllersCache(streamManager);
+
+        assertThat(streamHandlers.size(), is(2));
+
+        // Insert a stream that doesn't exist in the manager.
+        streamManager.insert("test".getBytes(), 2L, transmissionType);
+
+        // Allow a few seconds for the executor to fire.
+        Thread.sleep(1000);
+        mocks.verify();
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test(dataProvider = "streamTypes")
+    public void testHandleSnapshotManagerRefreshEvent(final TransmissionType transmissionType, final StreamType type) throws InterruptedException, IOException
+    {
+        addConfigurationAdminExpectationForMtu("1500");
+        expect(mockRealTimeSnapshotManager.getStreams()).andReturn(Collections.EMPTY_MAP);
+        expectGetStreamsToReturnTwoDefaultStreamsOfTheSpecifiedType(transmissionType, type);
+
+        mocks.replay();
+        streamManager = createAndInitializeStreamManager();
+        final ConcurrentMap<Long, PacketFilterChainController> streamHandlers = getFilterChainControllersCache(streamManager);
+
+        // Validate that the filter chain controllers cache is empty
+        assertThat(streamHandlers.size(), is(0));
+
+        // Call event handler with the snapshot manager refresh event.
+        final Event refreshEvent = new Event(RealTimeSnapshotManager.SNAPSHOT_MANAGER_REFRESH_EVENT, null);
+        streamManager.handleEvent(refreshEvent);
+
+        //Verify that there are two filter chain controllers in the cache since the second time
+        assertThat(streamHandlers.size(), is(2));
+
+        mocks.verify();
+    }
+
+    @Test(dataProvider = "streamTypes")
+    public void testFilterChainControllerStreamDeleteEvent(final TransmissionType transmissionType, final StreamType type) throws InterruptedException, IOException
+    {
+        addConfigurationAdminExpectationForMtu("1500");
+        expectGetStreamsToReturnTwoDefaultStreamsOfTheSpecifiedType(transmissionType, type);
+
+        mocks.replay();
+
+        streamManager = createAndInitializeStreamManager();
+        final ConcurrentMap<Long, PacketFilterChainController> streamHandlers = getFilterChainControllersCache(streamManager);
+
+        //Validate that the filter chain controllers cache contains two elements.
+        assertThat(streamHandlers.size(), is(2));
+
+        final Dictionary<String, StreamSnapshot> dictionary = new Hashtable<String, StreamSnapshot>();
+        dictionary.put(OsgiEventPropertyKeys.STREAM_SNAPSHOT_KEY, createMockStreamSnapshot(transmissionType, type, 1L, 55, MAX_AVERAGE, MAX_BURST, MAX_LATENCY));
+        final Event streamDeleteEvent = new Event(RealTimeSnapshotManager.STREAM_SNAPSHOT_DELETED_EVENT, dictionary);
+        streamManager.handleEvent(streamDeleteEvent);
+
+        assertThat(streamHandlers.size(), is(1));
+
+        mocks.verify();
+    }
+
+    @Test(dataProvider = "streamTypes")
+    public void testFilterChainControllerStreamUpdateEvent(final TransmissionType transmissionType, final StreamType type) throws InterruptedException, IOException
+    {
+        final StreamSnapshot mockStreamSnapshotTwoModified = createMockStreamSnapshot(transmissionType, type, 2L, 75, MAX_AVERAGE + 20, MAX_BURST + 30, MAX_LATENCY + 40);
+
+        addConfigurationAdminExpectationForMtu("1500");
+        expectGetStreamsToReturnTwoDefaultStreamsOfTheSpecifiedType(transmissionType, type);
+
+        expect(mockRealTimeSnapshotManager.getStream(2L)).andReturn(mockStreamSnapshotTwoModified);
+
+        mocks.replay();
+        streamManager = createAndInitializeStreamManager();
+
+        final ConcurrentMap<Long, PacketFilterChainController> streamHandlers = getFilterChainControllersCache(streamManager);
+        assertThat(streamHandlers.size(), is(2));
+
+        final Dictionary<String, StreamSnapshot> dictionary = new Hashtable<String, StreamSnapshot>();
+        dictionary.put(OsgiEventPropertyKeys.STREAM_SNAPSHOT_KEY, mockStreamSnapshotTwoModified);
+
+        final Event updateEvent = new Event(RealTimeSnapshotManager.STREAM_SNAPSHOT_UPDATED_EVENT, dictionary);
+        streamManager.handleEvent(updateEvent);
+
+        //Verify that the there are still two filter chain controllers.
+        assertThat(streamHandlers.size(), is(2));
+    }
+
+    public void testShouldUseNetworkMtuDefaultWhenMtuNotSpecifiedInPropertiesFile() throws IOException
+    {
+        addConfigurationAdminExpectationForMtu(null);
+        assertSegmentSize(DEFAULT_MTU_SIZE - IP_HEADER_SIZE - UDP_HEADER_SIZE - BT_HEADER_SIZE);
+    }
+
+    public void testShouldUseDefaultMtuWhenNetworkMtuTooSmall() throws IOException
+    {
+        final int tooSmallMtuSize = MIN_MTU_SIZE - 1;
+        addConfigurationAdminExpectationForMtu(String.valueOf(tooSmallMtuSize));
+        assertSegmentSize(DEFAULT_MTU_SIZE - IP_HEADER_SIZE - UDP_HEADER_SIZE - BT_HEADER_SIZE);
+    }
+
+    public void testShouldUseDefaultMtuWhenNetworkMtuTooLarge() throws IOException
+    {
+        final int tooLargeMtuSize = MAX_MTU_SIZE + 1;
+        addConfigurationAdminExpectationForMtu(String.valueOf(tooLargeMtuSize));
+        assertSegmentSize(DEFAULT_MTU_SIZE - IP_HEADER_SIZE - UDP_HEADER_SIZE - BT_HEADER_SIZE);
+    }
+
+    public void testShouldUseDefaultMtuWhenNetworkMtuInvalid() throws IOException
+    {
+        addConfigurationAdminExpectationForMtu(String.valueOf("baddata"));
+        assertSegmentSize(DEFAULT_MTU_SIZE - IP_HEADER_SIZE - UDP_HEADER_SIZE - BT_HEADER_SIZE);
+    }
+
+    public void testShouldUseMtuWhenValid() throws IOException
+    {
+        final int validMtuSize = MAX_MTU_SIZE - 20;
+        addConfigurationAdminExpectationForMtu(String.valueOf(validMtuSize));
+        assertSegmentSize(validMtuSize - IP_HEADER_SIZE - UDP_HEADER_SIZE - BT_HEADER_SIZE);
+    }
+
+    /**
+     * Creates an instance of the <code>DefaultStreamManager</code> and calls the init method via reflection.
+     * @return DefaultStreamManager
+     */
+    private DefaultStreamManager createAndInitializeStreamManager()
+    {
+        final DefaultStreamManager streamManager = new DefaultStreamManager(executor, mockTransportManager, mockRealTimeSnapshotManager, mockConfigManager);
+        streamManager.init();
+        return streamManager;
+    }
+
+    @SuppressWarnings("unchecked")
+    private ConcurrentMap<Long, PacketFilterChainController> getFilterChainControllersCache(final DefaultStreamManager streamManager)
+    {
+        final Field streamsField = getFieldByReflection(DefaultStreamManager.class, "streams");
+        return (ConcurrentMap<Long, PacketFilterChainController>)ReflectionUtils.getField(streamsField, streamManager);
+    }
+
+    private Integer getDsgBroadcastTunnelSegmentSizeForStream(final DefaultStreamManager streamManager, final long streamId)
+    {
+        final PacketFilterChainController filterChainController = getFilterChainControllersCache(streamManager).get(streamId);
+        final Field chainField = findFieldByReflection(filterChainController.getClass(), "chain");
+
+        final CompositePacketFilter chain = (CompositePacketFilter)ReflectionUtils.getField(chainField, filterChainController);
+        final Iterable<PacketFilter>  packageFilters = chain.getFilters();
+
+        for (final PacketFilter packageFilter : packageFilters)
+        {
+            if (packageFilter instanceof DsgBtPacketizer)
+            {
+                final Field segmentSizeField = findFieldByReflection(DsgBtPacketizer.class, "maxDsgBtSegmentSize");
+                return (Integer)ReflectionUtils.getField(segmentSizeField, packageFilter);
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * Creates a a mock stream snapshot.
+     *
+     */
+    private StreamSnapshot createMockStreamSnapshot(final TransmissionType transmissionType, final StreamType type, final long id, final int pid, final int maxAverage,
+        final int maxBurst, final int maxLatency)
+    {
+
+        final Set<InetSocketAddress> destinations = createDestinations(portId++, portId++);
+
+        final StreamSnapshot mockStreamSnapshot = EasyMock.createMock(StreamSnapshot.class);
+        expect(mockStreamSnapshot.getId()).andStubReturn(id);
+        expect(mockStreamSnapshot.getPid()).andStubReturn(pid);
+        expect(mockStreamSnapshot.getMaxAverageRate()).andStubReturn(maxAverage);
+        expect(mockStreamSnapshot.getMaxBurstSize()).andStubReturn(maxBurst);
+        expect(mockStreamSnapshot.getMaxShapingLatency()).andStubReturn(maxLatency);
+        expect(mockStreamSnapshot.getDestinations()).andStubReturn(destinations);
+        expect(mockStreamSnapshot.getTransmissionType()).andStubReturn(transmissionType);
+        expect(mockStreamSnapshot.getType()).andStubReturn(type);
+        expect(mockStreamSnapshot.getProperties()).andStubReturn(STREAM_PROPERTIES);
+        EasyMock.replay(mockStreamSnapshot);
+        return mockStreamSnapshot;
+    }
+
+    /**
+     * Creates a destination for each given port.
+     */
+    @SuppressWarnings("unchecked")
+    private Set<InetSocketAddress> createDestinations(final Integer... ports)
+    {
+        final Set destinations = Sets.newHashSet();
+
+        for (final int port : ports)
+        {
+            destinations.add(InetSocketAddress.createUnresolved("127.0.0.1", port));
+        }
+        return destinations;
+    }
+
+    private void addConfigurationAdminExpectationForMtu(final String mtu) throws IOException
+    {
+        expect(mockConfigManager.getConfigProperty(MTU_SIZE)).andStubReturn(mtu);
+    }
+
+    private Map<Long, StreamSnapshot> mapOfSnapshots(final StreamSnapshot... snapshots)
+    {
+        final Map<Long, StreamSnapshot> snapshotMap = new HashMap<Long, StreamSnapshot>();
+
+        for (final StreamSnapshot snapshot : snapshots)
+        {
+            snapshotMap.put(snapshot.getId(), snapshot);
+        }
+        return snapshotMap;
+    }
+
+    private Field findFieldByReflection(final Class<?> clazz, final String field)
+    {
+        final Field chainField = ReflectionUtils.findField(clazz, field);
+        ReflectionUtils.makeAccessible(chainField);
+        return chainField;
+    }
+
+    private Field getFieldByReflection(final Class<?> clazz, final String field)
+    {
+        final Field chainField = ReflectionUtils.findField(clazz, field);
+        ReflectionUtils.makeAccessible(chainField);
+        return chainField;
+    }
+
+    private void assertSegmentSize(final int expectedSegmentSize)
+    {
+        expect(mockRealTimeSnapshotManager.getStreams()).andReturn(mapOfSnapshots(createMockStreamSnapshot(DSG_BROADCAST_TUNNEL, StreamType.STANDALONE, 1L, 55, MAX_AVERAGE, MAX_BURST, MAX_LATENCY)));
+
+        mocks.replay();
+        streamManager = createAndInitializeStreamManager();
+
+        final Integer segmentSize = getDsgBroadcastTunnelSegmentSizeForStream(streamManager, 1L);
+
+        assertThat(segmentSize , is(expectedSegmentSize));
+        mocks.verify();
+    }
+
+    @SuppressWarnings("unused")
+    @DataProvider(name = "streamTypes")
+    private Object[][] getAllStreams()
+    {
+        return new Object[][] {{MPEG2, StreamType.STANDALONE}, {DSG_BROADCAST_TUNNEL, StreamType.STANDALONE}, {IP_DIRECT, StreamType.STANDALONE},
+                               {MPEG2, StreamType.ANCILLARY}, {IP_DIRECT, StreamType.ANCILLARY},
+                               {MPEG2, StreamType.COMPONENT}, {IP_DIRECT, StreamType.COMPONENT},
+                               {MPEG2, StreamType.PAT}, {IP_DIRECT, StreamType.PAT},
+                               {MPEG2, StreamType.PMT}, {IP_DIRECT, StreamType.PMT}};
+    }
+
+    private void expectGetStreamsToReturnTwoDefaultStreamsOfTheSpecifiedType(final TransmissionType transmissionType, final StreamType type)
+    {
+        final StreamSnapshot mockStreamSnapshotOne = createMockStreamSnapshot(transmissionType, type, 1L, 55, MAX_AVERAGE, MAX_BURST, MAX_LATENCY);
+        final StreamSnapshot mockStreamSnapshotTwo = createMockStreamSnapshot(transmissionType, type, 2L, 55, MAX_AVERAGE + 10, MAX_BURST + 20, MAX_LATENCY + 30);
+        expect(mockRealTimeSnapshotManager.getStreams()).andReturn(mapOfSnapshots(mockStreamSnapshotOne, mockStreamSnapshotTwo));
+    }
+
+}
+

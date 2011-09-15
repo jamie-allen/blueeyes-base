@@ -1,0 +1,132 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.INSERTER_STATISTICS_JMX_BEAN_TYPE;
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.createRouteMxBeanName;
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteNotificationHelper.JMX_ROUTE_NOTIFICATION_MANAGER;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter.BlockStatisticsCollector;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter.Inserter;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.JmxRouteNotificationManager;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+import com.ccadllc.firebird.vms.common.packetfiltering.CompositePacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilter;
+
+import net.jcip.annotations.ThreadSafe;
+
+import org.apache.mina.core.service.IoAcceptor;
+import org.apache.mina.filter.codec.ProtocolCodecFilter;
+import org.apache.mina.transport.socket.nio.NioSocketAcceptor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
+
+/**
+ *
+ */
+@ThreadSafe
+public class TcpBlockRouteController extends AbstractRouteController
+{
+    private static final String STREAM_IDS_PARAMETER = "stream Ids";
+    private static final String STREAM_MANAGER_PARAMETER = "stream manager";
+    private static final int BUFFER_SIZE = 1024 * 1024;
+
+    private final Logger logger = LoggerFactory.getLogger(TcpBlockRouteController.class);
+    private NioSocketAcceptor acceptor;
+
+    private final CompositePacketFilter chain;
+    private final Inserter inserter;
+    private volatile boolean disposed;
+
+    /** Lock used when manipulating the streamIds collection. */
+    private final Object lock = new Object();
+
+    public TcpBlockRouteController(
+            final RouteSnapshot route,
+            final StreamManager streamManager,
+            final JmxRouteNotificationManager jmxRouteNotificationManager) throws IOException
+    {
+        super(route, jmxRouteNotificationManager);
+        Preconditions.checkNotNull(streamManager, STREAM_MANAGER_PARAMETER);
+        Preconditions.checkNotNull(jmxRouteNotificationManager, JMX_ROUTE_NOTIFICATION_MANAGER);
+
+        inserter = new Inserter(streamManager, route.getStreamIds(), createRouteMxBeanName(route, "Streams"));
+        final PacketFilter inserterStatistics = new BlockStatisticsCollector(inserter, route, INSERTER_STATISTICS_JMX_BEAN_TYPE);
+        chain = new CompositePacketFilter(ImmutableList.of(inserterStatistics, inserter));
+
+        openTcpPort(route.getPort());
+    }
+
+    @Override
+    public void update(final RouteSnapshot route, final StreamManager streamManager,
+        final JmxRouteNotificationManager jmxRouteNotificationManager)
+    {
+        logger.debug("Updating stream Ids.");
+        Preconditions.checkNotNull(route, ROUTE_SNAPSHOT_PARAMETER);
+        Preconditions.checkNotNull(route.getStreamIds(), STREAM_IDS_PARAMETER);
+        Preconditions.checkNotNull(jmxRouteNotificationManager, JMX_ROUTE_NOTIFICATION_MANAGER);
+
+        synchronized (lock)
+        {
+            ensureNotDisposed();
+            inserter.setStreamIds(route.getStreamIds());
+
+            super.handleUpdate(route);
+        }
+    }
+
+    @Override
+    public void shutdown()
+    {
+        logger.debug("Shutdown...");
+        synchronized (lock)
+        {
+            super.cleanUp();
+
+            if (acceptor != null)
+            {
+                acceptor.unbind();
+                acceptor.dispose();
+            }
+
+            chain.dispose();
+            disposed = true;
+        }
+    }
+
+    @Override
+    protected void unbindPort() throws IOException
+    {
+        acceptor.unbind();
+    }
+
+    private void openTcpPort(final int port) throws IOException
+    {
+        acceptor = new NioSocketAcceptor();
+
+        acceptor.getSessionConfig().setReadBufferSize(BUFFER_SIZE);
+        acceptor.getFilterChain().addLast("protocol",
+            new ProtocolCodecFilter(new TcpRouteCodecFactory(null, new TcpBlockRouteDecoder())));
+        acceptor.setHandler(new TcpRouteControllerHandler(this, chain));
+        acceptor.bind(new InetSocketAddress(port));
+        acceptor.setCloseOnDeactivation(false);
+        logger.debug("TCPServer listening on port " + port);
+    }
+
+    private void ensureNotDisposed()
+    {
+        if (disposed)
+        {
+            logger.warn("Action called on disposed filter chain.");
+            throw new IllegalStateException("Object has been disposed.");
+        }
+    }
+}

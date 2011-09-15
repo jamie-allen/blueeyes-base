@@ -1,0 +1,71 @@
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.INSERTER_STATISTICS_JMX_BEAN_TYPE;
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.createRouteMxBeanName;
+
+import java.io.IOException;
+
+import java.util.concurrent.ScheduledExecutorService;
+
+import com.ccadllc.firebird.dss.server.common.MBeanServerUtility;
+import com.ccadllc.firebird.dss.server.common.RouteJmxUtility;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter.BlockStatisticsCollector;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter.Inserter;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.JmxRouteNotificationManager;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.TcpBlockRouteInstrumentation;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+import com.ccadllc.firebird.vms.common.packetfiltering.CompositePacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilter;
+
+import net.jcip.annotations.ThreadSafe;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
+
+import org.apache.mina.transport.socket.nio.NioProcessor;
+
+/**
+ * {@code RouteController} for TCP routes handling block data.
+ */
+@ThreadSafe
+public class TcpBlockRouteController extends AbstractTcpRouteController
+{
+    private final Inserter inserter;
+
+    public TcpBlockRouteController(
+            final RouteSnapshot route,
+            final StreamManager streamManager,
+            final JmxRouteNotificationManager jmxRouteNotificationManager,
+            final TcpRouteSessionClosedEventDispatcher tcpRouteSessionClosedEventDispatcher,
+            final TcpRouteSessionCreatedEventDispatcher tcpRouteSessionCreatedEventDispatcher,
+            final ScheduledExecutorService executor,
+            final NioProcessor processor) throws IOException
+    {
+        super(route, streamManager, jmxRouteNotificationManager, tcpRouteSessionClosedEventDispatcher, tcpRouteSessionCreatedEventDispatcher, executor, processor);
+
+        inserter = new Inserter(streamManager, route.getStreamIds(), createRouteMxBeanName(route, "Streams"));
+        final PacketFilter inserterStatistics = new BlockStatisticsCollector(inserter, route, INSERTER_STATISTICS_JMX_BEAN_TYPE);
+        setChain(new CompositePacketFilter(ImmutableList.of(inserterStatistics, inserter)));
+
+        openTcpPort(route.getPort(), new TcpRouteCodecFactory(null, new TcpBlockRouteDecoder()), new TcpBlockRouteControllerHandler(this, getChain()));
+    }
+
+    @Override
+    void updateValidations(final RouteSnapshot route)
+    {
+        Preconditions.checkNotNull(route);
+        Preconditions.checkNotNull(route.getStreamIds());
+    }
+
+    @Override
+    void updateInternal(final RouteSnapshot route)
+    {
+        inserter.setStreamIds(route.getStreamIds());
+        MBeanServerUtility.register(new TcpBlockRouteInstrumentation(route),
+            RouteJmxUtility.createRouteMxBeanName(route, RouteJmxUtility.ROUTE_INFORMATION_JMX_BEAN_TYPE));
+    }
+}

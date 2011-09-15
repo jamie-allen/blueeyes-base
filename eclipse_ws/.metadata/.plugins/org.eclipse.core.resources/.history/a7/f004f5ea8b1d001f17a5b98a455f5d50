@@ -1,0 +1,7 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.commons.util;
+
+public class IntegerGeneratorStrategyTest
+{
+
+}

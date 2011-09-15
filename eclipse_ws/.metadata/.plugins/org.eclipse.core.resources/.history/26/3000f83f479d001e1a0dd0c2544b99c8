@@ -1,0 +1,6 @@
+package com.ccadllc.firebird.vms.dssrm.core;
+
+public interface DssrmCoreDescription
+{
+
+}

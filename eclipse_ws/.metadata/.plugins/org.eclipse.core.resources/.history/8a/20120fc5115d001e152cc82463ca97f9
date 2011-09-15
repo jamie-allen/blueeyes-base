@@ -1,0 +1,93 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter;
+
+import static com.ccadllc.firebird.dss.server.common.RouteJmxUtility.createRouteMxBeanName;
+
+import java.util.concurrent.atomic.AtomicLong;
+
+import com.ccadllc.firebird.dss.server.common.MBeanServerUtility;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.management.Mpeg2PacketStatistics;
+import com.ccadllc.firebird.vms.common.packetfiltering.ForwardingPacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilter;
+
+import net.jcip.annotations.ThreadSafe;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+@ThreadSafe
+public final class Mpeg2PacketStatisticsCollector extends ForwardingPacketFilter
+{
+    private final String objectName;
+    private final Object lock = new Object();
+    private final AtomicLong packetsInserted = new AtomicLong();
+    private final AtomicLong packetsRejected = new AtomicLong();
+
+    private final Logger logger = LoggerFactory.getLogger(Mpeg2PacketStatisticsCollector.class);
+
+    public Mpeg2PacketStatisticsCollector(final PacketFilter sink, final RouteSnapshot route, final String objectNameDescription)
+    {
+        super(sink);
+        objectName = createRouteMxBeanName(route, objectNameDescription);
+        MBeanServerUtility.register(new Mpeg2PacketStatistics(this), objectName);
+    }
+
+    @Override
+    public boolean insert(final byte[] packet)
+    {
+        final boolean inserted = sink().insert(packet);
+
+        synchronized (lock)
+        {
+            incrementPacketsInserted();
+
+            if (!inserted)
+            {
+                incrementPacketsRejected();
+            }
+        }
+
+        return inserted;
+    }
+
+    @Override
+    public void dispose()
+    {
+        synchronized (lock)
+        {
+            MBeanServerUtility.unregister(objectName);
+            super.dispose();
+        }
+    }
+    public Long getPacketsInserted()
+    {
+        return packetsInserted.get();
+    }
+
+    public Long getPacketsRejected()
+    {
+        return packetsRejected.get();
+    }
+
+    public void resetCounters()
+    {
+        synchronized (lock)
+        {
+            packetsInserted.set(0L);
+            packetsRejected.set(0L);
+        }
+    }
+
+    private void incrementPacketsInserted()
+    {
+        packetsInserted.incrementAndGet();
+        logger.debug("Incrementing packets inserted, value: {} for collector {}", packetsInserted.get(), objectName);
+    }
+
+    private void incrementPacketsRejected()
+    {
+        packetsRejected.incrementAndGet();
+        logger.debug("Incrementing packets rejected, value: {} for collector {}", packetsRejected.get(), objectName);
+    }
+}

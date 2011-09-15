@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:context="http://www.springframework.org/schema/context"
+    xmlns:osgix="http://www.springframework.org/schema/osgi-compendium"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+           http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
+           http://www.springframework.org/schema/osgi-compendium
+           http://www.springframework.org/schema/osgi-compendium/spring-osgi-compendium.xsd">
+
+    <context:annotation-config />
+    <context:mbean-export/>
+    <bean id="routeManager"
+        class="com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManager">
+        <constructor-arg ref="routeControllerFactory" />
+        <constructor-arg ref="eventAdminService" />
+        <constructor-arg ref="realtimeSnapshotManager" />
+    </bean>
+    <bean id="routeManagerApplicationContextListener"
+        class="com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteManagerApplicationContextListener">
+        <constructor-arg ref="routeManager" />
+    </bean>
+
+    <bean id="routeControllerFactory" class="com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.DefaultRouteControllerFactory">
+        <constructor-arg ref="jmxRouteNotificationManager" />
+        <constructor-arg ref="streamManager" />
+        <constructor-arg ref="realtimeSnapshotManager" />
+        <constructor-arg ref="executor" />
+        <constructor-arg ref="routeEstablisher" />
+    </bean>
+
+    <bean id="routeEstablisher" class="com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.TcpRouteEstablisher">
+       <constructor-arg ref="routeManager" />
+        <constructor-arg value="10000" />
+        <constructor-arg value="10200" />
+    </bean>
+
+    <bean id="jmxRouteNotificationManager"
+        class="com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.JmxRouteNotificationManager">
+        <constructor-arg ref="executor" />
+    </bean>
+
+    <bean id="eventAdminService" class="com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.DefaultRouteManagerEventAdminServiceStrategy">
+        <property name="eventAdmin" ref="eventAdmin" />
+    </bean>
+
+    <bean id="tcpRouteLookupMXBean" class="com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.TcpRouteLookup">
+        <constructor-arg ref="routeManager" />
+    </bean>
+
+</beans>

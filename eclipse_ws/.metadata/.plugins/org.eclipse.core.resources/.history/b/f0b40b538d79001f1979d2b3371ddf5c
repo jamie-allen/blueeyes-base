@@ -1,0 +1,496 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.test.controllers.dss;
+
+import static com.ccadllc.firebird.dss.common.datatypes.RouteDataType.BLOCKS;
+import static com.ccadllc.firebird.dss.common.datatypes.RouteDataType.MPEG_PACKETS;
+import static com.ccadllc.firebird.dss.common.datatypes.RouteType.ELEMENTARY_STREAM;
+import static com.ccadllc.firebird.dss.common.datatypes.RouteType.PID_MAPPED;
+import static com.ccadllc.firebird.dss.common.datatypes.RouteType.TRANSPORT_STREAM;
+import static com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType.TCP;
+import static com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType.UDP;
+import static com.ccadllc.firebird.vms.test.controllers.ControllerUtility.convertStringToInetSocketAddressDestinations;
+import static com.ccadllc.firebird.vms.test.controllers.ControllerUtility.convertStringToIntegerIds;
+import static com.ccadllc.firebird.vms.test.controllers.ControllerUtility.convertStringToLongIds;
+import static com.ccadllc.firebird.vms.test.controllers.ControllerUtility.convertStringToOptionalInteger;
+import static com.ccadllc.firebird.vms.test.controllers.ControllerUtility.convertStringToPidMap;
+import static com.ccadllc.firebird.vms.test.controllers.ControllerUtility.convertStringToSetOfIntegerRanges;
+import static com.ccadllc.firebird.vms.test.controllers.ControllerUtility.convertStringToUnresolvedInetAddressDestinations;
+
+import java.io.IOException;
+import java.util.Collections;
+import java.util.Date;
+import java.util.Map;
+
+import com.ccadllc.firebird.dss.common.datatypes.MeteringType;
+import com.ccadllc.firebird.dss.common.datatypes.Route;
+import com.ccadllc.firebird.dss.common.datatypes.RouteDescription;
+import com.ccadllc.firebird.dss.common.datatypes.TransmissionType;
+import com.ccadllc.firebird.dss.common.datatypes.UdpRouteSummary;
+import com.ccadllc.firebird.dss.server.provisioning.facade.ProvisioningFacade;
+import com.ccadllc.firebird.vms.common.units.TrafficShapingProfile;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jmx.export.annotation.ManagedOperation;
+import org.springframework.jmx.export.annotation.ManagedOperationParameter;
+import org.springframework.jmx.export.annotation.ManagedOperationParameters;
+import org.springframework.jmx.export.annotation.ManagedResource;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * JMX implementation of operations to allow manual testing of DSS functionality as a standalone component.
+ */
+@Component
+@ManagedResource
+public class DssController
+{
+    private static final Map<String, String> PROPERTIES = Collections.<String, String>emptyMap();
+    private final Logger logger = LoggerFactory.getLogger(DssController.class);
+
+    @Autowired private ProvisioningFacade provisioningFacade;
+
+    @Transactional
+    @ManagedOperation (description = "Establishes a UDP Mpeg2 route with PID mappings.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "pidMappings", description = "The PID to standalone stream mappings for the route; must be entered as space-delimited PID/Stream ID pairs; multiple entries must be separated by a space."),
+        @ManagedOperationParameter(name = "port", description = "The port for the route.")
+    })
+    public long establishUdpMpeg2RouteWithPidMappings(final String pidMappings, final int port) throws IOException
+    {
+        logger.debug("Establishing UDP mpeg2 route with pid mappings");
+        final RouteDescription routeDescription = new RouteDescription.Builder()
+            .transportProtocolType(UDP)
+            .routeDataType(MPEG_PACKETS)
+            .pidMappings(convertStringToPidMap(pidMappings))
+            .port(port)
+            .properties(PROPERTIES)
+            .routeType(PID_MAPPED)
+            .build();
+        final Route route = provisioningFacade.establishRoute(routeDescription);
+        if (route == null)
+        {
+            throw new IllegalArgumentException("Unable to establish route. See application log.");
+        }
+        return route.getId();
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Establishes a UDP Mpeg2 route with transport stream IDs.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "transportStreamIds", description = "The Transport Stream IDs of the transport streams for the route; multiple entries must be entered as space-delimited numeric values."),
+        @ManagedOperationParameter(name = "port", description = "The port for the route.")
+    })
+    public long establishUdpMpeg2RouteWithTransportStreamIds(final String transportStreamIds, final int port) throws IOException
+    {
+        final RouteDescription routeDescription = new RouteDescription.Builder()
+            .transportProtocolType(UDP)
+            .routeDataType(MPEG_PACKETS)
+            .transportStreamIds(convertStringToIntegerIds(transportStreamIds))
+            .port(port)
+            .properties(PROPERTIES)
+            .routeType(TRANSPORT_STREAM)
+            .build();
+        final Route route = provisioningFacade.establishRoute(routeDescription);
+        if (route == null)
+        {
+            throw new IllegalArgumentException("Unable to establish route. See application log.");
+        }
+        return route.getId();
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Establishes a UDP block route with stream IDs.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "streamIds", description = "The Stream IDs of the standalone streams for the route; multiple entries must be entered as space-delimited numeric values."),
+        @ManagedOperationParameter(name = "port", description = "The port for the route.")
+    })
+    public long establishUdpBlockRoute(final String streamIds, final int port) throws IOException
+    {
+        final RouteDescription routeDescription = new RouteDescription.Builder()
+            .transportProtocolType(UDP)
+            .routeDataType(BLOCKS)
+            .streamIds(convertStringToLongIds(streamIds))
+            .port(port)
+            .properties(PROPERTIES)
+            .routeType(ELEMENTARY_STREAM)
+            .build();
+        final Route route = provisioningFacade.establishRoute(routeDescription);
+        if (route == null)
+        {
+            throw new IllegalArgumentException("Unable to establish route. See application log.");
+        }
+        return route.getId();
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Establishes a UDP Block route with PID mappings.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "pidMappings", description = "The PID to standalone stream mappings for the route; must be entered as space-delimited PID/Stream ID pairs; multiple entries must be separated by a space."),
+        @ManagedOperationParameter(name = "port", description = "The port for the route.")
+    })
+    public long establishUdpBlockRouteWithPidMappings(final String pidMappings, final int port) throws IOException
+    {
+        logger.debug("Establishing UDP block route with pid mappings");
+        final RouteDescription routeDescription = new RouteDescription.Builder()
+            .transportProtocolType(UDP)
+            .routeDataType(BLOCKS)
+            .pidMappings(convertStringToPidMap(pidMappings))
+            .port(port)
+            .properties(PROPERTIES)
+            .routeType(PID_MAPPED)
+            .build();
+        final Route route = provisioningFacade.establishRoute(routeDescription);
+        if (route == null)
+        {
+            throw new IllegalArgumentException("Unable to establish route. See application log.");
+        }
+        return route.getId();
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Establishes a UDP Mpeg2 route with transport stream IDs.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "transportStreamIds", description = "The Transport Stream IDs of the transport streams for the route; multiple entries must be entered as space-delimited numeric values."),
+        @ManagedOperationParameter(name = "port", description = "The port for the route.")
+    })
+    public long establishUdpBlockRouteWithTransportStreamIds(final String transportStreamIds, final int port) throws IOException
+    {
+        final RouteDescription routeDescription = new RouteDescription.Builder()
+            .transportProtocolType(UDP)
+            .routeDataType(BLOCKS)
+            .transportStreamIds(convertStringToIntegerIds(transportStreamIds))
+            .port(port)
+            .properties(PROPERTIES)
+            .routeType(TRANSPORT_STREAM)
+            .build();
+        final Route route = provisioningFacade.establishRoute(routeDescription);
+        if (route == null)
+        {
+            throw new IllegalArgumentException("Unable to establish route. See application log.");
+        }
+        return route.getId();
+    }
+
+
+    @Transactional
+    @ManagedOperation (description = "Establishes a TCP Mpeg2 route with PID mappings.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "pidMappings", description = "The PID to standalone stream mappings for the route; must be entered as space-delimited PID/Stream ID pairs; multiple entries must be separated by a space."),
+    })
+    public void establishTcpMpeg2RouteWithPidMappings(final String pidMappings) throws IOException
+    {
+        final RouteDescription routeDescription = new RouteDescription.Builder()
+            .transportProtocolType(TCP)
+            .routeDataType(MPEG_PACKETS)
+            .pidMappings(convertStringToPidMap(pidMappings))
+            .routeType(PID_MAPPED)
+            .build();
+        if (provisioningFacade.establishRoute(routeDescription) == null)
+        {
+            throw new IllegalArgumentException("Unable to establish route. See application log.");
+        }
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Establishes a TCP Mpeg2 route with transport stream IDs.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "transportStreamIds", description = "The Transport Stream IDs of the transport streams for the route; multiple entries must be entered as space-delimited numeric values."),
+    })
+    public void establishTcpMpeg2RouteWithTransportStreamIds(final String transportStreamIds) throws IOException
+    {
+        final RouteDescription routeDescription = new RouteDescription.Builder()
+            .transportProtocolType(TCP)
+            .routeDataType(MPEG_PACKETS)
+            .transportStreamIds(convertStringToIntegerIds(transportStreamIds))
+            .routeType(TRANSPORT_STREAM)
+            .build();
+        if (provisioningFacade.establishRoute(routeDescription) == null)
+        {
+            throw new IllegalArgumentException("Unable to establish route. See application log.");
+        }
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Establishes a TCP block route with stream IDs.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "streamIds", description = "The Stream IDs of the standalone streams for the route; multiple entries must be entered as space-delimited numeric values."),
+    })
+    public void establishTcpBlockRoute(final String streamIds) throws IOException
+    {
+        final RouteDescription routeDescription = new RouteDescription.Builder()
+            .transportProtocolType(TCP)
+            .routeDataType(BLOCKS)
+            .streamIds(convertStringToLongIds(streamIds))
+            .routeType(ELEMENTARY_STREAM)
+            .build();
+        if (provisioningFacade.establishRoute(routeDescription) == null)
+        {
+            throw new IllegalArgumentException("Unable to establish route. See application log.");
+        }
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Creates an Mpeg2 transport stream.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "destinations", description = "The address and port values of destinations for the transport stream; must be entered as space-delimited IP address/port pairs, and multiple IP address and port pairs must be separated by a space."),
+        @ManagedOperationParameter(name = "networkPid", description = "The network PID value for the transport stream."),
+        @ManagedOperationParameter(name = "reservedPidRanges", description = "The reserved PID values for the transport stream; each range pair must be entered as space-delimited low and high values, and multiple ranges must be separated by a space."),
+        @ManagedOperationParameter(name = "reservedProgramNumberRanges", description = "The reserved program number values for the transport stream; each range pair must be entered as space-delimited low and high values, and multiple ranges must be separated by a space.")
+    })
+    public int createMpeg2TransportStream(final String destinations, final String networkPid, final String reservedPidRanges,
+        final String reservedProgramNumberRanges)
+    {
+        return provisioningFacade.createMpeg2TransportStream(convertStringToInetSocketAddressDestinations(destinations), convertStringToOptionalInteger(networkPid), convertStringToSetOfIntegerRanges(reservedPidRanges), convertStringToSetOfIntegerRanges(reservedProgramNumberRanges), PROPERTIES, null);
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Adds an ancillary stream to a transport stream.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "transportStreamId", description = "The ID of the transport stream to which the ancillary stream will be added."),
+        @ManagedOperationParameter(name = "pid", description = "The PID value to be used for the ancillary stream."),
+        @ManagedOperationParameter(name = "maxAverageRate", description = "The maximum average rate quality of service value to be used for the ancillary stream."),
+        @ManagedOperationParameter(name = "maxBurstRate", description = "The maximum burst rate quality of service value to be used for the ancillary stream."),
+        @ManagedOperationParameter(name = "maxShapingLatency", description = "The maximum shaping latency quality of service value to be used for the ancillary stream."),
+    })
+    public long addAncillaryStream(final int transportStreamId, final int pid, final int maxAverageRate, final int maxBurstSize, final int maxShapingLatency)
+    {
+        return provisioningFacade.addAncillaryStream(transportStreamId, pid, new TrafficShapingProfile(maxAverageRate, maxBurstSize, maxShapingLatency), PROPERTIES);
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Adds a component stream to a transport stream.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "transportStreamId", description = "The ID of the transport stream to which the component stream will be added."),
+        @ManagedOperationParameter(name = "programNumber", description = "The program number value to be used for the component stream."),
+        @ManagedOperationParameter(name = "componentStreamType", description = "The component stream type value to be used for the component stream."),
+        @ManagedOperationParameter(name = "maxAverageRate", description = "The maximum average rate quality of service value to be used for the component stream."),
+        @ManagedOperationParameter(name = "maxBurstRate", description = "The maximum burst rate quality of service value to be used for the component stream."),
+        @ManagedOperationParameter(name = "maxShapingLatency", description = "The maximum shaping latency quality of service value to be used for the component stream."),
+    })
+    public long addComponentStream(final int transportStreamId, final int programNumber, final int componentStreamType, final int maxAverageRate,
+        final int maxBurstSize, final int maxShapingLatency)
+    {
+        return provisioningFacade.addComponentStream(transportStreamId, programNumber, componentStreamType, new TrafficShapingProfile(maxAverageRate, maxBurstSize, maxShapingLatency), PROPERTIES);
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Adds a program to a transport stream.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "transportStreamId", description = "The ID of the transport stream to which the program will be added."),
+        @ManagedOperationParameter(name = "programNumber", description = "The program number value to be used; this parameter is optional.")
+    })
+    public int addProgram(final int transportStreamId, final String programNumber)
+    {
+        return provisioningFacade.addProgram(transportStreamId, convertStringToOptionalInteger(programNumber), PROPERTIES);
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Deletes a program from a transport stream.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "transportStreamId", description = "The ID of the transport stream from which the program will be deleted."),
+        @ManagedOperationParameter(name = "programNumber", description = "The program number of the program to be deleted."),
+    })
+    public void deleteProgram(final int transportStreamId, final int programNumber)
+    {
+        provisioningFacade.deleteProgram(transportStreamId, programNumber);
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Deletes a transport stream.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "transportStreamId", description = "The ID of the transport stream to be deleted.")
+    })
+    public void deleteTransportStream(final int transportStreamId)
+    {
+        provisioningFacade.deleteTransportStream(transportStreamId);
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Adds a periodic.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "streamId", description = "The ID of the stream to which the periodic will be added."),
+        @ManagedOperationParameter(name = "blockData", description = "A hexadecimal representation of the block data to be sent by the periodic.")
+    })
+    public long addPeriodic(final long streamId, final String blockData)
+    {
+        return provisioningFacade.addPeriodic(PROPERTIES, streamId, new String[] {blockData}, MeteringType.FRONT_LOADED, new Date(), null, 5);
+    }
+
+    @Transactional
+    @ManagedOperation(description = "Deletes a stream.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "streamId", description = "The ID of the stream to be deleted.")
+    })
+    public void deleteStream(final long streamId)
+    {
+        provisioningFacade.deleteStream(streamId);
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Deletes a periodic.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "periodicId", description = "The ID of the periodic to be deleted.")
+    })
+    public void deletePeriodic(final long periodicId)
+    {
+        provisioningFacade.deletePeriodic(periodicId);
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Removes a UDP route.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "routeId", description = "The ID of the route to be removed.")
+    })
+    public void removeUdpRoute(final long routeId)
+    {
+        provisioningFacade.removeUdpRoute(routeId);
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Create an Mpeg2 standalone stream.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "pid", description = "The PID value to be used for the standalone stream."),
+        @ManagedOperationParameter(name = "destinations", description = "The address and port values of destinations for the standalone stream; must be entered as space-delimited IP address/port pairs, and multiple IP address and port pairs must be separated by a space."),
+        @ManagedOperationParameter(name = "maxAverageRate", description = "The maximum average rate quality of service value to be used for the standalone stream."),
+        @ManagedOperationParameter(name = "maxBurstRate", description = "The maximum burst rate quality of service value to be used for the standalone stream."),
+        @ManagedOperationParameter(name = "maxShapingLatency", description = "The maximum shaping latency quality of service value to be used for the standalone stream."),
+    })
+    public long createMpeg2StandaloneStream(final int pid, final String destinations, final int maxAverageRate, final int maxBurstSize, final int maxShapingLatency)
+    {
+        return provisioningFacade.createStandaloneStream(PROPERTIES, pid, convertStringToInetSocketAddressDestinations(destinations), TransmissionType.MPEG2, new TrafficShapingProfile(maxAverageRate, maxBurstSize, maxShapingLatency));
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Create a DSG broadcast tunnel standalone stream.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "pid", description = "The PID value to be used for the standalone stream."),
+        @ManagedOperationParameter(name = "destinations", description = "The address and port values of destinations for the standalone stream; must be entered as space-delimited IP address/port pairs, and multiple IP address and port pairs must be separated by a space."),
+        @ManagedOperationParameter(name = "maxAverageRate", description = "The maximum average rate quality of service value to be used for the standalone stream."),
+        @ManagedOperationParameter(name = "maxBurstRate", description = "The maximum burst rate quality of service value to be used for the standalone stream."),
+        @ManagedOperationParameter(name = "maxShapingLatency", description = "The maximum shaping latency quality of service value to be used for the standalone stream."),
+    })
+    public long createDsgBroadcastTunnelStandaloneStream(final int pid, final String destinations, final int maxAverageRate, final int maxBurstSize, final int maxShapingLatency)
+    {
+        return provisioningFacade.createStandaloneStream(PROPERTIES, pid, convertStringToInetSocketAddressDestinations(destinations), TransmissionType.DSG_BROADCAST_TUNNEL, new TrafficShapingProfile(maxAverageRate, maxBurstSize, maxShapingLatency));
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Create an IP direct standalone stream.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "pid", description = "The PID value to be used for the standalone stream."),
+        @ManagedOperationParameter(name = "destinations", description = "The address and port values of destinations for the standalone stream; must be entered as space-delimited IP address/port pairs, and multiple IP address and port pairs must be separated by a space."),
+        @ManagedOperationParameter(name = "maxAverageRate", description = "The maximum average rate quality of service value to be used for the standalone stream."),
+        @ManagedOperationParameter(name = "maxBurstRate", description = "The maximum burst rate quality of service value to be used for the standalone stream."),
+        @ManagedOperationParameter(name = "maxShapingLatency", description = "The maximum shaping latency quality of service value to be used for the standalone stream."),
+    })
+    public long createIpDirectStandaloneStream(final int pid, final String destinations, final int maxAverageRate, final int maxBurstSize, final int maxShapingLatency)
+    {
+        return provisioningFacade.createStandaloneStream(PROPERTIES, pid, convertStringToInetSocketAddressDestinations(destinations), TransmissionType.IP_DIRECT, new TrafficShapingProfile(maxAverageRate, maxBurstSize, maxShapingLatency));
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Updates the PID mappings of a UDP Mpeg2 standalone stream route.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "routeId", description = "The ID of the route to update."),
+        @ManagedOperationParameter(name = "pidMappings", description = "The PID to standalone stream mappings for the route; must be entered as space-delimited PID/Stream ID pairs; multiple entries must be separated by a space.")
+    })
+    public void updateUdpRoutePidMappings(final long routeId, final String pidMappings)
+    {
+        final UdpRouteSummary route = provisioningFacade.queryForUdpRoute(routeId);
+        if (route == null)
+        {
+            throw new IllegalArgumentException("Route not found");
+        }
+        final RouteDescription routeDescription = new RouteDescription.Builder()
+            .id(routeId)
+            .transportProtocolType(UDP)
+            .routeDataType(MPEG_PACKETS)
+            .pidMappings(convertStringToPidMap(pidMappings))
+            .port(route.getPort())
+            .routeType(PID_MAPPED)
+            .properties(PROPERTIES)
+            .build();
+        provisioningFacade.updateRoute(routeDescription);
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Updates the transport stream IDs of a UDP Mpeg2 transport stream route.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "routeId", description = "The ID of the route to update."),
+        @ManagedOperationParameter(name = "transportStreamIds", description = "The Transport Stream IDs of the transport streams for the route; multiple entries must be entered as space-delimited numeric values.")
+    })
+    public void updateUdpRouteTransportStreamIds(final long routeId, final String transportStreamIds)
+    {
+        final UdpRouteSummary route = provisioningFacade.queryForUdpRoute(routeId);
+        final RouteDescription routeDescription = new RouteDescription.Builder()
+            .id(routeId)
+            .transportProtocolType(UDP)
+            .routeDataType(MPEG_PACKETS)
+            .transportStreamIds(convertStringToIntegerIds(transportStreamIds))
+            .port(route.getPort())
+            .routeType(TRANSPORT_STREAM)
+            .properties(PROPERTIES)
+            .build();
+        provisioningFacade.updateRoute(routeDescription);
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Updates the stream IDs of a UDP block standalone stream route.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "routeId", description = "The ID of the route to update."),
+        @ManagedOperationParameter(name = "streamIds", description = "The Stream IDs of the standalone streams for the route; multiple entries must be entered as space-delimited numeric values.")
+    })
+    public void updateUdpRouteStreamIds(final long routeId, final String streamIds)
+    {
+        final UdpRouteSummary route = provisioningFacade.queryForUdpRoute(routeId);
+        final RouteDescription routeDescription = new RouteDescription.Builder()
+            .id(routeId)
+            .transportProtocolType(UDP)
+            .routeDataType(BLOCKS)
+            .streamIds(convertStringToLongIds(streamIds))
+            .port(route.getPort())
+            .routeType(ELEMENTARY_STREAM)
+            .properties(PROPERTIES)
+            .build();
+        provisioningFacade.updateRoute(routeDescription);
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Creates an IP direct transport stream.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "destinations", description = "The IP address values of destinations for the transport stream; multiple values must be entered as space-delimited IP address values."),
+        @ManagedOperationParameter(name = "basePort", description = "The base port value for the IP direct output streams."),
+        @ManagedOperationParameter(name = "networkPid", description = "The network PID value for the transport stream."),
+        @ManagedOperationParameter(name = "reservedPidRanges", description = "The reserved PID values for the transport stream; each range pair must be entered as space-delimited low and high values, and multiple ranges must be separated by a space."),
+        @ManagedOperationParameter(name = "reservedProgramNumberRanges", description = "The reserved program number values for the transport stream; each range pair must be entered as space-delimited low and high values, and multiple ranges must be separated by a space.")
+    })
+    public int createIpDirectTransportStream(final String destinations, final int basePort, final String networkPid, final String reservedPidRanges,
+        final String reservedProgramNumberRanges)
+    {
+        return provisioningFacade.createIpDirectTransportStream(convertStringToUnresolvedInetAddressDestinations(destinations), basePort, convertStringToOptionalInteger(networkPid), convertStringToSetOfIntegerRanges(reservedPidRanges), convertStringToSetOfIntegerRanges(reservedProgramNumberRanges), PROPERTIES, null);
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Update the destinations of a UDP Mpeg2 transport stream.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "transportStreamId", description = "The ID of the transport stream to which the destinations will be updated."),
+        @ManagedOperationParameter(name = "destinations", description = "The address and port values of destinations for the transport stream; must be entered as space-delimited IP address/port pairs, and multiple IP address and port pairs must be separated by a space.")
+    })
+    public void updateMpeg2TransportStreamDestinations(final int transportStreamId, final String destinations)
+    {
+        provisioningFacade.updateMpeg2TransportStreamDestinations(transportStreamId, convertStringToInetSocketAddressDestinations(destinations));
+    }
+
+    @Transactional
+    @ManagedOperation (description = "Update the destinations of an IP direct transport stream.")
+    @ManagedOperationParameters({
+        @ManagedOperationParameter(name = "transportStreamId", description = "The ID of the transport stream to which the destinations will be updated."),
+        @ManagedOperationParameter(name = "destinations", description = "The IP address values of destinations for the transport stream; multiple values must be entered as space-delimited IP address values.")
+    })
+    public void updateIpDirectTransportStreamDestinations(final int transportStreamId, final String destinations)
+    {
+        provisioningFacade.updateIpDirectTransportStreamDestinations(transportStreamId, convertStringToUnresolvedInetAddressDestinations(destinations));
+    }
+}

@@ -1,0 +1,188 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.terminals.domain.impl;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.is;
+
+import java.util.List;
+import java.util.UUID;
+
+import com.ccadllc.commons.test.spring.AbstractTestNGJpaTests;
+import com.ccadllc.firebird.vms.terminals.domain.ActionType;
+import com.ccadllc.firebird.vms.terminals.domain.Operation;
+import com.ccadllc.firebird.vms.terminals.domain.OperationConfiguration;
+import com.ccadllc.firebird.vms.terminals.domain.OperationRepository;
+import com.ccadllc.firebird.vms.terminals.domain.Selector;
+
+import org.apache.commons.lang.builder.HashCodeBuilder;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.ContextConfiguration;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+/** Tests <code>OperationRepository</code>. */
+@Test
+@ContextConfiguration(locations = "/operationRepositoryConfig.xml")
+public class DefaultOperationRepositoryTest extends AbstractTestNGJpaTests
+{
+    private static final String NAME = "test_name";
+    private static final String SUBOPERATION_NAME = "suboperation of test_name";
+    private static final UUID STREAM_ID = UUID.randomUUID();
+    private static final String PROPERTY_KEY = "foo";
+    private static final String PROPERTY_VALUE = "bar";
+
+    private Operation operation = new Operation(NAME, ActionType.ACTIVATE, new Selector("activated"), UUID.randomUUID());
+
+    @Autowired
+    private OperationRepository operationRepository;
+
+    @BeforeMethod
+    public void insertOperation()
+    {
+        persistOperation(STREAM_ID);
+    }
+
+    @AfterMethod
+    public void removeOperation()
+    {
+        for (final Operation action : operationRepository.getAll())
+        {
+            operationRepository.delete(action);
+        }
+    }
+
+    private void persistOperation(final UUID streamId)
+    {
+        operation = new Operation(NAME, ActionType.ACTIVATE, new Selector("activated"), streamId);
+        operation.setProperty(PROPERTY_KEY, PROPERTY_VALUE);
+
+        operationRepository.persist(operation);
+    }
+
+    public void testGet() throws Exception
+    {
+        assertThat(new ReflectionOperation(operationRepository.get(operation.getId())),
+            is(new ReflectionOperation(operation)));
+        assertThat(operation.getProperties().get(PROPERTY_KEY), is(PROPERTY_VALUE));
+        assertThat(operation.getSubOperations().isEmpty(), is(true));
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testPersistWithExceededBandwidthAllocationForStream()
+    {
+        final UUID streamId = UUID.randomUUID();
+        operation = new Operation(NAME, ActionType.ACTIVATE, new Selector("activated"), streamId);
+        operation.setBandwidthPercent(85.0f);
+        operation.setProperty(PROPERTY_KEY, PROPERTY_VALUE);
+        operationRepository.persist(operation);
+
+        operation = new Operation(NAME, ActionType.ACTIVATE, new Selector("activated"), streamId);
+        operation.setBandwidthPercent(20.0f);
+        operation.setProperty(PROPERTY_KEY, PROPERTY_VALUE);
+        operationRepository.persist(operation);
+    }
+
+//    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testPersistWithExceededBandwidthAllocationForStreamByMinisculeAmount()
+    {
+        final UUID streamId = UUID.randomUUID();
+        operation = new Operation(NAME, ActionType.ACTIVATE, new Selector("activated"), streamId);
+        operation.setBandwidthPercent(85.0f);
+        operation.setProperty(PROPERTY_KEY, PROPERTY_VALUE);
+        operationRepository.persist(operation);
+
+        operation = new Operation(NAME, ActionType.ACTIVATE, new Selector("activated"), streamId);
+        operation.setBandwidthPercent(14.0f);
+        operation.setProperty(PROPERTY_KEY, PROPERTY_VALUE);
+        operationRepository.persist(operation);
+    }
+
+    public void testPersistWithBandwidthAllocatedExactlyOneHundredPercent()
+    {
+        final UUID streamId = UUID.randomUUID();
+        operation = new Operation(NAME, ActionType.ACTIVATE, new Selector("activated"), streamId);
+        operation.setBandwidthPercent(85.0f);
+        operation.setProperty(PROPERTY_KEY, PROPERTY_VALUE);
+        operationRepository.persist(operation);
+
+        operation = new Operation(NAME, ActionType.ACTIVATE, new Selector("activated"), streamId);
+        operation.setBandwidthPercent(15.0f);
+        operation.setProperty(PROPERTY_KEY, PROPERTY_VALUE);
+        operationRepository.persist(operation);
+
+    }
+
+    public void testHiddenSubOperations()
+    {
+        final List<Operation> operations = operationRepository.getAll();
+        assertThat(operations.size(), is(1));
+
+        final Operation op = operations.get(0);
+        final OperationConfiguration subOpConfig = new OperationConfiguration.Builder().action(ActionType.REFRESH).
+            name(SUBOPERATION_NAME).streamId(STREAM_ID).selector(new Selector("activated")).build();
+        op.addSubOperation(subOpConfig);
+
+        operationRepository.persist(op);
+
+        final Operation opWithSubOp = operationRepository.get(op.getId());
+        assertThat(opWithSubOp.getSubOperations().size(), is(1));
+
+        final Operation child = opWithSubOp.getSubOperations().get(0);
+        assertThat(child.getParentId(), equalTo(opWithSubOp.getId()));
+
+        final List<Operation> allOps = operationRepository.getAll(true);
+
+        assertThat(operationRepository.getWithStreamId(STREAM_ID).size(), is(1));
+        assertThat(operationRepository.getAll(true).size(), is(2));
+        assertThat(operationRepository.getAll(false).size(), is(1));
+        assertThat(operationRepository.getAll().size(), is(1));
+
+        operationRepository.delete(op);
+        assertThat(operationRepository.getAll().isEmpty(), is(true));
+    }
+
+    private class ReflectionOperation extends Operation
+    {
+        public ReflectionOperation(final Operation operation)
+        {
+            super(operation.toConfiguration());
+        }
+
+        @Override
+        public boolean equals(final Object obj)
+        {
+            if (!(obj instanceof Operation))
+            {
+                return false;
+            }
+
+            final Operation action = (Operation)obj;
+            if (super.getAction() != action.getAction())
+            {
+                return false;
+            }
+            else if (super.getCurrentPass() != action.getCurrentPass())
+            {
+                return false;
+            }
+            else if (super.getSelector() != action.getSelector())
+            {
+                return false;
+            }
+            else if (super.getLastSerialNumberProcessedInPass() != action.getLastSerialNumberProcessedInPass())
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        @Override
+        public int hashCode()
+        {
+            return HashCodeBuilder.reflectionHashCode(this);
+        }
+    }
+}

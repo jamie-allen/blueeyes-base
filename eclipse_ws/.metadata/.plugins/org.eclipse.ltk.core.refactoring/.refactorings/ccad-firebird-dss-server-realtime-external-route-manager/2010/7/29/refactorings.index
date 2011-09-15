@@ -1,0 +1,4 @@
+1279308400611	Delete element
+1279308476265	Rename field 'totalReceived'
+1279308488783	Rename field 'totalInserted'
+1279310903916	Extract constant 'MPEG2_PACKET_SIZE'

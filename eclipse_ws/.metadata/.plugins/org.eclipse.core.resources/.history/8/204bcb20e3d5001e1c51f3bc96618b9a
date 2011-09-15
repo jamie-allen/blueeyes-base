@@ -1,0 +1,164 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.stream.manager.impl;
+
+import java.nio.BufferUnderflowException;
+import java.nio.ByteBuffer;
+import java.util.List;
+
+import com.ccadllc.firebird.vms.common.packetfiltering.ForwardingPacketFilter;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilter;
+
+import net.jcip.annotations.ThreadSafe;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
+
+/**
+ * Converts a network packet into an DSG Broadcast Tunnel packet.
+ * It then sends the packet to the shaper chain.
+ *
+ */
+@ThreadSafe
+public final class DsgBtPacketizer extends ForwardingPacketFilter
+{
+    private static final int IP_HEADER_SIZE = 20;
+    private static final int UDP_HEADER_SIZE = 8;
+    private static final int BT_HEADER_SIZE = 4;
+    private static final int MAX_SEGMENT_NUMBER = 15;
+
+    private static final int  LAST_SEGMENT_VALUE = 0x00000010;
+    private static final int SEGMENT_NUMBER_MASK = 0x0000000F;
+    private static final byte HEADER_START = (byte)0xFF;
+
+    private volatile int idNumber = -1;
+    private int segmentNumber;
+    private final int maxDsgBtSegmentSize;
+
+    private final Logger logger = LoggerFactory.getLogger(DsgBtPacketizer.class);
+
+    /** Lock used when segmenting any block data. */
+    private final Object lock = new Object();
+
+    public DsgBtPacketizer(final PacketFilter sink, final int mtuSize)
+    {
+        super(sink);
+        maxDsgBtSegmentSize = mtuSize - IP_HEADER_SIZE - UDP_HEADER_SIZE - BT_HEADER_SIZE;
+    }
+
+    @Override
+    public boolean insert(final byte[] block)
+    {
+        final List<byte[]> encodedSegments = segmentize(block);
+        if (encodedSegments != null)
+        {
+            for (final byte[] segment : encodedSegments)
+            {
+                sink().insert(segment);
+            }
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    private List<byte[]> segmentize(final byte[] block)
+    {
+        segmentNumber = -1;
+        boolean isLastSegment = false;
+        int bytesLeft = block.length;
+        final int idNumber = getNextIdNumber();
+        final List<byte[]> encodedSegments = Lists.newArrayList();
+
+        final ByteBuffer sectionToProcessBuffer = ByteBuffer.wrap(block);
+        byte[] currentSegment;
+
+        synchronized (lock)
+        {
+            while (bytesLeft > 0)
+            {
+                try
+                {
+                    currentSegment = getCurrentSegment(sectionToProcessBuffer, bytesLeft);
+                    bytesLeft = bytesLeft - currentSegment.length;
+                    if (bytesLeft <= 0)
+                    {
+                        isLastSegment = true;
+                    }
+                    final byte[] segmentProcessed = encode(currentSegment, idNumber, getNextSegmentNumber(), isLastSegment);
+                    encodedSegments.add(segmentProcessed);
+                }
+                catch (final BufferUnderflowException bufe)
+                {
+                    logger.error("Error in reading segment data. Ignore this section.");
+                    return null;
+                }
+            }
+        }
+        return encodedSegments;
+    }
+
+    private byte[] getCurrentSegment(final ByteBuffer sectionToProcessBuffer, final int bytesLeft)
+    {
+        byte[] currentSegment;
+        if (bytesLeft >= maxDsgBtSegmentSize)
+        {
+            currentSegment = new byte[maxDsgBtSegmentSize];
+        }
+        else
+        {
+            currentSegment = new byte[bytesLeft];
+        }
+
+        sectionToProcessBuffer.get(currentSegment);
+
+        return currentSegment;
+    }
+
+    private byte[] encode(final byte[] segmentBytes, final int idNumber, final int segmentNumber, final boolean isLastSegment)
+    {
+        Preconditions.checkNotNull(segmentBytes);
+        Preconditions.checkArgument(segmentBytes.length <= maxDsgBtSegmentSize,
+            String.format("Malformed segment -- length should be less than %d.", maxDsgBtSegmentSize));
+
+        // 4 byte DSG Broadcast Tunnel header format: x represents a bit, if not specified, bit set to 0
+        //   xxxx   xxxx      xxx           x               xxxx          xxxx xxxx xxxx xxxx
+        // |header_start|  |version|  |last_segment|   |segment_number|  |----- id_number ----|
+        // header_start =0xff
+        // version = 0x0.
+        // last_segment -- set to 1 if this is the last segment of the block.
+        // segment_number -- number of the current segment for the given id_number, 0 indicates the first segment.
+        // id_number -- number assigned to each section delivered thus allowing the device to correlate segments that are
+        //     applicable to a particular section. 0 .. 32767, most significant byte first.
+        // Turn checkstyle off so magic numbers aren't flagged
+        // CHECKSTYLE:OFF
+        final byte[] encoded = new byte[segmentBytes.length + BT_HEADER_SIZE];
+        final int versionLastSegmentAndSegmentNumber = isLastSegment ? (LAST_SEGMENT_VALUE | (segmentNumber & SEGMENT_NUMBER_MASK))
+            : (segmentNumber & SEGMENT_NUMBER_MASK);
+        encoded[0] = HEADER_START;
+        encoded[1] = (byte)(0x000000FF & versionLastSegmentAndSegmentNumber);
+        encoded[2] = (byte)(0x000000FF & (idNumber >> 8));
+        encoded[3] = (byte)(0x000000FF & idNumber);
+
+        System.arraycopy(segmentBytes, 0, encoded, 4, segmentBytes.length);
+
+        return encoded;
+    }
+
+    private int getNextSegmentNumber()
+    {
+        segmentNumber++;
+        return (segmentNumber > MAX_SEGMENT_NUMBER ? 0 : segmentNumber);
+    }
+
+    private int getNextIdNumber()
+    {
+        idNumber++;
+        return (idNumber > Short.MAX_VALUE ? 0 : idNumber);
+    }
+
+}

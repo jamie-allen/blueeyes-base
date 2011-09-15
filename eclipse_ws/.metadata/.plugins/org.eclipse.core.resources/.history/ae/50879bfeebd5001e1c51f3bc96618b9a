@@ -1,0 +1,454 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.it;
+
+import static com.ccadllc.firebird.dss.it.TransportStreamMatcher.containingProgram;
+import static com.ccadllc.firebird.dss.it.TransportStreamMatcher.withPid;
+import static com.ccadllc.firebird.dss.it.TransportStreamMatcher.withPmtProgramNumber;
+import static com.ccadllc.firebird.dss.it.TransportStreamMessageVerifier.verifyPayloadDataMatches;
+import static com.ccadllc.firebird.dss.it.TransportStreamMessageVerifier.verifyPidNotInReservedRanges;
+import static com.ccadllc.firebird.dss.it.TransportStreamMessageVerifier.verifyPmtOneComponent;
+import static com.ccadllc.firebird.dss.it.TransportStreamTestUtility.getPayload;
+import static com.ccadllc.firebird.dss.it.TransportStreamTestUtility.getPmtPidForProgramNumberFromPatPayload;
+import static com.ccadllc.firebird.dss.it.TransportStreamTestUtility.getUint16;
+import static com.ccadllc.firebird.dss.it.TransportStreamTestUtility.getVersionNumberFromPayload;
+import static com.ccadllc.firebird.dss.it.TransportStreamTestUtility.receiveDataFromUdpSource;
+import static com.ccadllc.firebird.dss.it.TransportStreamTestUtility.udpMessageListener;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
+
+import javax.jms.JMSException;
+import javax.xml.bind.JAXBException;
+
+import com.ccadllc.firebird.dss.common.datatypes.MeteringType;
+import com.ccadllc.firebird.dss.common.datatypes.StreamSummary;
+import com.ccadllc.firebird.dss.common.datatypes.TransportStreamConstants;
+import com.ccadllc.firebird.dss.common.remote.messages.DestinationInfo;
+import com.ccadllc.firebird.dss.common.remote.messages.IntegerRangeSummary;
+import com.ccadllc.firebird.dss.common.remote.messages.StreamDestinationInfo;
+import com.ccadllc.firebird.dss.server.realtime.standalone.stream.manager.impl.Mpeg2Packet;
+
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+
+/**
+ * <p>The ability to add component streams to programs of transport streams in the DSS.</p>
+ *
+ * <p>Each program in a transport stream may include zero or more component streams. A program's PMT message references each of the
+ * component streams in the program by including their PIDs and component stream types as defined in ISO 13818-1. A component
+ * stream is always assigned a PID that is selected by the DSS from a set of available PIDs that are unused and unreserved for
+ * that transport stream. </p>
+ *
+ * <p>When addition of a new component stream to a program is requested, the DSS will automatically regenerate the PMT message for
+ * the program, to include a reference to the new component stream.</p>
+ */
+public class AddComponentStreamIntegrationTest extends AbstractDssOsgiIntegrationTest
+{
+    private static final int MPEG2_PACKET_HEADER_SIZE_WITH_START_BYTE = Mpeg2Packet.HEADER_SIZE_IN_BYTES + 1;
+    private static final byte[][] PERIODIC_DATA = new byte[][] {{0x01, 0x02, 0x03, 0x04, 0x05}};
+    private static final int COMPONENT_STREAM_TYPE = 100;
+    private static final int TIMEOUT = 5000;
+    private static final int BASE_PORT = 5000;
+    private static final int PROGRAM_NUMBER = 400;
+    private static final Integer NETWORK_PID = 1911;
+    private static final int MAX_VERSION_NUMBER = 31;
+    private final List<DestinationInfo> destinations = Lists.newArrayList(new DestinationInfo(IP_STRING));
+    private final List<StreamDestinationInfo> streamDestinations = Lists.newArrayList(new StreamDestinationInfo(IP_STRING, PORT1));
+    private final List<IntegerRangeSummary> reservedPidRanges = Lists.newArrayList(new IntegerRangeSummary(16, 7999), new IntegerRangeSummary(8002, 8190));
+    private final List<IntegerRangeSummary> reservedProgramNumberRanges = Lists.newArrayList();
+
+    public void testAddComponentStreamTo_Mpeg2TransportStreamWithReservedPidRangeSpecified() throws Exception
+    {
+        /*
+         * Create an MPEG-2 transport stream:
+         *      single destination
+         *      reservedPidRanges: 16-7999,8002-8190
+         *      no reservedProgramNumberRanges
+         * Add a program to this transport stream
+         * Determine the PMT pid selected for the program
+         * Determine the current version of the PMT message
+         * Add a component stream to the program:
+         *      component stream type = 100
+         *      max avg data rate = 50000
+         *      max burst size = 2444
+         *      max shaping latency = 10
+         * Determine component stream PID
+         * Verify that PID for the component stream is outside reserved range (should be either 8000 or 8001)
+         * On the transport stream destination:
+         *      Verify that correct PMT message is being transmitted on the determined PMT pid, containing:
+         *          correct program number
+         *          one component stream with type = 100 and pid = component stream pid determined above
+         *          version number = incremented from the previous version of PMT determined above
+         * Add a dummy periodic to the component stream
+         * On the transport stream destination:
+         *      Verify MPEG2 data output for component stream PID
+         */
+        final int transportStreamId = dssClient.createMpeg2TransportStream(streamDestinations, NETWORK_PID, reservedPidRanges, reservedProgramNumberRanges, streamProperties);
+        verifyProgramAndComponentStreamForMpeg2TransportStream(transportStreamId, reservedPidRanges);
+    }
+
+    public void testAddComponentStreamTo_IpDirectTransportStreamWithReservedPidRangeSpecified() throws Exception
+    {
+        /*
+         * Create an IP direct transport stream:
+         *      single destination
+         *      base port = 5000
+         *      reservedPidRanges: 16-7999,8002-8190
+         *      no reservedProgramNumberRanges
+         * Add a program to this transport stream
+         * Determine the PMT pid selected for the program
+         * Determine the current version of the PMT message
+         * Add a component stream to the program:
+         *      component stream type = 100
+         *      max avg data rate = 50000
+         *      max burst size = 2444
+         *      max shaping latency = 10
+         * Determine component stream PID
+         * Verify that PID for the component stream is outside reserved range (should be either 8000 or 8001)
+         * On the transport stream destination:
+         *      Verify that correct PMT message is being transmitted on port (5000 + the PMT pid), containing:
+         *          correct program number
+         *          one component stream with type = 100 and pid = component stream pid determined above
+         *          version number = incremented from the previous version of PMT determined above
+         * Add a dummy periodic to the component stream
+         * On the transport stream destination:
+         *      Verify data output on port (5000 + component stream PID)
+         */
+        dssClient.createIpDirectTransportStream(destinations, BASE_PORT, NETWORK_PID, reservedPidRanges, reservedProgramNumberRanges, transportStreamProperties);
+        final byte[] receivedPayload = udpMessageListener(BASE_PORT, System.currentTimeMillis() + TIMEOUT, outputHandler, AbstractDssOsgiIntegrationTest.MAX_BUFFER_VALUE);
+        final int transportStreamId = getUint16(receivedPayload, 3);
+        verifyProgramAndComponentStreamForIpDirectTransportStream(transportStreamId);
+    }
+
+    public void testAddComponentStreamTo_TransportStreamWithReservedPidRangeNotSpecified() throws Exception
+    {
+        final List<IntegerRangeSummary> pidRanges = Lists.newArrayList();
+        final int transportStreamId = dssClient.createMpeg2TransportStream(streamDestinations, NETWORK_PID, pidRanges, reservedProgramNumberRanges, streamProperties);
+        verifyProgramAndComponentStreamForMpeg2TransportStream(transportStreamId, pidRanges);
+    }
+
+    public void testShouldSendErrorWhen_AllUnreservedPidsAreInUse() throws Exception
+    {
+        final int transportStreamId = anMpegTransportStream(Lists.newArrayList(new IntegerRangeSummary(16, 8188)), reservedProgramNumberRanges);
+        final int programNumber = aProgram(transportStreamId, null, programProperties);
+
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(
+            createAddComponentRequestToXml(transportStreamId, programNumber, 1, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, streamProperties));
+    }
+
+    public void testShouldSendErrorWhen_ProgramNumberSpecifiedIsInvalid() throws Exception
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("programNumber=\"\\w*\"", "programNumber=\"asdfasdf\"");
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    public void testShouldSendErrorWhen_ProgramNumberIsMissing() throws Exception
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("programNumber=\"\\w*\"", "");
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    /**
+     * Maximum program number is 65535.
+     */
+    public void testShouldSendErrorWhen_ProgramNumberSpecifiedIsTooLarge() throws Exception
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("programNumber=\"\\w*\"", String.format("programNumber=\"%d\"", TransportStreamConstants.PROGRAM_NUMBER_MAXIMUM + 1));
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    /**
+     * Minimum program number is 1.
+     */
+    public void testShouldSendErrorWhen_ProgramNumberSpecifiedIsTooSmall() throws Exception
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("programNumber=\"\\w*\"", String.format("programNumber=\"%d\"", TransportStreamConstants.PROGRAM_NUMBER_MINIMUM - 1));
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_GivenMalformedAddComponentStreamMessageBody() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final StringBuffer illegalStreamRequest = new StringBuffer(randomAddComponentStreamToTransportStreamToXml()).insert(88, "asdfasdf");
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest.toString());
+    }
+
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_TransportStreamDoesNotExist() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("transportStreamId=\"\\w*\"", String.format("transportStreamId=\"%d\"", 6667));
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_TransportStreamIdIsMissingFromXml() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("transportStreamId=\"\\w*\"", "");
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    /**
+     * Maximum stream id is 9223372036854775807.
+     */
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_TransportStreamIdTooLarge() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("transportStreamId=\"\\w*\"", String.format("transportStreamId=\"%d\"", Long.MAX_VALUE + 1));
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    /**
+     * Minimum stream id is 0.
+     */
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_TransportStreamIdTooSmall() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("transportStreamId=\"\\w*\"", String.format("transportStreamId=\"%d\"", Long.MIN_VALUE - 1));
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_TransportStreamIdIsInvalid() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("transportStreamId=\"\\w*\"", "transportStreamId=\"asdfasdf\"");
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    /**
+     * Minimum for the Maximum average rate value is 1.
+     */
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_MaxAverageRateTooSmall() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("maxAverageRate=\"\\w*\"", String.format("maxAverageRate=\"%d\"", Integer.MIN_VALUE - 1));
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    /**
+     * Maximum for the Maximum average rate value is 2147483647.
+     */
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_MaxAverageRateTooLarge() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("maxAverageRate=\"\\w*\"", String.format("maxAverageRate=\"%d\"", Integer.MAX_VALUE + 1));
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    /**
+     * Minimum for the Maximum burst size value is 1.
+     */
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_MaxBurstSizeTooSmall() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("maxBurstSize=\"\\w*\"", String.format("maxBurstSize=\"%d\"", Integer.MIN_VALUE - 1));
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    /**
+     * Maximum for the Maximum burst size value is 2147483647.
+     */
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_MaxBurstSizeTooLarge() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("maxBurstSize=\"\\w*\"", String.format("maxBurstSize=\"%d\"", Integer.MAX_VALUE + 1));
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    /**
+     * Minimum for the Maximum shaping latency value is 0.
+     */
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_MaxShapingLatencyTooSmall() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("maxShapingLatency=\"\\w*\"", String.format("maxShapingLatency=\"%d\"", Integer.MIN_VALUE - 1));
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    /**
+     * Maximum for the Maximum shaping latency value is 2147483647.
+     */
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_MaxShapingLatencyTooLarge() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("maxShapingLatency=\"\\w*\"", String.format("maxShapingLatency=\"%d\"", Integer.MAX_VALUE + 1));
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    /**
+     * Minimum value is 0.
+     */
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_ComponentStreamTypeTooSmall() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("componentStreamType=\"\\w*\"", "componentStreamType=\"-1\"");
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    /**
+     * Maximum value is 255.
+     */
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_ComponentStreamTypeTooLarge() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("componentStreamType=\"\\w*\"", "componentStreamType=\"256\"");
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    /**
+     * Maximum average rate value must be a positive long numeric value.
+     */
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_MaxAverageRateIsInvalid() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("maxAverageRate=\"\\w*\"", "maxAverageRate=\"asdfasdf\"");
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_MaxAverageRateIsMissing() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("maxAverageRate=\"\\w*\"", "");
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    /**
+     * Maximum average burst size value must be a positive long numeric value.
+     */
+    public void testShouldSendErrorWhen_MaxBurstSizeIsInvalid() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("maxBurstSize=\"\\w*\"", "maxBurstSize=\"asdfasdfasdf\"");
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    public void testShouldSendErrorWhen_MaxBurstSizeIsMissing() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("maxBurstSize=\"\\w*\"", "");
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    /**
+     * Maximum shaping latency size value must be a non-negative long numeric value.
+     */
+    public void testShouldSendErrorWhen_MaxShapingLatencyIsInvalid() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("maxShapingLatency=\"\\w*\"", "maxShapingLatency=\"asdfasdfasdf\"");
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    public void testShouldSendErrorWhen_MaxShapingLatencyIsMissing() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("maxShapingLatency=\"\\w*\"", "");
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_ComponentStreamTypeIsInvalid() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("componentStreamType=\"\\w*\"", "componentStreamType=\"asdfasdfasdf\"");
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    // CHECKSTYLE:OFF
+    public void testShouldSendErrorWhen_ComponentStreamTypeIsMissing() throws Exception
+    // CHECKSTYLE:ON
+    {
+        final String illegalStreamRequest = randomAddComponentStreamToTransportStreamToXml().replaceAll("componentStreamType=\"\\w*\"", "");
+        sendIllegalAddComponentStreamRequestAndVerifyErrorResponse(illegalStreamRequest);
+    }
+
+    private int anMpegTransportStream(final List<IntegerRangeSummary> pidRanges, final List<IntegerRangeSummary> programNumberRanges) throws JMSException, JAXBException
+    {
+        return dssClient.createMpeg2TransportStream(Lists.<StreamDestinationInfo>newArrayList(new StreamDestinationInfo(IP_STRING, PORT1)),
+            1911, pidRanges, programNumberRanges, Maps.<String, String>newHashMap());
+    }
+
+    private int aProgram(final int transportStreamId, final Integer programNumber, final Map<String, String> properties) throws JMSException, JAXBException
+    {
+        return dssClient.addProgram(transportStreamId, programNumber, properties);
+    }
+
+    private long aComponentStream(final int transportStreamId, final int programNumber) throws JMSException, JAXBException
+    {
+        return dssClient.addComponentStream(transportStreamId, programNumber, COMPONENT_STREAM_TYPE, MAX_AVERAGE, MAX_BURST, MAX_LATENCY, componentStreamProperties);
+    }
+
+    private void aPeriodic(final Long streamid) throws JMSException, JAXBException
+    {
+        dssClient.addPeriodic(null, streamid, PERIODIC_DATA, MeteringType.FRONT_LOADED, new Date(), null, 10);
+    }
+
+    private void verifyProgramAndComponentStreamForMpeg2TransportStream(final Integer transportStreamId, final List<IntegerRangeSummary> expectedPidRanges) throws JAXBException, JMSException, InterruptedException
+    {
+        final int programNumber = dssClient.addProgram(transportStreamId, PROGRAM_NUMBER, programProperties);
+        final byte[] patPacket = receiveDataFromUdpSource(streamDestinations, outputHandler,
+            new PacketCollectorWithMatcher(withPid(0, containingProgram(programNumber, null))))[0];
+        final int pmtPid = getPmtPidForProgramNumberFromPatPayload(getPayload(patPacket), programNumber);
+        final byte[] packetFoundBefore = receiveDataFromUdpSource(streamDestinations, outputHandler,
+            new PacketCollectorWithMatcher(withPid(pmtPid, withPmtProgramNumber(programNumber, null))))[0];
+        final int versionNumber = getVersionNumberFromPayload(getPayload(packetFoundBefore));
+        final long componentStreamId = aComponentStream(transportStreamId, PROGRAM_NUMBER);
+        aPeriodic(componentStreamId);
+        final byte[] packetFoundAfter = receiveDataFromUdpSource(streamDestinations, outputHandler,
+            new PacketCollectorWithMatcher(withPid(pmtPid, withPmtProgramNumber(programNumber, null))))[0];
+        // Get PMT version number after adding component stream
+        assertThat(getVersionNumberFromPayload(getPayload(packetFoundAfter)), is((versionNumber + 1) % (MAX_VERSION_NUMBER + 1)));
+        final StreamSummary stream = queryForStreamById(componentStreamId);
+        verifyPmtOneComponent(getPayload(packetFoundAfter), PROGRAM_NUMBER, null, COMPONENT_STREAM_TYPE, stream.getPid());
+        verifyPidNotInReservedRanges(stream.getPid(), expectedPidRanges);
+        final byte[] componentStreamPayload = receiveDataFromUdpSource(streamDestinations, outputHandler,
+            new PacketCollectorWithMatcher(withPid(stream.getPid(), null)))[0];
+        final byte[] verifiableComponentStreamPayload = new byte[PERIODIC_DATA[0].length];
+        System.arraycopy(componentStreamPayload, MPEG2_PACKET_HEADER_SIZE_WITH_START_BYTE, verifiableComponentStreamPayload, 0, PERIODIC_DATA[0].length);
+        verifyPayloadDataMatches(verifiableComponentStreamPayload, PERIODIC_DATA[0]);
+    }
+
+    private void verifyProgramAndComponentStreamForIpDirectTransportStream(final int transportStreamId) throws JMSException,
+        JAXBException
+    {
+        dssClient.addProgram(transportStreamId, PROGRAM_NUMBER, programProperties);
+        final byte[] patPayload = udpMessageListener(BASE_PORT, System.currentTimeMillis() + TIMEOUT, outputHandler, AbstractDssOsgiIntegrationTest.MAX_BUFFER_VALUE);
+        final int pmtPid = getPmtPidForProgramNumberFromPatPayload(patPayload, PROGRAM_NUMBER);
+
+        // Get PMT version number before adding component stream
+        final byte[] pmtPayloadBefore = udpMessageListener(BASE_PORT + pmtPid, System.currentTimeMillis() + TIMEOUT, outputHandler, AbstractDssOsgiIntegrationTest.MAX_BUFFER_VALUE);
+        final int initialPmtVersionNumber = getVersionNumberFromPayload(pmtPayloadBefore);
+
+        final long componentStreamId = aComponentStream(transportStreamId, PROGRAM_NUMBER);
+        aPeriodic(componentStreamId);
+
+        // Get PMT version number after adding component stream
+        final byte[] pmtPayloadAfter = udpMessageListener(BASE_PORT + pmtPid, System.currentTimeMillis() + TIMEOUT, outputHandler, AbstractDssOsgiIntegrationTest.MAX_BUFFER_VALUE);
+        assertThat(getVersionNumberFromPayload(pmtPayloadAfter), is((initialPmtVersionNumber + 1) % (MAX_VERSION_NUMBER + 1)));
+
+        final StreamSummary stream = queryForStreamById(componentStreamId);
+        verifyPidNotInReservedRanges(stream.getPid(), reservedPidRanges);
+        verifyPmtOneComponent(pmtPayloadAfter, PROGRAM_NUMBER, null, COMPONENT_STREAM_TYPE, stream.getPid());
+
+        final byte[] componentStreamPayload = udpMessageListener(BASE_PORT + stream.getPid(), System.currentTimeMillis() + TIMEOUT, outputHandler, AbstractDssOsgiIntegrationTest.MAX_BUFFER_VALUE);
+        verifyPayloadDataMatches(componentStreamPayload, PERIODIC_DATA[0]);
+    }
+}

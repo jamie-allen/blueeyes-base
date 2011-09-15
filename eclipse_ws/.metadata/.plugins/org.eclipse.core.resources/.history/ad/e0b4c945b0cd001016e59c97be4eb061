@@ -1,0 +1,4 @@
+package akka.util
+
+class RingBuffer[E <: AnyRef](val maxCapacity: Int) {
+}

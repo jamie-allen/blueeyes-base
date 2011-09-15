@@ -1,0 +1,180 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.topology.stream.changeset.impl;
+
+import static com.ccadllc.firebird.vms.topology.stream.TestData.SHAPING_PROFILE;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.replay;
+import static org.easymock.EasyMock.reset;
+import static org.easymock.EasyMock.verify;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.collection.IsMapContaining.hasEntry;
+
+import java.util.Map;
+
+import com.ccadllc.commons.util.MapUtility;
+import com.ccadllc.commons.util.Option;
+import com.ccadllc.firebird.vms.topology.core.Element;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.ServingLocationQName;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutablePacketizedElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableTopologyModel;
+import com.ccadllc.firebird.vms.topology.stream.PacketizedElementaryStreamEntity;
+import com.ccadllc.firebird.vms.topology.stream.changeset.ModifyElementaryStreamChangeAgent;
+
+import org.easymock.EasyMock;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+/**
+ * Tests <code>ModifyStreamChangeAgent</code>.
+ */
+@Test
+public class ModifyElementaryStreamChangeAgentTest
+{
+    private final MutableTopologyModel model = EasyMock.createMock(MutableTopologyModel.class);
+
+    private ModifyElementaryStreamChangeAgent agent;
+
+    private MutablePacketizedElementaryStream stream;
+
+    @BeforeMethod
+    public void beforeMethod()
+    {
+        reset(model);
+        agent = new ModifyElementaryStreamChangeAgent();
+        stream = new PacketizedElementaryStreamEntity("stream1", null, 8188, true, SHAPING_PROFILE, ServingLocationQName
+            .of(":pa:east"), MapUtility.<String, String> toMap("key1", "value1", "key2", "value2", "key3", "value3"));
+    }
+
+    public void testExecuteWithNameChanged()
+    {
+        final Map<String, String> modify = MapUtility.toMap("id", stream.getId().toString(), "name", "stream2");
+
+        expectQueryForStream();
+        final MutableElementaryStream mutableStream = expectCheckoutOccurs(stream);
+
+        replay(model);
+
+        agent.execute(model, modify);
+
+        verify(model);
+
+        assertThat(mutableStream.getName(), is("stream2"));
+    }
+
+    private MutableElementaryStream expectCheckoutOccurs(final ElementaryStream stream)
+    {
+        final MutableElementaryStream mutable = (MutableElementaryStream)stream.thawedCopy();
+        expect(model.checkout(stream)).andStubReturn(mutable);
+        return mutable;
+    }
+
+    public void testExecuteWithRequiredAndAdditionalPropertiesResultsInAdditionalPropertiesAddedToStreamPropertiesMap()
+    {
+        expectQueryForStream();
+        final MutableElementaryStream mutableStream = expectCheckoutOccurs(stream);
+        replay(model);
+
+        final int oldNumProperties = stream.getProperties().size();
+
+        final Map<String, String> modify = MapUtility.<String, String> toMap("id", stream.getId().toString(), "key4", "value4",
+            "key5", "value5");
+        agent.execute(model, modify);
+
+        verify(model);
+
+        assertThat(mutableStream.getProperties().size(), is(oldNumProperties + 2));
+        assertThat(mutableStream.getProperties(), hasEntry("key4", "value4"));
+        assertThat(mutableStream.getProperties(), hasEntry("key5", "value5"));
+    }
+
+    public void testExecuteWithChangedLocation()
+    {
+        expectQueryForStream();
+        final MutableElementaryStream mutableStream = expectCheckoutOccurs(stream);
+
+        replay(model);
+
+        final Map<String, String> modify = MapUtility.toMap("id", stream.getId().toString(), "servingLocation", ":md");
+        agent.execute(model, modify);
+
+        verify(model);
+
+        assertThat(mutableStream.getLocation(), is(ServingLocationQName.of(":md")));
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testExecuteWithNullLocationThrowsException()
+    {
+        expectQueryForStream();
+        expectCheckoutOccurs(stream);
+
+        replay(model);
+
+        final Map<String, String> modify = MapUtility.toMap("id", stream.getId().toString(), "servingLocation", "");
+        agent.execute(model, modify);
+
+        verify(model);
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testExecuteWithStreamThatNoLongerExists()
+    {
+        expect(model.getElementById(stream.getId())).andReturn(Option.<Element>none());
+
+        replay(model);
+
+        final Map<String, String> modify = MapUtility.toMap("id", stream.getId().toString());
+        agent.execute(model, modify);
+
+        verify(model);
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testExecuteWithPidZeroThrowsException()
+    {
+        expectQueryForStream();
+        expectCheckoutOccurs(stream);
+
+        replay(model);
+
+        final Map<String, String> modify = MapUtility.toMap("id", stream.getId().toString(), "pid", "0");
+        agent.execute(model, modify);
+
+        verify(model);
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testExecuteWithPidOneThrowsException()
+    {
+        expectQueryForStream();
+        expectCheckoutOccurs(stream);
+
+        replay(model);
+
+        final Map<String, String> modify = MapUtility.toMap("id", stream.getId().toString(), "pid", "1");
+        agent.execute(model, modify);
+
+        verify(model);
+    }
+
+    public void testExecuteWithValidPid()
+    {
+        expectQueryForStream();
+        expectCheckoutOccurs(stream);
+
+        replay(model);
+
+        final Map<String, String> modify = MapUtility.toMap("id", stream.getId().toString(), "pid", "8191");
+        agent.execute(model, modify);
+
+        verify(model);
+    }
+
+    private void expectQueryForStream()
+    {
+        expect(model.getElementById(stream.getId())).andReturn(Option.<Element>some(stream));
+    }
+}

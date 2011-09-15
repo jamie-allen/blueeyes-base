@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Extract constant &apos;SOCKET_IDLE_TIMEOUT&apos; from expression &apos;600&apos;&#x0A;- Original project: &apos;ccad-firebird-dss-server-realtime-external-route-manager&apos;&#x0A;- Constant name: &apos;SOCKET_IDLE_TIMEOUT&apos;&#x0A;- Constant expression: &apos;600&apos;&#x0A;- Declared visibility: &apos;private&apos;" description="Extract constant &apos;SOCKET_IDLE_TIMEOUT&apos;" flags="786432" id="org.eclipse.jdt.ui.extract.constant" input="/src\/main\/java&lt;com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl{AbstractTcpRouteController.java" name="SOCKET_IDLE_TIMEOUT" qualify="false" replace="false" selection="4648 3" stamp="1269283822208" version="1.0" visibility="2"/>
+</session>

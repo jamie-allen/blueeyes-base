@@ -1,0 +1,157 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.topology.estream.impl;
+
+import static com.ccadllc.firebird.vms.topology.estream.TestData.SHAPING_PROFILE;
+import static org.easymock.EasyMock.anyObject;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.replay;
+import static org.easymock.EasyMock.reset;
+import static org.easymock.EasyMock.verify;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.collection.IsMapContaining.hasEntry;
+
+import java.util.Map;
+import java.util.UUID;
+
+import com.ccadllc.commons.util.MapUtility;
+import com.ccadllc.firebird.vms.topology.core.ElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.ServingLocationQName;
+import com.ccadllc.firebird.vms.topology.core.change.ChangeStatus;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutablePacketizedElementaryStream;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableTopologyModel;
+import com.ccadllc.firebird.vms.topology.estream.PacketizedElementaryStreamEntity;
+
+import org.easymock.EasyMock;
+import org.hamcrest.Matcher;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+/**
+ * Tests <code>ModifyStreamChangeAgent</code>.
+ */
+@Test
+public class ModifyElementaryStreamChangeAgentTest
+{
+    private final MutableTopologyModel model = EasyMock.createMock(MutableTopologyModel.class);
+    private ModifyElementaryStreamChangeAgent agent;
+    private MutablePacketizedElementaryStream stream;
+
+
+    @BeforeMethod
+    public void beforeMethod()
+    {
+        reset(model);
+        agent = new ModifyElementaryStreamChangeAgent();
+        stream = new PacketizedElementaryStreamEntity("stream1", null, 8188, true, SHAPING_PROFILE, ServingLocationQName.of(":pa:east"), MapUtility.<String, String>toMap("key1", "value1", "key2", "value2", "key3", "value3"));
+    }
+
+    public void testExecuteWithNameChanged()
+    {
+        expectQueryForStream();
+        expectNoDuplicateNamesFound();
+
+        replay(model);
+
+        final Map<String, String> modify = MapUtility.toMap("id", stream.getId().toString(), "name", "stream2");
+        agent.execute(model, modify, false);
+
+        verify(model);
+
+        assertThat(stream.getName(), is("stream2"));
+    }
+
+    public void testExecuteWithRequiredAndAdditionalPropertiesResultsInAdditionalPropertiesAddedToStreamPropertiesMap()
+    {
+        expectQueryForStream();
+
+        replay(model);
+
+        final int oldNumProperties = stream.getProperties().size();
+
+        final Map<String, String> modify = MapUtility.toMap("id", stream.getId().toString(), "key4", "value4", "key5", "value5");
+        agent.execute(model, modify , false);
+
+        verify(model);
+
+        assertThat(stream.getProperties().size(), is(oldNumProperties + 2));
+        assertThat(stream.getProperties(), hasEntry("key4", "value4"));
+        assertThat(stream.getProperties(), hasEntry("key5", "value5"));
+    }
+
+    public void testExecuteWithChangedLocation()
+    {
+        expectQueryForStream();
+
+        replay(model);
+
+        final Map<String, String> modify = MapUtility.toMap("id", stream.getId().toString(), "servingLocation", ":md");
+        agent.execute(model, modify , false);
+
+        verify(model);
+
+        assertThat(stream.getLocation(), is(ServingLocationQName.of(":md")));
+    }
+
+    public void testExecuteWithNoLocation()
+    {
+        expectQueryForStream();
+
+        replay(model);
+
+        final Map<String, String> modify = MapUtility.toMap("id", stream.getId().toString(), "servingLocation", "");
+        agent.execute(model, modify , false);
+
+        verify(model);
+
+        assertThat(stream.getLocation(), is(""));
+    }
+
+    public void testExecuteWithStreamThatNoLongerExists()
+    {
+        expect(model.getElementaryStreamById((UUID)anyObject())).andReturn(null);
+
+        replay(model);
+
+        final Map<String, String> modify = MapUtility.toMap("id", stream.getId().toString());
+        final ChangeStatus status = agent.execute(model, modify, false);
+
+        verify(model);
+
+        assertThat(status.isValid(), is(false));
+    }
+
+    private void expectQueryForStream()
+    {
+        expect(model.getElementaryStreamById((UUID)anyObject())).andReturn(stream);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void expectNoDuplicateNamesFound()
+    {
+        EasyMock.expect(model.queryForElementaryStream((Matcher<ElementaryStream>)anyObject())).andStubReturn(null);
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testRenameStreamWithExistingName_ResultsInError() throws Exception
+    {
+        expectQueryForStream();
+        final MutablePacketizedElementaryStream otherStream =
+            new PacketizedElementaryStreamEntity("My New Stream", null, 8188, true, SHAPING_PROFILE, stream.getLocation(),
+                MapUtility.<String, String>toMap("key1", "value1", "key2", "value2", "key3", "value3"));
+        EasyMock.expect(model.queryForElementaryStream((Matcher<ElementaryStream>)anyObject())).andStubReturn(otherStream);
+
+        replay(model);
+
+        final String name = "My New Stream";
+        final Map<String, String> map = MapUtility.toMap(
+            "id", stream.getId().toString(),
+            "name", name);
+
+        final ChangeStatus status = agent.execute(model, map, false);
+        assertThat(status.isValid(), is(false));
+
+        verify(model);
+    }
+
+}

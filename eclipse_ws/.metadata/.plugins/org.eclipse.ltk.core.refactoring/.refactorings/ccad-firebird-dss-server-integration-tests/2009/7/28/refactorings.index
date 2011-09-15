@@ -1,0 +1,7 @@
+1247247342265	Rename local variable 'actualTransportStream'
+1247247716707	Rename local variable 'retrievedDestinations'
+1247248376490	Rename local variable 'properties'
+1247251624614	Extract method 'validateIntegerRange'
+1247251648851	Rename local variable 'retrievedProgramNumberRanges'
+1247251823056	Extract method 'validateProgram'
+1247253222545	Extract method 'validateComponentStream'

@@ -1,0 +1,80 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dssrm.provisioning;
+
+import com.ccadllc.firebird.dss.common.datatypes.RouteDataType;
+import com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType;
+
+import com.google.common.collect.Multimap;
+
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Listens for data from external sources and routes through the Data Stream Server.
+ */
+public interface Route
+{
+    int UDP_PORT_NUMBER_MAXIMUM = 65535;
+    int UDP_PORT_NUMBER_MINIMUM = 1024;
+
+    String ROUTE_PERSISTED_EVENT = "com/ccadllc/firebird/dss/route/domain/routePersistedEvent";
+    String ROUTE_UPDATED_EVENT = "com/ccadllc/firebird/dss/route/domain/routeUpdatedEvent";
+    String ROUTE_DELETED_EVENT = "com/ccadllc/firebird/dss/route/domain/routeDeletedEvent";
+
+    Long getId();
+    int getPort();
+
+    /**
+     * Gets the properties associated with this Route.
+     *
+     * @return properties map
+     */
+    Map<String, String> getProperties();
+
+    /**
+     * Remove a pid to stream mapping.
+     *
+     * <p>This is only supported if {@link Route#getDataType()} returns a value of type {@link RouteDataType.MPEG_PACKETS}</p>
+     *
+     * @param pid pid
+     * @param streamId unique identifier of the stream
+     */
+    void removePidMapping(int pid, long streamId);
+
+    /**
+     * Adds a pid to stream mapping.
+     *
+     * <p>This is only supported if {@link Route#getDataType()} returns a value of type {@link RouteDataType.MPEG_PACKETS}</p>
+     *
+     * @param pid pid
+     * @param streamId unique identifier of the stream
+     */
+    void addPidMapping(int pid, long streamId);
+
+
+    /**
+     * @param streamId unique identifier of the stream to map to
+     */
+    void addStreamId(long streamId);
+
+    /**
+     * @param streamId unique identifier of the mapped stream
+     */
+    void removeStreamId(long streamId);
+
+    /**
+     * Gets a copy of current pid mappings.
+     *
+     * @return a copy of the pid mappings
+     */
+    Multimap<Integer, Long> getPidMappings();
+
+    RouteDataType getDataType();
+
+    TransportProtocolType getTransportProtocolType();
+
+    /**
+     * @return streams the route is mapped to
+     */
+    Set<Long> getStreamIds();
+}

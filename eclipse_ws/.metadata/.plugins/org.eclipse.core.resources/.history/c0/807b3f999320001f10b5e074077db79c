@@ -1,0 +1,24 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.commons.util;
+
+/**
+ * Interface to abstract implementation details about various concrete classes that will utilize the IntegerGeneratorStrategy.
+ */
+public interface IntegerRange
+{
+    /**
+     * @return the start value in the integer range.
+     */
+    int getStart();
+
+    /**
+     * @return the end value in the integer range.
+     */
+    int getEnd();
+
+    /**
+     * @param test value with which to determine if within the integer range.
+     * @return whether or not the test value is in range.
+     */
+    boolean inRange(final int test);
+}

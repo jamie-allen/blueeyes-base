@@ -1,0 +1,8 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dkssimulator.core;
+
+@ManagedResource(objectName="DKS Simulator:type=Configuration", description="Manager of all configurable data in the DKS Simulator")
+public class DksSimulatorJmxFacade
+{
+
+}

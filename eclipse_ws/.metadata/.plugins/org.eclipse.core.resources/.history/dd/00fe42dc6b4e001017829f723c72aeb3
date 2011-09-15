@@ -1,0 +1,107 @@
+/*
+ * Copyright 2010 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import java.io.IOException;
+
+import com.ccadllc.firebird.dss.server.common.RouteJmxUtility;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.ManagedSource;
+
+import org.apache.mina.core.filterchain.IoFilter;
+import org.apache.mina.core.service.IoAcceptor;
+import org.apache.mina.core.session.IoSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Base implementation of {@link Source}.
+ */
+public abstract class AbstractSource implements Source
+{
+    private final Logger logger = LoggerFactory.getLogger(AbstractSource.class);
+    private final IoAcceptor acceptor;
+    private final ManagedSource managedSource;
+
+    private final RouteSnapshot route;
+
+    public AbstractSource(final RouteSnapshot route, final Decoder decoder, final IoAcceptor acceptor) throws IOException
+    {
+        this.acceptor = acceptor;
+        this.route = route;
+        for (final IoFilter filter : decoder.getFilters())
+        {
+            this.acceptor.getFilterChain().addLast(filter.getClass().getCanonicalName(), filter);
+        }
+        this.acceptor.setHandler(decoder.getHandler());
+
+        // Register with JMX
+        managedSource = new ManagedSource(String.format(RouteJmxUtility.ROUTE_SOURCE_TEMPLATE, route.getTransportProtocolType(), route.getId()), this.acceptor);
+        managedSource.register();
+    }
+
+    IoAcceptor getAcceptor()
+    {
+        return acceptor;
+    }
+
+    ManagedSource getManagedSource()
+    {
+        return managedSource;
+    }
+
+    int getPort()
+    {
+        return route.getPort();
+    }
+
+    @Override
+    public void dispose()
+    {
+        managedSource.unregister();
+        logger.debug("#### DISPOSING THE ROUTE SOURCE ON PORT {}!", route.getPort());
+        if (acceptor != null && !acceptor.isDisposed())
+        {
+            logger.debug("#### Acceptor not null, unbinding and disposing.");
+            for (final IoSession session : acceptor.getManagedSessions().values())
+            {
+                try
+                {
+                    session.close(false).await();
+                }
+                catch (final InterruptedException e)
+                {
+                    logger.debug("InterruptedException received while closing sessions in acceptor disposal, {}", e.getMessage());
+                }
+            }
+            acceptor.unbind();
+            try
+            {
+                acceptor.dispose();
+            }
+            catch (final Throwable err)
+            {
+                logger.debug("Caught an error: {}", err.getMessage());
+            }
+
+            final long startTime = System.currentTimeMillis();
+            while (!acceptor.isDisposed() && (System.currentTimeMillis() - startTime < 30000))
+            {
+                try
+                {
+                    Thread.sleep(250);
+                }
+                catch (final InterruptedException ie)
+                {
+                    logger.debug("#### INTERRUPTED EXCEPTION? {}", ie.getMessage());
+                }
+            }
+            logger.debug("#### DONE DISPOSING, count: {}", System.currentTimeMillis() - startTime < 30000);
+        }
+        else
+        {
+            logger.debug("#### No acceptor?!?");
+        }
+    }
+}

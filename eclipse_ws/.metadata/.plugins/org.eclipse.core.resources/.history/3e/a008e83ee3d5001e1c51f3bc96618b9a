@@ -1,0 +1,68 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.stream.manager.impl;
+
+import java.util.concurrent.ScheduledExecutorService;
+
+import com.ccadllc.firebird.dss.server.common.PacketFilterChainController;
+import com.ccadllc.firebird.dss.server.common.StreamSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.transport.manager.TransportManager;
+import com.ccadllc.firebird.vms.common.packetfiltering.PacketFilterFactory;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.base.Preconditions;
+
+/**
+ * Factory for creating instances of {@code FilterChainController}s.
+ */
+public final class PacketFilterChainControllerFactory
+{
+    private static final int DEFAULT_MTU_SIZE = 1500;
+    private static final int IP_HEADER_SIZE = 20;
+    private static final int UDP_HEADER_SIZE = 8;
+    private static final int BT_HEADER_SIZE = 4;
+    private static final int MAX_MTU_SIZE = 65535;
+    private static final int DSG_BT_MIN_MTU_SIZE = IP_HEADER_SIZE + UDP_HEADER_SIZE + BT_HEADER_SIZE;
+    private static final Logger logger = LoggerFactory.getLogger(PacketFilterChainControllerFactory.class);
+
+    /**
+     * Private constructor to prevent initialization.
+     */
+    private PacketFilterChainControllerFactory()
+    {
+    }
+
+    public static PacketFilterChainController<?> create(
+            final ScheduledExecutorService executor,
+            final TransportManager transportManager,
+            final StreamSnapshot stream,
+            final PacketFilterFactory factory,
+            final int networkMTUSize)
+    {
+        Preconditions.checkArgument(transportManager != null, "Transport Manager must not be null.");
+        Preconditions.checkArgument(stream != null, "Stream must not be null.");
+        Preconditions.checkArgument(factory != null, "Factory must not be null.");
+        Preconditions.checkArgument(networkMTUSize > 0, "Network MTU must be greater than 0.");
+
+        switch(stream.getTransmissionType())
+        {
+            case MPEG2:
+                Preconditions.checkArgument(executor != null, "Scheduled executor service must not be null for mpeg chain controllers.");
+                return new Mpeg2ChainController(executor, transportManager, stream, factory);
+            case DSG_BROADCAST_TUNNEL:
+                int mtuSize = networkMTUSize;
+                if (mtuSize <= DSG_BT_MIN_MTU_SIZE || mtuSize > MAX_MTU_SIZE)
+                {
+                    logger.info(String.format("Bad networkMTU %d.. It should be within %d and %d. ", mtuSize, DSG_BT_MIN_MTU_SIZE, MAX_MTU_SIZE));
+                    logger.info(String.format("Use default value %d as network MTU", DEFAULT_MTU_SIZE));
+                    mtuSize = DEFAULT_MTU_SIZE;
+                }
+                return new DSGBroadCastTunnelChainController(mtuSize, transportManager, stream, factory);
+            case IP_DIRECT:
+                return new IpDirectChainController(transportManager, stream, factory);
+            default:
+                throw new IllegalArgumentException("Invalid stream type.");
+        }
+    }
+}

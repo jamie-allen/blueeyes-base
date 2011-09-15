@@ -1,0 +1,21 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+/*
+ * Copyright 2009 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.configuration.stream.domain.management;
+
+import java.util.Map;
+import java.util.Set;
+
+import com.ccadllc.firebird.dss.server.configuration.stream.domain.ComponentStream;
+
+/**
+ * Represents program data associated with a transport stream.
+ */
+public abstract class ProgramData
+{
+    public abstract Integer getProgramNumber();
+    public abstract long getPmtStreamId();
+    public abstract Set<ComponentStreamData> getComponentStreams();
+    public abstract Map<String, String> getProperties();
+}

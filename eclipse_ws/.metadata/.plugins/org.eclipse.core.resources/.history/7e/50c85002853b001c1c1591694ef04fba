@@ -1,0 +1,171 @@
+/*
+ * Copyright 2007 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.dac.common;
+
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * Utility methods to work with Luhn checksums digits.
+ */
+public final class CableCardUtility
+{
+    /** Byte position 2. */
+    private static final int POSITION_2 = 2;
+    /** Byte position 3. */
+    private static final int POSITION_3 = 3;
+    /** Byte position 4. */
+    private static final int POSITION_4 = 4;
+    /** POD_ID_SIZE. */
+    private static final int POD_ID_SIZE = 5;
+    /** ONE_THOUSAND - used to move bytes. */
+    private static final int ONE_THOUSAND = 1000;
+    /** ONE_MILLION - used to move bytes. */
+    private static final int ONE_MILLION = 1000000;
+    /** SIZE_OF_BYTE. */
+    private static final int SIZE_OF_BYTE = 8;
+    /** SINGLE_BYTE_MASK. */
+    private static final int SINGLE_BYTE_MASK = 0xff;
+    /** HIGH_BIT_REMOVE_MASK. */
+    private static final int HIGH_BIT_REMOVE_MASK = 0x3f;
+    /** Size of address to test. */
+    private static final int SIZE_OF_ADDRESS = 4;
+    /** A number to allow 9s complement math. */
+    private static final int TENS_COMPLEMENT = 10;
+
+    int hi = 5;
+    
+    /**
+     * Utility class - deny construction.
+     */
+    private CableCardUtility()
+    {
+    }
+
+    /**
+     * Takes a CableCARD type ID and tests that the last digit is equal to the 'luhn' checksum of the begginging numbers. <br/>
+     * Example: <br/> the 'raw' number is 002-000-485-268-6<br/> '6' is the check digit. '002-000-485-268' is the number to
+     * checksum.<br/> pass 002-000-485-268 to <code>calculateLuhnCheckDigit</code><br/> compare the result to '6' - if equal,
+     * return true.<br/>
+     *
+     * @param formattedDecimalDigitString the raw number under test i.e. 002-000-485-268-6.
+     * @return true if luhn check matches.
+     */
+    public static boolean isValidLuhnNumber(final String formattedDecimalDigitString)
+    {
+        final String numbers = formattedDecimalDigitString.replace("-", "");
+
+        final int checkDigit = Integer.parseInt(numbers.substring(numbers.length() - 1, numbers.length()));
+        final String numberText = numbers.substring(0, numbers.length() - 1);
+        final int digit = calculateLuhnCheckDigit(numberText);
+        return digit == checkDigit;
+    }
+
+    /**
+     * Calculate the 'lunh' value for a series of numbers. Taken from lmt_calculate_luhn_check_digit in ltval_pod_host.c
+     *
+     * @param decimalDigitString - the string to calculate the luhn check digit
+     * @return the check digit.
+     */
+    public static int calculateLuhnCheckDigit(final String decimalDigitString)
+    {
+
+        int tempDigit = 0;
+        int digitSum = 0;
+
+        final int strLen = decimalDigitString.length() - 1;
+        for (int i = 0; i <= strLen; i++)
+        {
+            /***********************************************************************************************************************
+             * Step 2: Double the value of alternate digits beginning with the first right hand digit (least significant digit) and
+             * moving left.
+             */
+            final int value = Integer.parseInt(decimalDigitString.substring(strLen - i, strLen - i + 1));
+            if (i % 2 == 0)
+            {
+                tempDigit = value * 2;
+            }
+            else
+            {
+                tempDigit = value;
+            }
+            /***********************************************************************************************************************
+             * Step 3: Add the individual digits comprising the products obtained in step 2 to each of the unaffected digits in the
+             * original number
+             */
+            digitSum = digitSum + tempDigit / TENS_COMPLEMENT + tempDigit % TENS_COMPLEMENT;
+            /***********************************************************************************************************************
+             * Step 4: Subtract the total obtained in step 3 from the next higher number ending in 0. This is equivalent to
+             * calculating the "tens complement" of the low order digit * of the total. If the total obtained in step 3 is a number
+             * ending in 0, then * the check digit is 0.
+             */
+        }
+        final int luhnCheckDigit = (((digitSum + TENS_COMPLEMENT) / TENS_COMPLEMENT) * TENS_COMPLEMENT - digitSum)
+            % TENS_COMPLEMENT;
+        return luhnCheckDigit;
+    }
+
+    /**
+     * Validate that the CableCARD id and the unit address coincide.
+     * Taken from lmt_validate_pod_id in ltval_pod_host.c
+     *
+     * @param podId the cable card id.
+     * @param unitAddress the unit address.
+     * @return true if they match.
+     */
+    public static boolean validatePodId(final String podId, final UnitAddress unitAddress)
+    {
+        final int[] podIdArray = new int[POD_ID_SIZE];
+        final int bbb, ccc, ddd;
+        final int podIdInt;
+
+        /*
+         * Convert the pod_id into a byte array for comparison to the unit address. The pod_id is assumed to be in the form
+         * AAA-BBB-CCC-DDD-c, where BBB-CCC-DDD represents the 30 lsb's of the unit address.
+         */
+        final Pattern cableCardPattern = Pattern.compile("^(\\d{3})-(\\d{3})-(\\d{3})-(\\d{3})-(\\d{1})$");
+        final Matcher matcher = cableCardPattern.matcher(podId);
+
+        if (!matcher.matches())
+        {
+            throw new IllegalArgumentException(String.format("Invalid CableCARD address %s.", podId));
+        }
+
+        bbb = Integer.parseInt(matcher.group(POSITION_2));
+        ccc = Integer.parseInt(matcher.group(POSITION_3));
+        ddd = Integer.parseInt(matcher.group(POSITION_4));
+
+        podIdInt = (bbb * ONE_MILLION) + (ccc * ONE_THOUSAND) + ddd;
+
+        for (int i = 0; i < SIZE_OF_ADDRESS; i++)
+        {
+            podIdArray[SIZE_OF_ADDRESS - i] =
+                (podIdInt & (SINGLE_BYTE_MASK << (i * SIZE_OF_BYTE))) >> (i * SIZE_OF_BYTE);
+        }
+        podIdArray[0] = 0;
+
+        final byte[] addrBytes = unitAddress.getHexadecimalAddressAsBytes();
+        /*
+         * Mask off everything above the 30 lsb's of the unit address for comparison.
+         */
+        addrBytes[0] = 0;
+        addrBytes[1] &= HIGH_BIT_REMOVE_MASK;
+
+        /*
+         * Now we can finally do the comparison.
+         */
+        for (int i = 0; i < SIZE_OF_ADDRESS; i++)
+        {
+            final Integer iVal = new Integer(podIdArray[i]);
+            if (iVal.byteValue() != addrBytes[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
+
+    } /* lmt_validate_pod_id */
+
+}

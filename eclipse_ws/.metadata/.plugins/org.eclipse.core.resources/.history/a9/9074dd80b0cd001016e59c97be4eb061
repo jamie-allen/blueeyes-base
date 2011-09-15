@@ -1,0 +1,6 @@
+package akka.util
+
+class RingBuffer[E <: AnyRef](val maxCapacity: Int) {
+  require(maxCapacity > 0)
+  var remainingCapacity = maxCapacity
+}

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Copy element to &apos;&apos;{1}&apos;&apos;&#x0A;- Original project: &apos;ccad-firebird-vms-dss-simulator&apos;&#x0A;- Destination element: &apos;dkssimulator&apos;&#x0A;- Original element: &apos;com.ccadllc.firebird.vms.dsssimulator.DssSimulatorTest.java&apos;" description="Copy compilation unit" element1="/src\/test\/java&lt;com.ccadllc.firebird.vms.dsssimulator{DssSimulatorTest.java" files="0" flags="589830" folders="0" id="org.eclipse.jdt.ui.copy" policy="org.eclipse.jdt.ui.copyResources" stamp="1290201173783" target="/ccad-firebird-vms-dks-simulator-server/src/test/java/com/ccadllc/firebird/vms/dkssimulator" units="1" version="1.0"/>
+</session>

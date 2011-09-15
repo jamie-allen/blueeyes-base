@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<aop-reference-model>
+<aop-project name="ccad-commons-test-support"/>
+<aop-project name="ccad-dac-security"/>
+<aop-project name="ccad-dcas-ap-core-app"/>
+<aop-project name="ccad-dac-management"/>
+<aop-project name="ccad-dac-core"/>
+<aop-project name="ccad-dcas-sm-npm-support"/>
+<aop-project name="ccad-dac-system"/>
+<aop-project name="ccad-dcas-ap-mgmt-support-impl"/>
+<aop-project name="ccad-commons-configuration"/>
+<aop-project name="ccad-dac-webui"/>
+<aop-project name="ccad-dcas-ap-web"/>
+<aop-project name="ccad-dac-administration"/>
+<aop-project name="ccad-aspect"/>
+<aop-project name="ccad-commons-jsf-test-support"/>
+<aop-project name="ccad-dac-bsi"/>
+<aop-project name="ccad-dac-consumer"/>
+<aop-project name="ccad-dac-content"/>
+<aop-project name="ccad-dcas-sm-sim"/>
+<aop-project name="ccad-dcas-ap-sim"/>
+<aop-project name="ccad-dac-importexport"/>
+<aop-project name="ccad-dcas-ap-processor-api"/>
+<aop-project name="ccad-dcas-ap-processor-impl"/>
+<aop-project name="ccad-commons-messaging"/>
+<aop-project name="ccad-dac-notification"/>
+<aop-project name="ccad-dcas-ap-support"/>
+<aop-project name="ccad-dac-webservice"/>
+<aop-project name="ccad-dac-pmp"/>
+<aop-project name="ccad-dcas-ap-mgmt-support-api"/>
+<aop-project name="ccad-commons-session-manager"/>
+<aop-project name="ccad-dac-messaging"/>
+<aop-project name="ccad-dcas-key-info-webservices"/>
+<aop-project name="ccad-dac-reports"/>
+<aop-project name="ccad-common"/>
+<aop-project name="ccad-dac-test"/>
+<aop-project name="ccad-dcas-support"/>
+<aop-project name="ccad-dcas-ap-npm-support"/>
+<aop-project name="ccad-dcas-ap-data-api"/>
+<aop-project name="ccad-dac-download"/>
+<aop-project name="session-manager-example"/>
+<aop-project name="ccad-webcommon"/>
+<aop-project name="ccad-dac-topology"/>
+<aop-project name="ccad-dac-channel"/>
+<aop-project name="ccad-dcas-npm-support"/>
+</aop-reference-model>

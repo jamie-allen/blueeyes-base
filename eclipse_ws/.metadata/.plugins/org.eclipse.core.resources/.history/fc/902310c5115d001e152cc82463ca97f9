@@ -1,0 +1,230 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.packetfilter;
+
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteNotificationHelper.JMX_NOTIFICATION_PREFIX;
+import static com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteNotificationHelper.JMX_ROUTE_NOTIFICATION_MANAGER;
+
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
+import com.ccadllc.commons.util.ByteUtility;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.RouteNotificationHelper;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl.management.JmxRouteNotificationManager;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+import com.ccadllc.firebird.vms.common.packetfiltering.AbstractPacketFilter;
+
+import net.jcip.annotations.ThreadSafe;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Sets;
+
+@ThreadSafe
+public class PidToStreamMapper extends AbstractPacketFilter
+{
+    private static final String PID_TO_STREAM_MAP_PARAMETER = "pid to stream map";
+    private static final String STREAM_MANAGER_PARAMETER = "stream manager";
+    private static final String ROUTE_SNAPSHOT_PARAMETER = "route snapshot";
+
+    /** Mpeg2Packet indexes. */
+    private static final int SYNC_BYTE_INDEX = 0;
+    private static final int PID_TOP_BYTE_INDEX = 1;
+    private static final int PID_BOTTOM_BYTE_INDEX = 2;
+    private static final int ADAPTATION_FIELD_BYTE_INDEX = 3;
+
+    /** PID masks for the first 4 bytes of the Mpeg2Packet. */
+    private static final int PID_MASK = 0x001fff00;
+    private static final int PID_BIT_OFFSET = 8;
+
+    private final RouteNotificationHelper routeNotificationHelper;
+
+    private final Logger logger = LoggerFactory.getLogger(PidToStreamMapper.class);
+    private final ConcurrentHashMap<Integer, PidChainController> pidToChainControllerMap = new ConcurrentHashMap<Integer, PidChainController>();
+    private final Set<Integer> rejectedPids = Sets.newHashSet();
+
+    private volatile boolean disposed;
+
+    /** Lock used when manipulating the pidToChainControllerMap collection. */
+    private final Object lock = new Object();
+
+    public PidToStreamMapper(final RouteSnapshot route, final StreamManager streamManager,
+        final JmxRouteNotificationManager jmxRouteNotificationManager, final String notificationsPrefixString)
+    {
+        Preconditions.checkNotNull(route, ROUTE_SNAPSHOT_PARAMETER);
+        Preconditions.checkNotNull(streamManager, STREAM_MANAGER_PARAMETER);
+
+        routeNotificationHelper = new RouteNotificationHelper(jmxRouteNotificationManager,
+            notificationsPrefixString);
+
+        final Multimap<Integer, Long> pidToStreamMap = route.getPidMappings();
+        synchronized (pidToStreamMap)
+        {
+            addOrUpdatePidMap(route, streamManager, jmxRouteNotificationManager, notificationsPrefixString, pidToStreamMap);
+        }
+    }
+
+    @Override
+    public boolean insert(final byte[] packet)
+    {
+        synchronized (lock)
+        {
+            ensureNotDisposed();
+            final int pid = getPid(packet);
+            logger.debug("Inserting for pid {}", pid);
+
+            final PidChainController pidChainController = pidToChainControllerMap.get(pid);
+            if (pidChainController == null)
+            {
+                if (!rejectedPids.contains(pid))
+                {
+                    rejectedPids.add(pid);
+                    routeNotificationHelper.sendRejectPacketNotification(createRejectingString(true, pid),
+                        "pidToStreamMapperRejectingPackets", true);
+                }
+
+                logger.debug("Not inserting packets to pid chain for pid {}.", pid);
+                return false;
+            }
+
+            logger.debug("Inserting packets to pid chain.");
+            pidChainController.insert(packet);
+        }
+
+        return true;
+    }
+
+    @Override
+    public void dispose()
+    {
+        synchronized (lock)
+        {
+            for (final Integer pid : pidToChainControllerMap.keySet())
+            {
+                pidToChainControllerMap.get(pid).dispose();
+            }
+
+            pidToChainControllerMap.clear();
+            disposed = true;
+        }
+    }
+
+    public void update(final RouteSnapshot route, final StreamManager streamManager,
+        final JmxRouteNotificationManager jmxRouteNotificationManager, final String notificationsPrefixString)
+    {
+        logger.debug("Update...");
+        Preconditions.checkNotNull(route, ROUTE_SNAPSHOT_PARAMETER);
+        Preconditions.checkNotNull(streamManager, STREAM_MANAGER_PARAMETER);
+        Preconditions.checkNotNull(jmxRouteNotificationManager, JMX_ROUTE_NOTIFICATION_MANAGER);
+        Preconditions.checkNotNull(notificationsPrefixString, JMX_NOTIFICATION_PREFIX);
+
+        synchronized (lock)
+        {
+            ensureNotDisposed();
+            final Multimap<Integer, Long> pidToStreamMap = route.getPidMappings();
+            synchronized (pidToStreamMap)
+            {
+                addOrUpdatePidMap(route, streamManager, jmxRouteNotificationManager, notificationsPrefixString, pidToStreamMap);
+                removeNonExistentPids(pidToStreamMap);
+            }
+        }
+    }
+
+    /**
+     * Calls to this method should be wrapped by a <code>synchronized (lock)</code> (except when called from
+     * the constructor), to prevent insertion to or disposal of the pidToChainControllerMap whilst adding/updating
+     * pid chains .  It also must be wrapped by a <code>synchronized (pidToStreamMap)</code> that is  required by
+     * Google collections when accessing a Multimap to prevent anyone else holding a reference to that multimap
+     * instance from changing it while we use it.
+     */
+    private void addOrUpdatePidMap(final RouteSnapshot route, final StreamManager streamManager,
+        final JmxRouteNotificationManager jmxRouteNotificationManager, final String notificationsPrefixString,
+        final Multimap<Integer, Long> pidToStreamMap)
+    {
+        Preconditions.checkNotNull(route.getPidMappings(), PID_TO_STREAM_MAP_PARAMETER);
+
+        for (final Integer pid : pidToStreamMap.keySet())
+        {
+            if (pidToChainControllerMap.get(pid) == null)
+            {
+                logger.debug("Adding new pid {}", pid);
+                pidToChainControllerMap.put(pid, new PidChainController(pid, route, streamManager, jmxRouteNotificationManager, notificationsPrefixString));
+
+                if (rejectedPids.contains(pid))
+                {
+                    rejectedPids.remove(pid);
+                }
+
+                routeNotificationHelper.sendRejectPacketNotification(createPidConfiguredString(true, pid),
+                    "pidToStreamMapperRejectingPackets", false);
+            }
+            else
+            {
+                logger.debug("Update existing pid {}", pid);
+                pidToChainControllerMap.get(pid).update(pidToStreamMap.get(pid));
+            }
+        }
+    }
+
+    /**
+     * Calls to this method should be wrapped by a <code>synchronized (lock)</code> (except when called from
+     * the constructor), to prevent insertion to or disposal of the pidToChainControllerMap whilst adding/updating
+     * pid chains .  It also must be wrapped by a <code>synchronized (pidToStreamMap)</code> that is  required by
+     * Google collections when accessing a Multimap to prevent anyone else holding a reference to that multimap
+     * instance from changing it while we use it.
+     */
+    private void removeNonExistentPids(final Multimap<Integer, Long> pidToStreamMap)
+    {
+        logger.debug("Remove non-existing pids...");
+        for (final Integer pid : pidToChainControllerMap.keySet())
+        {
+            if (pidToStreamMap.get(pid).isEmpty())
+            {
+                pidToChainControllerMap.get(pid).dispose();
+                pidToChainControllerMap.remove(pid, pidToChainControllerMap.get(pid));
+
+                routeNotificationHelper.sendRejectPacketNotification(createPidConfiguredString(false, pid),
+                    "pidToStreamMapperRejectingPackets", true);
+            }
+        }
+    }
+
+    private int getPid(final byte[] mpeg2Packet)
+    {
+        logger.debug("Get pid...");
+        // mask out pid
+        // get the first 4 Byte from the packet.
+        // Convert the first 4 bytes in the packet to an integer.
+        final byte[] first4Bytes = new byte[] {mpeg2Packet[SYNC_BYTE_INDEX], mpeg2Packet[PID_TOP_BYTE_INDEX],
+            mpeg2Packet[PID_BOTTOM_BYTE_INDEX], mpeg2Packet[ADAPTATION_FIELD_BYTE_INDEX] };
+
+        // Convert the first 4 bytes to an int.
+        final int first4BytesAsInt = ByteUtility.toInteger(first4Bytes);
+        int pid = (first4BytesAsInt & PID_MASK);
+        pid = pid >> PID_BIT_OFFSET;
+        logger.debug(String.format("Pid = %d", pid));
+        return pid;
+    }
+
+    private void ensureNotDisposed()
+    {
+        if (disposed)
+        {
+            logger.warn("Action called on disposed filter chain.");
+            throw new IllegalStateException("Object has been disposed.");
+        }
+    }
+
+    private String createRejectingString(final boolean rejecting, final int pid)
+    {
+        return String.format("PidToStreamMapper %s rejecting packets for pid %d", (rejecting ? "is" : "is not"), pid);
+    }
+
+    private String createPidConfiguredString(final boolean configured, final int pid)
+    {
+        return String.format("PidToStreamMapper %s configured to insert data for pid: %d", (configured ? "is" : "is no longer"), pid);
+    }
+}

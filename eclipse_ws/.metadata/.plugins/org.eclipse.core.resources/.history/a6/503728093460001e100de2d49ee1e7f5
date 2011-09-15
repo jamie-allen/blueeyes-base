@@ -1,0 +1,130 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+
+import java.util.Set;
+
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.realtime.external.route.manager.management.TcpRouteLookup;
+
+import org.easymock.EasyMock;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Multimaps;
+import com.google.common.collect.Sets;
+
+@Test
+public final class TcpRouteLookupTest
+{
+    private RouteCache routes;
+    private TcpRouteLookup tcpRouteLookup;
+    private RouteSnapshot mockRoute1;
+    private RouteSnapshot mockRoute2;
+    private Set<RouteSnapshot> mockRoutes;
+
+    @BeforeMethod
+    public void setUp()
+    {
+        routes = EasyMock.createNiceMock(RouteCache.class);
+
+        mockRoute1 = EasyMock.createNiceMock(RouteSnapshot.class);
+        mockRoute2 = EasyMock.createNiceMock(RouteSnapshot.class);
+        mockRoutes = Sets.newHashSet();
+
+        tcpRouteLookup = new TcpRouteLookup(routes);
+    }
+
+    public void testRouteIdsLookupWhere_MappedPidFound()
+    {
+        final Integer expectedPid = 1;
+        expectRouteIdsByMappedPid(expectedPid);
+        replay();
+        assertThat(tcpRouteLookup.getTcpRouteIdsForMappedPid(expectedPid).length, is(1));
+        verify();
+    }
+
+    public void testRouteIdsLookupWhere_MappedPidNotFound()
+    {
+        final Integer expectedPid = 1;
+        expectRouteIdsByMappedPid(expectedPid);
+        replay();
+        assertThat(tcpRouteLookup.getTcpRouteIdsForMappedPid(expectedPid + 1).length, is(0));
+        verify();
+    }
+
+    public void testRouteIdsLookupWhere_StreamIdFound()
+    {
+        final String expectedStreamId = "1";
+        expectRouteIdsByStreamId(expectedStreamId);
+        replay();
+        assertThat(tcpRouteLookup.getTcpRouteIdsForStreamId(expectedStreamId).length, is(2));
+        verify();
+    }
+
+    public void testRouteIdsLookupWhere_StreamIdNotFound()
+    {
+        final String expectedStreamId = "1";
+        expectRouteIdsByStreamId(expectedStreamId);
+        replay();
+        assertThat(tcpRouteLookup.getTcpRouteIdsForStreamId("2").length, is(0));
+        verify();
+    }
+
+    @Test(expectedExceptions = NumberFormatException.class)
+    public void testRouteIdsLookupWhere_StreamIdNotLongValue()
+    {
+        final String expectedStreamId = "1";
+        expectRouteIdsByStreamId(expectedStreamId);
+        replay();
+        tcpRouteLookup.getTcpRouteIdsForStreamId("asdf");
+        verify();
+    }
+
+    private void expectRouteIdsByStreamId(final String streamId)
+    {
+        mockRoutes.add(mockRoute1);
+        mockRoutes.add(mockRoute2);
+        final Multimap<Integer, Long> pidMappings = Multimaps.newHashMultimap();
+        pidMappings.put(123, Long.parseLong(streamId));
+        EasyMock.expect(mockRoute1.getPidMappings()).andStubReturn(pidMappings);
+        EasyMock.expect(mockRoute1.getStreamIds()).andStubReturn(null);
+        EasyMock.expect(mockRoute2.getStreamIds()).andStubReturn(Sets.<Long>newHashSet(Long.parseLong(streamId)));
+        EasyMock.expect(mockRoute2.getPidMappings()).andStubReturn(null);
+
+        EasyMock.expect(routes.getTcpRoutes()).andReturn(mockRoutes);
+
+        EasyMock.expect(mockRoute1.getId()).andStubReturn(1L);
+        EasyMock.expect(mockRoute2.getId()).andStubReturn(2L);
+    }
+
+    private void expectRouteIdsByMappedPid(final Integer pid)
+    {
+        mockRoutes.add(mockRoute1);
+        mockRoutes.add(mockRoute2);
+        final Multimap<Integer, Long> pidMappings = Multimaps.newHashMultimap();
+        pidMappings.put(pid, 123L);
+        EasyMock.expect(mockRoute1.getPidMappings()).andStubReturn(pidMappings);
+        EasyMock.expect(mockRoute1.getStreamIds()).andStubReturn(null);
+        EasyMock.expect(mockRoute2.getStreamIds()).andStubReturn(Sets.<Long>newHashSet());
+        EasyMock.expect(mockRoute2.getPidMappings()).andStubReturn(null);
+
+        EasyMock.expect(routes.getTcpRoutes()).andReturn(mockRoutes);
+
+        EasyMock.expect(mockRoute1.getId()).andStubReturn(1L);
+        EasyMock.expect(mockRoute2.getId()).andStubReturn(2L);
+    }
+
+    private void verify()
+    {
+        EasyMock.verify(routes, mockRoute1, mockRoute2);
+    }
+
+    private void replay()
+    {
+        EasyMock.replay(routes, mockRoute1, mockRoute2);
+    }
+}

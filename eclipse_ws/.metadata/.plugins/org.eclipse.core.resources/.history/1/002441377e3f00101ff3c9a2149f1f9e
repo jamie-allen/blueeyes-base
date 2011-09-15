@@ -1,0 +1,522 @@
+/* Copyright 2010 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dac.synchronization.impl;
+
+import static com.ccadllc.commons.util.Option.none;
+import static org.easymock.EasyMock.anyObject;
+import static org.easymock.EasyMock.createControl;
+import static org.easymock.EasyMock.createNiceControl;
+import static org.easymock.EasyMock.eq;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.expectLastCall;
+import static org.easymock.EasyMock.getCurrentArguments;
+import static org.easymock.EasyMock.reportMatcher;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+
+import java.sql.SQLException;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
+import com.ccadllc.commons.net.UnresolvedInetAddress;
+import com.ccadllc.commons.util.FunctionalIterables;
+import com.ccadllc.commons.util.MapUtility;
+import com.ccadllc.commons.util.concurrent.CallbackSupportingScheduledExecutorService;
+import com.ccadllc.commons.util.concurrent.ExecutorBuilder;
+import com.ccadllc.firebird.core.snmp.client.CacheManager;
+import com.ccadllc.firebird.dss.client.topology.Dss;
+import com.ccadllc.firebird.dss.client.topology.DssType;
+import com.ccadllc.firebird.vms.common.units.TrafficShapingProfile;
+import com.ccadllc.firebird.vms.dac.cdis.DssMode;
+import com.ccadllc.firebird.vms.dac.cdis.OmDescription;
+import com.ccadllc.firebird.vms.dac.cdis.OmReference;
+import com.ccadllc.firebird.vms.dac.cdis.RaddDescription;
+import com.ccadllc.firebird.vms.dac.cdis.RaddReference;
+import com.ccadllc.firebird.vms.dac.cdis.SemDescription;
+import com.ccadllc.firebird.vms.dac.cdis.SemReference;
+import com.ccadllc.firebird.vms.dac.domain.Dac;
+import com.ccadllc.firebird.vms.dac.domain.Om;
+import com.ccadllc.firebird.vms.dac.domain.Sem;
+import com.ccadllc.firebird.vms.dac.synchronization.SemCacheDefinitionFactory;
+import com.ccadllc.firebird.vms.dac.synchronization.SynchronizationService;
+import com.ccadllc.firebird.vms.dac.webservice.DacWebService;
+import com.ccadllc.firebird.vms.topology.core.Device;
+import com.ccadllc.firebird.vms.topology.core.ServingLocation;
+import com.ccadllc.firebird.vms.topology.core.ServingLocationQName;
+import com.ccadllc.firebird.vms.topology.core.TopologyModel;
+import com.ccadllc.firebird.vms.topology.core.TransportStream;
+import com.ccadllc.firebird.vms.topology.core.TransportStreamDescription;
+import com.ccadllc.firebird.vms.topology.core.event.DeviceAddedEvent;
+import com.ccadllc.firebird.vms.topology.core.event.DeviceDeletedEvent;
+import com.ccadllc.firebird.vms.topology.core.event.DeviceModifiedEvent;
+import com.ccadllc.firebird.vms.topology.core.event.LiveModelChangedEvent;
+import com.ccadllc.firebird.vms.topology.core.event.StreamModifiedEvent;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableTopologyModel;
+import com.ccadllc.firebird.vms.topology.core.mutable.MutableTopologyService;
+import com.ccadllc.firebird.vms.topology.sdk.tests.TestStubs;
+import com.ccadllc.firebird.vms.topology.simpledevices.SynchronizationConfigProcessor;
+
+import org.apache.commons.lang.builder.EqualsBuilder;
+import org.easymock.IAnswer;
+import org.easymock.IArgumentMatcher;
+import org.easymock.IMocksControl;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionOperations;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+import com.google.common.collect.Lists;
+
+@SuppressWarnings("unchecked")
+@Test
+public class SynchronizationLiveModelChangeEventHandlerTest
+{
+    private static final int MAX_TIMEOUT_MS = 5000;
+    private static final Dac DAC = Dac.builder("dac", "dacHost").location(ServingLocationQName.of(":pa")).build();
+    private static final Om OM = Om.builder("om", UnresolvedInetAddress.create("om-address"), UUID.randomUUID(), 1L).location(ServingLocationQName.of(":pa:east:horsham")).build();
+    private static final Sem SEM = Sem.builder("sem", 10L).dacId(DAC.getId()).dacName(DAC.getName()).managedAddress(UnresolvedInetAddress.create("sem-address")).location(ServingLocationQName.of(":pa")).build();
+    private static final UUID DSS_ID = UUID.randomUUID();
+    private static final UUID TS_ID = UUID.randomUUID();
+    private static final int DEFAULT_DAC_BANDWIDHT_PERCENTAGE = 100;
+    private static final TrafficShapingProfile DEFAULT_TRAFFIC_SHAPING = new TrafficShapingProfile(72638, 1453, 10);
+    private static final TransportStreamDescription TS = TransportStreamDescription.builder().name("ts1").id(TS_ID).location(ServingLocationQName.of(":pa:east")).trafficShapingProfile(DEFAULT_TRAFFIC_SHAPING).build();
+    private static final UnresolvedInetAddress LOCAL_HOST = UnresolvedInetAddress.create("127.0.0.1");
+
+    private final IMocksControl control = createControl();
+    private final SynchronizationService synchronizationService = control.createMock(SynchronizationService.class);
+    private final SynchronizationConfigProcessor<Om> omConfigurationProcessor = control.createMock(SynchronizationConfigProcessor.class);
+    private final SynchronizationConfigProcessor<Sem> semConfigurationProcessor = control.createMock(SynchronizationConfigProcessor.class);
+    private final DacWebService dacWebService = control.createMock(DacWebService.class);
+    private final CallbackSupportingScheduledExecutorService executor = new ExecutorBuilder("test-executor").build();
+
+    private final SynchronizationConfigProcessor<Sem> semSynchronizationConfigProcessor = control.createMock(SynchronizationConfigProcessor.class);
+    private final CacheManager cacheManager = control.createMock(CacheManager.class);
+    private final SemSynchronization semSynchronization = new SemSynchronization(semSynchronizationConfigProcessor, cacheManager, dacWebService);
+
+    private final IAnswer<Void> postRaddCountDown = new IAnswer<Void>()
+    {
+        @Override
+        public Void answer() throws Throwable
+        {
+            postRaddLatch.countDown();
+            return null;
+        }
+    };
+
+    private MutableTopologyModel mutableModel;
+    private SynchronizationLiveModelChangeEventHandler handler;
+
+    private CountDownLatch postRaddLatch = new CountDownLatch(1);
+
+    @BeforeMethod
+    public void beforeMethod() throws InterruptedException
+    {
+        control.reset();
+
+        mutableModel = createModel();
+
+        final IMocksControl niceControl = createNiceControl();
+        final MutableTopologyService mutableTopologyService = niceControl.createMock(MutableTopologyService.class);
+        final TransactionOperations template = niceControl.createMock(TransactionOperations.class);
+
+//        expect(mutableTopologyService.getConnectedMutableModel()).andStubReturn(mutableModel);
+        expect(mutableTopologyService.getLiveModel()).andStubReturn(mutableModel);
+        expect(template.execute((TransactionCallback)anyObject()));
+        expectLastCall().andStubAnswer(new IAnswer<Object>()
+        {
+            @Override
+            public Object answer() throws Throwable
+            {
+                final TransactionCallback callback = (TransactionCallback) getCurrentArguments()[0];
+                callback.doInTransaction(null);
+                return null;
+            }
+        });
+
+        niceControl.replay();
+
+        handler = new SynchronizationLiveModelChangeEventHandler(mutableTopologyService, synchronizationService, omConfigurationProcessor, semConfigurationProcessor, semSynchronization,  dacWebService, template, executor, 0);
+
+        postRaddLatch = new CountDownLatch(1);
+    }
+
+    public void omDeletedEvent_EvictsOmRegion()
+    {
+        omConfigurationProcessor.evict(OM);
+
+        control.replay();
+        handler.handleEvent(deviceDeletedEvent(OM, createModel()));
+        control.verify();
+    }
+
+    public void semDeletedEvent_EvictsSemRegion()
+    {
+        semConfigurationProcessor.evict(SEM);
+
+        control.replay();
+        handler.handleEvent(deviceDeletedEvent(SEM, createModel()));
+        control.verify();
+    }
+
+    public void dssDeletedEvent_UnraddifiesDss() throws InterruptedException
+    {
+        mutableModel.addDevice(dssBuilder().build());
+
+        final Dss dss = dssBuilder().build();
+        synchronizationService.unraddify(dss.getLocation(), mutableModel);
+
+        expect(dacWebService.getRaddDescription(eq(DAC), (RaddReference) anyObject())).andReturn(RaddDescription.builder(DAC.getId(), 10, "none", UnresolvedInetAddress.create("none")).dssMode(DssMode.ENABLED).build());
+
+        dacWebService.postRadd(eq(DAC), (RaddDescription) anyObject());
+        expectLastCall().andAnswer(postRaddCountDown);
+
+        final MutableTopologyModel oldModel = createModel();
+        oldModel.addDevice(dssBuilder().properties(MapUtility.<String, String>toMap("raddId", "10")).build());
+        oldModel.addDevice(DAC);
+
+        control.replay();
+        handler.handleEvent(deviceDeletedEvent(dss, oldModel));
+        assertThat(postRaddLatch.await(MAX_TIMEOUT_MS, TimeUnit.MILLISECONDS), is(true));
+        control.verify();
+    }
+
+    public void testDssRaddifiedEvent_PostsDssModeEnabledRaddToDac() throws InterruptedException
+    {
+        final MutableTopologyModel oldModel = createModel();
+        final Dss newDss = addRaddifiedDssToModel(mutableModel);
+        addTransportStreamToModelWithDacBandwidthPercentage(mutableModel, DEFAULT_DAC_BANDWIDHT_PERCENTAGE, DEFAULT_TRAFFIC_SHAPING);
+        addUnRaddifiedDssToModel(oldModel);
+        final RaddDescription radd = addRaddToDac(DssMode.CAPABLE);
+        addOmsToDac();
+
+        dacWebService.postRadd(DAC, RaddDescription.from(radd).dssMode(DssMode.ENABLED).bandwidth(587).build());
+        expectLastCall().andAnswer(postRaddCountDown);
+
+        control.replay();
+        handler.handleEvent(dssPropertiesChangedEvent(newDss, oldModel));
+        assertThat(postRaddLatch.await(MAX_TIMEOUT_MS, TimeUnit.MILLISECONDS), is(true));
+        control.verify();
+    }
+
+    public void testDssUnRaddifiedEvent_PostsDssModeCapableRaddToDac() throws InterruptedException
+    {
+        final MutableTopologyModel oldModel = createModel();
+        addRaddifiedDssToModel(oldModel);
+        final Dss newDss = addUnRaddifiedDssToModel(mutableModel);
+
+        expect(dacWebService.getRaddDescription(eq(DAC), (RaddReference) anyObject())).andReturn(RaddDescription.builder(DAC.getId(), 10, "none", UnresolvedInetAddress.create("none")).dssMode(DssMode.ENABLED).build());
+        dacWebService.postRadd(eq(DAC), (RaddDescription) anyObject());
+        expectLastCall().andAnswer(postRaddCountDown);
+
+        control.replay();
+        handler.handleEvent(dssPropertiesChangedEvent(newDss, oldModel));
+        assertThat(postRaddLatch.await(MAX_TIMEOUT_MS, TimeUnit.MILLISECONDS), is(true));
+        control.verify();
+    }
+
+    public void testDacBandwidthUpdatedEvent_PostsNewBandwidthRaddToDac_IfDacBandwidthPercentageChanges() throws InterruptedException
+    {
+        final MutableTopologyModel oldModel = createModel();
+        addTransportStreamToModel(oldModel);
+        final Dss dss = addRaddifiedDssToModel(mutableModel);
+        final TransportStream transportStreamUpdated = addTransportStreamToModelWithDacBandwidthPercentage(mutableModel, 50, DEFAULT_TRAFFIC_SHAPING);
+
+        final RaddDescription raddDescriptionToReturn = RaddDescription.builder(DAC.getId(), 10L, "radd", dss.getAddress()).dsgType(false).dssMode(DssMode.ENABLED).build();
+        expect(dacWebService.getRaddDescription(DAC, RaddReference.create(DAC.getId(), 10L))).andReturn(raddDescriptionToReturn);
+        dacWebService.postRadd((Dac) anyObject(), raddEquals(RaddDescription.from(raddDescriptionToReturn).bandwidth(303L).build()));
+        expectLastCall().andAnswer(postRaddCountDown);
+
+        control.replay();
+        handler.handleEvent(dacBandwidthUpdatedEvent(transportStreamUpdated, oldModel));
+        assertThat(postRaddLatch.await(MAX_TIMEOUT_MS, TimeUnit.MILLISECONDS), is(true));
+        control.verify();
+    }
+
+    public void testDacBandwidthUpdatedEvent_PostsNewBandwidthRaddToDac_IfTransportStreamBandwidthChanges() throws InterruptedException
+    {
+        final MutableTopologyModel oldModel = createModel();
+        addTransportStreamToModel(oldModel);
+        final Dss dss = addRaddifiedDssToModel(mutableModel);
+        final TransportStream transportStreamUpdated = addTransportStreamToModelWithDacBandwidthPercentage(mutableModel, DEFAULT_DAC_BANDWIDHT_PERCENTAGE, new TrafficShapingProfile(70000, 1400, 10));
+
+        final RaddDescription raddDescriptionToReturn = RaddDescription.builder(DAC.getId(), 10L, "radd", dss.getAddress()).dsgType(false).dssMode(DssMode.ENABLED).build();
+        expect(dacWebService.getRaddDescription(DAC, RaddReference.create(DAC.getId(), 10L))).andReturn(raddDescriptionToReturn);
+        dacWebService.postRadd((Dac) anyObject(), raddEquals(RaddDescription.from(raddDescriptionToReturn).bandwidth(566L).build()));
+        expectLastCall().andAnswer(postRaddCountDown);
+
+        control.replay();
+        handler.handleEvent(dacBandwidthUpdatedEvent(transportStreamUpdated, oldModel));
+        assertThat(postRaddLatch.await(MAX_TIMEOUT_MS, TimeUnit.MILLISECONDS), is(true));
+        control.verify();
+    }
+
+    public void testDacBandwidthUpdatedEvent_DoesNotPostBandwidthRaddToDac_IfUnchanged() throws InterruptedException
+    {
+        final MutableTopologyModel oldModel = createModel();
+        addTransportStreamToModel(oldModel);
+        final Dss dss = addRaddifiedDssToModel(mutableModel);
+        final TransportStream transportStreamUpdated = addTransportStreamToModelWithDacBandwidthPercentage(mutableModel, DEFAULT_DAC_BANDWIDHT_PERCENTAGE, DEFAULT_TRAFFIC_SHAPING);
+
+        final RaddDescription raddDescriptionToReturn = RaddDescription.builder(DAC.getId(), 10L, "radd", dss.getAddress()).dsgType(false).dssMode(DssMode.ENABLED).build();
+        expect(dacWebService.getRaddDescription(DAC, RaddReference.create(DAC.getId(), 10L))).andReturn(raddDescriptionToReturn);
+
+        control.replay();
+        handler.handleEvent(dacBandwidthUpdatedEvent(transportStreamUpdated, oldModel));
+        assertThat(postRaddLatch.await(MAX_TIMEOUT_MS, TimeUnit.MILLISECONDS), is(false));
+        control.verify();
+    }
+
+    public void testDacBandwidthUpdatedEvent_DoesNotPostBandwidthRaddToDac_IfDacNotAboveTransportStream() throws InterruptedException
+    {
+        final MutableTopologyModel oldModel = createModel();
+        addTransportStreamToModel(oldModel);
+        final Dss dss = addRaddifiedDssToModel(mutableModel);
+        final TransportStream transportStreamUpdated = addTransportStreamToModelWithDacBandwidthPercentage(mutableModel, 50, DEFAULT_TRAFFIC_SHAPING);
+
+        final RaddDescription raddDescriptionToReturn = RaddDescription.builder(DAC.getId(), 10L, "radd", dss.getAddress()).dsgType(false).dssMode(DssMode.ENABLED).build();
+        expect(dacWebService.getRaddDescription(DAC, RaddReference.create(DAC.getId(), 10L))).andAnswer(
+            new IAnswer<RaddDescription>()
+            {
+                @Override
+                public RaddDescription answer() throws Throwable
+                {
+                    final ServingLocation sl = mutableModel.addServingLocation(ServingLocationQName.of(":junk"));
+                    mutableModel.checkout(DAC).setLocation(sl.getQualifiedName());
+                    return raddDescriptionToReturn;
+                }
+            }
+        );
+
+        control.replay();
+        handler.handleEvent(dacBandwidthUpdatedEvent(transportStreamUpdated, oldModel));
+        assertThat(postRaddLatch.await(MAX_TIMEOUT_MS, TimeUnit.MILLISECONDS), is(false));
+        control.verify();
+    }
+
+    public void noUpdateRaddBandwidth_ifDssDoesNotExist_atTransportControlStreamLocation() throws InterruptedException
+    {
+        final MutableTopologyModel oldModel = createModel();
+        addTransportStreamToModel(oldModel);
+        final Dss dss = addRaddifiedDssToModel(mutableModel);
+        final TransportStream transportStreamUpdated = addTransportStreamToModelWithDacBandwidthPercentage(mutableModel, 50, DEFAULT_TRAFFIC_SHAPING);
+
+        final RaddDescription raddDescriptionToReturn = RaddDescription.builder(DAC.getId(), 10L, "radd", dss.getAddress()).dsgType(false).dssMode(DssMode.ENABLED).build();
+        expect(dacWebService.getRaddDescription(DAC, RaddReference.create(DAC.getId(), 10L))).andAnswer(
+            new IAnswer<RaddDescription>()
+            {
+                @Override
+                public RaddDescription answer() throws Throwable
+                {
+                    final ServingLocation sl = mutableModel.addServingLocation(ServingLocationQName.of(":junk"));
+                    mutableModel.checkout(dss).setLocation(sl.getQualifiedName());
+                    return raddDescriptionToReturn;
+                }
+            }
+        );
+
+        control.replay();
+        handler.handleEvent(dacBandwidthUpdatedEvent(transportStreamUpdated, oldModel));
+        assertThat(postRaddLatch.await(MAX_TIMEOUT_MS, TimeUnit.MILLISECONDS), is(false));
+        control.verify();
+    }
+
+    public void noUpdateRaddBandwidth_ifDssDoesNotHaveRaddId() throws InterruptedException
+    {
+        final MutableTopologyModel oldModel = createModel();
+        addTransportStreamToModel(oldModel);
+        final Dss dss = addRaddifiedDssToModel(mutableModel);
+        final TransportStream transportStreamUpdated = addTransportStreamToModelWithDacBandwidthPercentage(mutableModel, 50, DEFAULT_TRAFFIC_SHAPING);
+
+        final RaddDescription raddDescriptionToReturn = RaddDescription.builder(DAC.getId(), 10L, "radd", dss.getAddress()).dsgType(false).dssMode(DssMode.ENABLED).build();
+        expect(dacWebService.getRaddDescription(DAC, RaddReference.create(DAC.getId(), 10L))).andAnswer(
+            new IAnswer<RaddDescription>()
+            {
+                @Override
+                public RaddDescription answer() throws Throwable
+                {
+                    mutableModel.checkout(dss).getProperties().remove(SynchronizationService.DSS_RADD_ID_PROPERTY);
+                    return raddDescriptionToReturn;
+                }
+            }
+        );
+
+        control.replay();
+        handler.handleEvent(dacBandwidthUpdatedEvent(transportStreamUpdated, oldModel));
+        assertThat(postRaddLatch.await(MAX_TIMEOUT_MS, TimeUnit.MILLISECONDS), is(false));
+        control.verify();
+    }
+
+    /**
+     * Test to ensure that if the RADD already has the values for DssMode and bandwidth that are intended to be set, then no
+     * commit (POST) is performed to the DAC.
+     */
+    public void testDssRaddifiedEvent_DoesNotPostRaddIfRaddAlreadyHasExpectedValues()
+    {
+        final MutableTopologyModel oldModel = createModel();
+        final Dss newDss = addRaddifiedDssToModel(mutableModel);
+        addTransportStreamToModelWithDacBandwidthPercentage(mutableModel, DEFAULT_DAC_BANDWIDHT_PERCENTAGE, DEFAULT_TRAFFIC_SHAPING);
+        addUnRaddifiedDssToModel(oldModel);
+
+        // Set  the radd description from the DAC to be the same as the expected values
+        final RaddDescription raddDescriptionToReturn = RaddDescription.builder(DAC.getId(), 10L, "radd", dssBuilder().build().getAddress()).dsgType(false).dssMode(DssMode.ENABLED).bandwidth(587L).build();
+        expect(dacWebService.getRaddDescription(DAC, RaddReference.create(DAC.getId(), 10L))).andStubReturn(raddDescriptionToReturn);
+
+        addOmsToDac();
+
+        control.replay();
+        handler.handleEvent(dssPropertiesChangedEvent(newDss, oldModel));
+        control.verify();
+    }
+
+    public void testSemAddedEvent_UpdatesSemFromDacAndCachesSem() throws SQLException
+    {
+        mutableModel.addDevice(DAC);
+        mutableModel.addDevice(SEM);
+
+        final MutableTopologyModel oldModel = createModel();
+
+        expect(cacheManager.getCachedData(SemCacheDefinitionFactory.create(SEM))).andStubReturn(null);
+        expect(dacWebService.getSemDescription(DAC, SemReference.create(DAC.getId(), SEM.getDacManagedId(), SEM.getName())))
+                .andReturn(SemDescription.builder(DAC.getId(), SEM.getDacManagedId(),  SEM.getName(), LOCAL_HOST).build());
+
+
+        semSynchronizationConfigProcessor.cache((Sem) anyObject(), eq(none(MutableTopologyModel.class)), eq(true));
+
+        control.replay();
+        handler.handleEvent(deviceAddedEvent(SEM, oldModel));
+        control.verify();
+    }
+
+    // Helpers
+    private MutableTopologyModel createModel()
+    {
+        final MutableTopologyModel oldModel = TestStubs.newModelWithContributions();
+        oldModel.addServingLocation(ServingLocationQName.of(":pa"));
+        oldModel.addServingLocation(ServingLocationQName.of(":pa:east"));
+        oldModel.addServingLocation(ServingLocationQName.of(":pa:east:horsham"));
+        return oldModel;
+    }
+
+    private LiveModelChangedEvent deviceAddedEvent(final Device device, final TopologyModel oldModel)
+    {
+        final DeviceAddedEvent deviceEvent = new DeviceAddedEvent(device);
+        final LiveModelChangedEvent liveModelChangedEvent = new LiveModelChangedEvent(Lists.newArrayList(deviceEvent), oldModel, null);
+        return liveModelChangedEvent;
+    }
+
+    private LiveModelChangedEvent deviceDeletedEvent(final Device device, final TopologyModel oldModel)
+    {
+        final DeviceDeletedEvent deviceDeletedEvent = new DeviceDeletedEvent(device);
+        final LiveModelChangedEvent liveModelChangedEvent = new LiveModelChangedEvent(Lists.newArrayList(deviceDeletedEvent), oldModel, null);
+        return liveModelChangedEvent;
+    }
+
+    private LiveModelChangedEvent dssPropertiesChangedEvent(final Dss dss, final TopologyModel oldModel)
+    {
+        final DeviceModifiedEvent deviceModifiedEvent = new DeviceModifiedEvent(dss, null);
+        final LiveModelChangedEvent liveModelChangedEvent = new LiveModelChangedEvent(Lists.newArrayList(deviceModifiedEvent), oldModel, mutableModel);
+        return liveModelChangedEvent;
+    }
+
+    private LiveModelChangedEvent dacBandwidthUpdatedEvent(final TransportStream transportStream, final TopologyModel oldModel)
+    {
+        final StreamModifiedEvent tsModifiedEvent = new StreamModifiedEvent(transportStream, "");
+        final LiveModelChangedEvent liveModelChangedEvent = new LiveModelChangedEvent(Lists.newArrayList(tsModifiedEvent), oldModel, mutableModel);
+        return liveModelChangedEvent;
+    }
+
+    private static TransportStream addTransportStreamToModel(final MutableTopologyModel model)
+    {
+        return (TransportStream)model.addStream(TS);
+    }
+
+    private static TransportStream addTransportStreamToModelWithDacBandwidthPercentage(final MutableTopologyModel model, final int dacBandwidthPercentage, final TrafficShapingProfile trafficShaping)
+    {
+        return (TransportStream)model.addStream(TransportStreamDescription.builder().name("ts1").id(TS_ID).location(ServingLocationQName.of(":pa:east")).trafficShapingProfile(trafficShaping).properties(MapUtility.<String, String>toMap("dacBandwidthAllocationPercentage", Integer.toString(dacBandwidthPercentage))).build());
+    }
+
+    private RaddDescription addRaddToDac(final DssMode mode)
+    {
+        final RaddDescription raddDescriptionToReturn = RaddDescription.builder(DAC.getId(), 10L, "radd", dssBuilder().build().getAddress()).dsgType(false).dssMode(mode).build();
+        expect(dacWebService.getRaddDescription(DAC, RaddReference.create(DAC.getId(), 10L))).andStubReturn(raddDescriptionToReturn);
+        return raddDescriptionToReturn;
+    }
+
+    private void addOmsToDac()
+    {
+        addOmsToDac(1);
+    }
+
+    private void addOmsToDac(final int numOms)
+    {
+        final List<OmReference> refs = Lists.newArrayList();
+        for (int i = 0; i < numOms; ++i)
+        {
+            final long id = i + 100;
+            final OmReference omRef = OmReference.create(DAC.getId(), id);
+            refs.add(omRef);
+
+            final OmDescription desc = OmDescription.builder(DAC.getId(), id, "om-" +  id, UnresolvedInetAddress.create("om-" + id)).bandwidth(2000).networkPid(1912L).build();
+            expect(dacWebService.getOmDescription(DAC, omRef)).andStubReturn(desc);
+        }
+        expect(dacWebService.getAllOmReferences(DAC)).andStubReturn(FunctionalIterables.of(refs));
+    }
+
+    private static Dss addRaddifiedDssToModel(final MutableTopologyModel model)
+    {
+        model.addDevice(DAC);
+        final Dss dss = dssBuilder().properties(MapUtility.<String, String>toMap("raddId", "10")).build();
+        model.addDevice(dss);
+        return dss;
+    }
+
+    private static Dss addUnRaddifiedDssToModel(final MutableTopologyModel model)
+    {
+        model.addDevice(DAC);
+        final Dss dss = dssBuilder().build();
+        model.addDevice(dss);
+        return dss;
+    }
+
+    private static Dss.Builder dssBuilder()
+    {
+        return Dss.builder("dss", DssType.REMOTE).id(DSS_ID).location(ServingLocationQName.of(":pa:east")).address(UnresolvedInetAddress.create("dss-address"));
+    }
+
+    private class RaddDescriptionMatcher implements IArgumentMatcher
+    {
+        private final RaddDescription lhs;
+
+        public RaddDescriptionMatcher(final RaddDescription description)
+        {
+            lhs = description;
+        }
+
+        @Override
+        public boolean matches(final Object argument)
+        {
+            if (argument instanceof RaddDescription)
+            {
+                final RaddDescription rhs = (RaddDescription) argument;
+                final EqualsBuilder bldr = new EqualsBuilder();
+                bldr.append(lhs.getBandwidth(), rhs.getBandwidth());
+                bldr.append(lhs.getId(), rhs.getId());
+                return bldr.isEquals();
+            }
+            return false;
+        }
+
+        @Override
+        public void appendTo(final StringBuffer buffer)
+        {
+            buffer.append(lhs);
+        }
+    }
+
+    public RaddDescription raddEquals(final RaddDescription description)
+    {
+        reportMatcher(new RaddDescriptionMatcher(description));
+        return null;
+    }
+}

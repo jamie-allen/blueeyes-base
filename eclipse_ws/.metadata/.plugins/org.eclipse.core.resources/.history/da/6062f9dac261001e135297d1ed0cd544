@@ -1,0 +1,13 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.management;
+
+/**
+ * Interface describing the JMX instrumented data for an Inserter packet filter instance in a route.
+ */
+public interface InserterInstrumentationMXBean
+{
+    /**
+     * @return comma-separated list of stream Ids
+     */
+    Long[] getStreamIds();
+}

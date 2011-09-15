@@ -1,0 +1,44 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.temp.stream.manager.impl;
+
+import com.ccadllc.firebird.dss.common.datatypes.TransmissionType;
+import com.ccadllc.firebird.dss.server.realtime.temp.stream.manager.StreamManager;
+
+import net.jcip.annotations.Immutable;
+
+import org.osgi.service.event.EventHandler;
+
+/** Default implementation of a <code>StreamManager</code>. */
+@Immutable
+public final class DefaultStreamManager implements StreamManager, EventHandler
+{
+    /** Lock used when manipulating any filter chain controller instances in the map. */
+    private final Object lock = new Object();
+
+    public DefaultStreamManager()
+    {
+
+    }
+
+    public void init()
+    {
+    }
+
+    /**
+     * Using the executor thread detaches this process from the periodic or route thread that initiated the block send.
+     */
+    @Override
+    public void insert(final byte[] block, final Long streamId, final TransmissionType transmissionType)
+    {
+        executor.submit(new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                // Passes the data down to the appropriate filter chain controller for the stream,
+                // which controls the packet  filter chain.  If a controller does not exist for a
+                // stream, then a new one is created and added to the collection.
+            }
+        });
+    }
+}

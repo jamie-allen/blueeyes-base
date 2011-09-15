@@ -1,0 +1,8 @@
+1248110162065	Rename method 'prepareDesintationInfo'
+1248110370857	Rename local variable 'createMpeg2TransportStreamRequest'
+1248200918632	Rename method 'randomAddComponentStreamToTransportStream'
+1248200929073	Rename method 'randomAddAncillaryStreamToTransportStream'
+1248293714917	Rename local variable 'streamDestinations'
+1248293729348	Rename local variable 'destination'
+1248297279191	Delete elements
+1248468053548	Extract constant 'TEST_PID'

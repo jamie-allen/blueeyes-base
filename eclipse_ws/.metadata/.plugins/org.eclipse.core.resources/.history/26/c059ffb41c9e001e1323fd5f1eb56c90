@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:osgi="http://www.springframework.org/schema/osgi"
+       xmlns:osgix="http://www.springframework.org/schema/osgi-compendium"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+           http://www.springframework.org/schema/osgi http://www.springframework.org/schema/osgi/spring-osgi.xsd http://www.springframework.org/schema/osgi-compendium http://www.springframework.org/schema/osgi-compendium/spring-osgi-compendium-1.0.xsd">
+    <!-- Exported OSGi services -->
+
+    <osgi:service interface="com.ccadllc.firebird.vms.dssrm.provisioning.PeriodicRepository" ref="periodicRepository"/>
+    <osgi:service interface="com.ccadllc.firebird.vms.dssrm.provisioning.BlockSetRepository" ref="blockSetRepository"/>
+    <osgi:service interface="com.ccadllc.firebird.vms.dssrm.core.DataStreamServerResourceManager"  ref="dataStreamServerResourceManager"/>
+
+    <!-- Imported OSGi services -->
+   <osgi:reference id="entityManagerFactory" interface="javax.persistence.EntityManagerFactory" />
+   <osgi:reference id="transactionManager" interface="org.springframework.transaction.PlatformTransactionManager" />
+   <osgi:reference id="eventAdmin" interface="org.osgi.service.event.EventAdmin" />
+   <osgi:reference id="topologyService" interface="com.ccadllc.firebird.vms.topology.core.TopologyService" />
+   <osgi:reference id="multicastInputStreamManager" interface="com.ccadllc.firebird.vms.dssrm.routes.MulticastInputStreamManager" />
+   
+</beans>

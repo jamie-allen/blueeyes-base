@@ -1,0 +1,269 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dssrm.provisioning;
+import java.util.Map;
+import java.util.Set;
+
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.EnumType;
+import javax.persistence.Enumerated;
+import javax.persistence.FetchType;
+import javax.persistence.GeneratedValue;
+import javax.persistence.GenerationType;
+import javax.persistence.Id;
+import javax.persistence.JoinColumn;
+import javax.persistence.JoinTable;
+import javax.persistence.PostPersist;
+import javax.persistence.PostRemove;
+import javax.persistence.Table;
+
+import com.ccadllc.firebird.core.base.common.util.MorePreconditions;
+import com.ccadllc.firebird.dss.common.datatypes.RouteDataType;
+import com.ccadllc.firebird.dss.common.datatypes.TransportProtocolType;
+import com.ccadllc.firebird.dss.server.common.RouteSnapshot;
+import com.ccadllc.firebird.dss.server.common.SnapshotUtility;
+
+import org.apache.commons.lang.builder.ToStringBuilder;
+import org.hibernate.annotations.Cascade;
+import org.hibernate.annotations.CollectionOfElements;
+import org.hibernate.annotations.MapKey;
+import org.springframework.beans.factory.annotation.Configurable;
+import org.springframework.util.CollectionUtils;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Sets;
+
+/**
+ * Persistent implementation of Route.
+ *
+ * <p>Currently, only UDP based routes can be persistent.</p>
+ */
+@Entity(name = "Route")
+@Table(name = "route")
+@Configurable
+public class PersistentRoute implements Route
+{
+    @Id
+    @GeneratedValue(strategy = GenerationType.AUTO)
+    private Long id;
+
+    @Column(name = "port", unique = true, nullable = false)
+    private int port;
+
+    @Column(name = "transport_protocol_type", nullable = false)
+    @Enumerated(EnumType.STRING)
+    private TransportProtocolType transportProtocolType;
+
+    @Column(name = "route_data_type", nullable = false)
+    @Enumerated(EnumType.STRING)
+    private RouteDataType routeDataType;
+
+    @CollectionOfElements(fetch = FetchType.EAGER)
+    @Cascade({org.hibernate.annotations.CascadeType.ALL })
+    @JoinTable(name = "route_pid_mapping", joinColumns = {@JoinColumn(name = "route_id") })
+    private final Set<PidMapping> pidMappings = Sets.newHashSet();
+
+    @CollectionOfElements(fetch = FetchType.EAGER)
+    @JoinTable(name = "route_stream", joinColumns = {@JoinColumn(name = "route_id") })
+    @Column(name = "stream_id")
+    private final Set<Long> streamIds = Sets.newHashSet();
+
+    @CollectionOfElements(fetch = FetchType.EAGER)
+    @JoinTable(name = "route_property", joinColumns = { @JoinColumn(name = "route_id") })
+    @MapKey(columns = { @Column(name = "key") })
+    @Column(name = "value")
+    private final Map<String, String> properties = Maps.newHashMap();
+
+    private transient EventAdminServiceStrategy routeEventAdminService;
+
+    /**
+     * JPA constructor.
+     */
+    @SuppressWarnings("unused")
+    private PersistentRoute()
+    {
+    }
+
+    public PersistentRoute(final int port, final Set<Long> streamIds, final Map<String, String> properties)
+    {
+        initializeCommonRouteInformation(port);
+
+        routeDataType = RouteDataType.BLOCKS;
+        if (!CollectionUtils.isEmpty(properties))
+        {
+            this.properties.putAll(properties);
+        }
+
+        for (final Long streamId : streamIds)
+        {
+            addStreamId(streamId);
+        }
+    }
+
+    public PersistentRoute(final int port, final Multimap<Integer, Long> pidMappings, final Map<String, String> properties)
+    {
+        initializeCommonRouteInformation(port);
+
+        routeDataType = RouteDataType.MPEG_PACKETS;
+
+        if (!CollectionUtils.isEmpty(properties))
+        {
+            this.properties.putAll(properties);
+        }
+
+        Preconditions.checkNotNull(pidMappings, "Pid mappings should not be null.");
+        for (final Integer pid : pidMappings.keySet())
+        {
+            for (final Long streamId : pidMappings.get(pid))
+            {
+                addPidMapping(pid, streamId);
+            }
+        }
+    }
+
+    public void setEventAdminServiceStrategy(final EventAdminServiceStrategy eventAdminServiceStrategy)
+    {
+        routeEventAdminService = eventAdminServiceStrategy;
+    }
+
+    public Long getId()
+    {
+        return id;
+    }
+
+    public int getPort()
+    {
+        return port;
+    }
+
+    public TransportProtocolType getTransportProtocolType()
+    {
+        return transportProtocolType;
+    }
+
+    @PostPersist
+    public void persisted()
+    {
+        routeEventAdminService.sendEvent(Route.ROUTE_PERSISTED_EVENT, snapshot());
+    }
+
+    public void updated()
+    {
+        if (getId() != null)
+        {
+            routeEventAdminService.sendEvent(Route.ROUTE_UPDATED_EVENT, snapshot());
+        }
+    }
+
+    @PostRemove
+    public void removed()
+    {
+        routeEventAdminService.sendEvent(Route.ROUTE_DELETED_EVENT, snapshot());
+    }
+
+    public RouteDataType getDataType()
+    {
+        return routeDataType;
+    }
+
+    public Multimap<Integer, Long> getPidMappings()
+    {
+        Preconditions.checkState(routeDataType == RouteDataType.MPEG_PACKETS, "Can not get pid mappings from a route with non-mpeg packet data.");
+        return transformPidMappings();
+    }
+
+    public Set<Long> getStreamIds()
+    {
+        Preconditions.checkState(routeDataType == RouteDataType.BLOCKS, "Can not get stream mappings from a route with non-block data.");
+        return streamIds;
+    }
+
+    public void addPidMapping(final int pid, final long streamId)
+    {
+        Preconditions.checkState(routeDataType == RouteDataType.MPEG_PACKETS, "Can not add pid mapping to a route with non-mpeg packet data.");
+        pidMappings.add(new PidMapping(pid, streamId));
+        // @PostUpdate was not being called on the PersistentRoute entity for updates to the pid mappings.
+        updated();
+    }
+
+    public void removePidMapping(final int pid, final long streamId)
+    {
+        Preconditions.checkState(routeDataType == RouteDataType.MPEG_PACKETS, "Can not remove a pid mapping from a route with non-mpeg packet data.");
+        for (final PidMapping mapping : Sets.newHashSet(pidMappings))
+        {
+            if (mapping.getPid() == pid && mapping.getStreamId() == streamId)
+            {
+                pidMappings.remove(mapping);
+                // @PostUpdate was not being called on the PersistentRoute entity for updates to the pid mappings.
+                updated();
+            }
+        }
+    }
+
+    public Map<String, String> getProperties()
+    {
+        return properties;
+    }
+
+    public void addStreamId(final long streamId)
+    {
+        Preconditions.checkState(routeDataType == RouteDataType.BLOCKS, "Can not add stream mapping to a route with non-block data.");
+        if (!streamIds.contains(streamId))
+        {
+            streamIds.add(streamId);
+            updated();
+        }
+    }
+
+    public void removeStreamId(final long streamId)
+    {
+        Preconditions.checkState(routeDataType == RouteDataType.BLOCKS, "Can not remove a stream mapping from a route with non-block data.");
+
+        if (streamIds.contains(streamId))
+        {
+            streamIds.remove(streamId);
+            updated();
+        }
+    }
+
+    private void initializeCommonRouteInformation(final int port)
+    {
+        MorePreconditions.checkArgumentRange(port, UDP_PORT_NUMBER_MINIMUM, UDP_PORT_NUMBER_MAXIMUM, "Port Number");
+        this.port = port;
+        transportProtocolType = TransportProtocolType.UDP;
+    }
+
+    @Override
+    public String toString()
+    {
+        return ToStringBuilder.reflectionToString(this);
+    }
+
+    private RouteSnapshot snapshot()
+    {
+        switch (routeDataType)
+        {
+            case BLOCKS:
+                return SnapshotUtility.createUdpRouteSnapshot(id, port, streamIds, properties);
+
+            case MPEG_PACKETS:
+                return SnapshotUtility.createUdpRouteSnapshot(id, port, transformPidMappings(), properties);
+
+            default:
+                throw new IllegalStateException("Invalid route data type encountered.");
+        }
+    }
+
+    private Multimap<Integer, Long> transformPidMappings()
+    {
+        final Multimap<Integer, Long> pidMappingsAsMultimap = ArrayListMultimap.create();
+        for (final PidMapping pidMapping : pidMappings)
+        {
+            pidMappingsAsMultimap.put(pidMapping.getPid(), pidMapping.getStreamId());
+        }
+        return pidMappingsAsMultimap;
+    }
+}

@@ -1,0 +1,580 @@
+/*
+ * Copyright 2007 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.dac.web.ui.model.channels.lineups.details;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+
+import javax.faces.component.UIComponent;
+import javax.faces.context.FacesContext;
+
+import com.ccadllc.commons.OperationalMessage;
+import com.ccadllc.commons.exception.ValidationException;
+import com.ccadllc.commons.web.ui.faces.components.UITabbedPane;
+import com.ccadllc.commons.web.ui.faces.util.OperationalMessageUtility;
+import com.ccadllc.commons.web.ui.faces.util.RendererUtility;
+import com.ccadllc.dac.model.channel.lineup.Lineup;
+import com.ccadllc.dac.model.channel.lineup.LineupEntry;
+import com.ccadllc.dac.model.content.source.Source;
+import com.ccadllc.dac.model.system.operation.OperationStatus;
+import com.ccadllc.dac.model.topology.topology.TopologyService;
+import com.ccadllc.dac.web.ui.model.channels.AbstractChannelBean;
+
+/**
+ * Bean representing the lineup details UI screen.
+ */
+public class LineupDetailsBean extends AbstractChannelBean
+{
+    /**
+     * Parameter key in Operational Message map.
+     */
+    private static final String VIRTUAL_CHANNEL_NUMBER_OPERATIONAL_MESSAGE_PARAMETER = "virtualChannelNumber";
+
+    /**
+     * Success navigation outcome.
+     */
+    private static final String SUCCESS_NAVIGATION_OUTCOME = "success";
+
+    /**
+     * Refresh page navigation outcome.
+     */
+    private static final String REFRESH_PAGE_NAVIGATION_OUTCOME = "refresh";
+
+    /**
+     * Topology service injected by Spring.
+     */
+    private TopologyService topologyService;
+
+    /**
+     * ID of the lineup being edited. (Injected)
+     */
+    private Integer lineupId;
+
+    /**
+     * Name of lineup.
+     */
+    private String lineupName;
+
+    /**
+     * Lineup being edited.
+     */
+    private Lineup lineup;
+
+    /**
+     * Flag indicating whether lineup is a new or existing one.
+     */
+    private boolean newLineup;
+
+    /**
+     * Flag indicating whether logical channel map association have been edited.
+     */
+    private boolean logicalChannelMapAssociationsDirty;
+
+    /**
+     * Lineup Entries data.
+     */
+    private EntriesData entriesData;
+
+    /**
+     * Logical Channel Map Associations data.
+     */
+    private AssociatedChannelMapsData associatedChannelMapsData;
+
+    /**
+     * Lineup status data.
+     */
+    private StatusData statusData;
+
+    /**
+     * Form component.
+     */
+    private UIComponent formComponent;
+
+    /**
+     * Tab to display when page is initially loaded.
+     */
+    private String defaultTab;
+
+    /**
+     * Lineup operational status.
+     */
+    private OperationStatus operationalStatus;
+
+    /**
+     * Reserved for storing a Collection of all of the Lineups from the database.
+     */
+    private Collection<Lineup> allLineups;
+
+    /**
+     * The list of lineups that are being refactored for common channels.
+     */
+    private Collection<Lineup> selectedLineups;
+
+    /**
+     * Collection of lineup entries that are common to a set of selected lineups.
+     */
+    private Collection<LineupEntry> filteredEntries;
+
+    /**
+     * @return the value indicating whether of not a lineup refactoring is in progress
+     */
+    public boolean getLineupsAreBeingRefactored()
+    {
+        return entriesData.getLineupsAreBeingRefactored();
+    }
+
+    /**
+     * Set the flag to indicate if the screen is being displayed as a result of a
+     * lineup refactoring operation.
+     *
+     * @param lineupsAreBeingRefactored idicates if lineup refactoring is in progress
+     */
+    public void setLineupsAreBeingRefactored(final boolean lineupsAreBeingRefactored)
+    {
+        if (entriesData != null)
+        {
+            entriesData.setLineupsAreBeingRefactored(lineupsAreBeingRefactored);
+        }
+    }
+
+    /**
+     * Set the list of lineups that are being refactored for common channels.
+     *
+     * @param selectedLineups the list of lineups to refactor
+     */
+    public void setSelectedLineups(final Collection<Lineup> selectedLineups)
+    {
+        this.selectedLineups = selectedLineups;
+    }
+
+    /**
+     * Set the list of lineup entries that are common to a set of selected lineups.
+     *
+     * @param filteredEntries the collection of common lineup entries
+     */
+    public void setFilteredEntries(final Collection<LineupEntry> filteredEntries)
+    {
+        this.filteredEntries = filteredEntries;
+    }
+
+    /**
+     * @return Returns instantiated EntriesData.
+     */
+    public EntriesData getEntriesData()
+    {
+        if (entriesData == null)
+        {
+            entriesData = new EntriesData(getLineup());
+            if (filteredEntries != null)
+            {
+                entriesData.setFilteredEntries(filteredEntries);
+                entriesData.setLineupsAreBeingRefactored(true);
+            }
+            if (selectedLineups != null)
+            {
+                final List<Integer> lineupIds = new ArrayList<Integer>();
+                for (Lineup lineup : selectedLineups)
+                {
+                    lineupIds.add(lineup.getId());
+                }
+                entriesData.setLineupIds(lineupIds);
+            }
+        }
+        return entriesData;
+    }
+
+    /**
+     * @param entriesData entriesData.
+     */
+    public void setEntriesData(final EntriesData entriesData)
+    {
+        this.entriesData = entriesData;
+    }
+
+    /**
+     * @return Returns instantiated AssociatedChannelMapsData.
+     */
+    public AssociatedChannelMapsData getAssociatedChannelMapsData()
+    {
+        if (associatedChannelMapsData == null)
+        {
+            associatedChannelMapsData = new AssociatedChannelMapsData(getLineupService(), getLogicalChannelMapService(),
+                getLineup(), getAllLineups());
+        }
+        return associatedChannelMapsData;
+    }
+
+    /**
+     * @param associatedChannelMapsData associatedChannelMapsData.
+     */
+    public void setAssociatedChannelMapsData(final AssociatedChannelMapsData associatedChannelMapsData)
+    {
+        this.associatedChannelMapsData = associatedChannelMapsData;
+    }
+
+    /**
+     * @return Returns instantiated StatusData
+     */
+    public StatusData getStatusData()
+    {
+        if (statusData == null)
+        {
+            statusData = new StatusData(getLineupService(), getLogicalChannelMapService(), topologyService, getLineup());
+        }
+        return statusData;
+    }
+
+    /**
+     * @param statusData statusData.
+     */
+    public void setStatusData(final StatusData statusData)
+    {
+        this.statusData = statusData;
+    }
+
+    /**
+     * Accessor for the lineup property.
+     *
+     * @return lineup.
+     */
+    public Lineup getLineup()
+    {
+        if (lineup == null)
+        {
+            if (isNewLineup())
+            {
+                lineup = getLineupService().createEmptyLineup();
+            }
+            else if (isDataPresent())
+            {
+                lineup = getLineupService().getLineupByIdDeep(lineupId);
+            }
+        }
+        return lineup;
+    }
+
+    /**
+     * @return Collection of Lineups.
+     */
+    public Collection<Lineup> getAllLineups()
+    {
+        if (allLineups == null)
+        {
+            allLineups = getLineupService().getAllLineupsShallow();
+        }
+
+        return allLineups;
+    }
+
+    /**
+     * @param lineup lineup.
+     */
+    public void setLineup(final Lineup lineup)
+    {
+        this.lineup = lineup;
+    }
+
+    /**
+     * @param topologyService topology service.
+     */
+    public void setTopologyService(final TopologyService topologyService)
+    {
+        this.topologyService = topologyService;
+    }
+
+    /**
+     * @param lineupId new value for lineupId.
+     */
+    public void setLineupId(final Integer lineupId)
+    {
+        this.lineupId = lineupId;
+    }
+
+    /**
+     * Accessor for the lineupName property.
+     *
+     * @return lineup name.
+     */
+    public String getLineupName()
+    {
+        if (lineupName == null)
+        {
+            lineupName = getLineup().getName();
+        }
+        return lineupName;
+    }
+
+    /**
+     * Accessor for the operational status property.
+     *
+     * @return operational status of the lineup.
+     */
+    public OperationStatus getOperationalStatus()
+    {
+        if (operationalStatus == null)
+        {
+            operationalStatus = getLineupService().getLineupOperationalStatus(getLineup().getId());
+        }
+        return operationalStatus;
+    }
+
+    /**
+     * Mutator for the lineupName property.
+     *
+     * @param lineupName Name of the lineup.
+     */
+    public void setLineupName(final String lineupName)
+    {
+        this.lineupName = lineupName;
+    }
+
+    /**
+     * @return true if user is creating a new lineup, otherwise the user is editing an existing lineup so return false.
+     */
+    public boolean isNewLineup()
+    {
+        return newLineup;
+    }
+
+    /**
+     * @param newLineup newLineup.
+     */
+    public void setNewLineup(final boolean newLineup)
+    {
+        this.newLineup = newLineup;
+    }
+
+    /**
+     * @return logicalChannelMapAssociationsDirty.
+     */
+    public boolean isLogicalChannelMapAssociationsDirty()
+    {
+        return logicalChannelMapAssociationsDirty;
+    }
+
+    /**
+     * @param logicalChannelMapAssociationsDirty logicalChannelMapAssociationsDirty.
+     */
+    public void setLogicalChannelMapAssociationsDirty(final boolean logicalChannelMapAssociationsDirty)
+    {
+        this.logicalChannelMapAssociationsDirty = logicalChannelMapAssociationsDirty;
+    }
+
+    /**
+     * @return defaultTab property.
+     */
+    public String getDefaultTab()
+    {
+        return defaultTab;
+    }
+
+    /**
+     * @param defaultTab defaultTab.
+     */
+    public void setDefaultTab(final String defaultTab)
+    {
+        this.defaultTab = defaultTab;
+    }
+
+    /**
+     * Action method that saves lineup and returns navigation directive based on success of save.
+     *
+     * @return Returns navigation directive.
+     */
+    public String onOkButton()
+    {
+        return saveLineup() ? SUCCESS_NAVIGATION_OUTCOME : null;
+
+    }
+
+    /**
+     * Action method that saves lineup.
+     *
+     * @return navigation outcome.
+     */
+    public String onApplyButton()
+    {
+        if (saveLineup())
+        {
+            lineup = getLineupService().getLineupByNameShallow(getLineupName());
+            final LineupDetailsBean lineupDetailsBean = (LineupDetailsBean)resetBean();
+            lineupDetailsBean.setLineupId(lineup.getId());
+
+            final Map requestParams = FacesContext.getCurrentInstance().getExternalContext().getRequestParameterMap();
+            final List<String> matchingTabbedPaneIds = new ArrayList<String>();
+            for (final Object obj : requestParams.keySet())
+            {
+                final String param = obj.toString();
+                if (param.endsWith(UITabbedPane.HIDDEN_INPUT_ID))
+                {
+                    matchingTabbedPaneIds.add(param);
+                }
+            }
+
+            // The following line assumes that there is only one UITabbedPane object being used on the Lineup Details page.
+            lineupDetailsBean.setDefaultTab((String)requestParams.get(matchingTabbedPaneIds.get(0)));
+
+            return REFRESH_PAGE_NAVIGATION_OUTCOME;
+        }
+        else
+        {
+            return null;
+        }
+    }
+
+    /**
+     * Updates the lineup with all changes made, including lineup entries and logical channel map associations.
+     *
+     * @return true if save was completed successfully, otherwise false.
+     */
+    @SuppressWarnings("unchecked")
+    private boolean saveLineup()
+    {
+        //independent copy of the list *but* references same objects
+        final List<LineupEntry> originalEntries = new ArrayList<LineupEntry>(getLineup().getEntries());
+
+        getEntriesData().removeConflicts();
+        getEntriesData().updateLineupEntries();
+        getLineup().addEntries(getEntriesData().getAddedLineupEntries());
+        try
+        {
+            getLineup().setName(lineupName);
+            getLineup().deleteEntriesByIds(getEntriesData().getDeletedLineupEntryIds());
+            if (getEntriesData().getLineupIds() == null)
+            {
+                getLineupService().saveOrUpdateLineup(getLineup());
+            }
+            else
+            {
+                getLineupService().refactorLineups(getEntriesData().getLineupIds(), getEntriesData().getAddedLineupEntries(),
+                    lineupName);
+            }
+
+            addSaveSuccessfulMessage(lineupName);
+        }
+        catch (ValidationException e)
+        {
+            processOperationalMessages(e.getOperationalMessages());
+            OperationalMessageUtility.addMessages(e.getOperationalMessages());
+
+            //remove any added entries from the Lineup by setting original list back
+            getLineup().getEntries().clear();
+            getLineup().getEntries().addAll(originalEntries);
+
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * @return false if lineupId was not injected, else true.
+     */
+    public boolean isDataPresent()
+    {
+        return lineupId != null || lineup != null;
+    }
+
+    /**
+     * @return formComponent property.
+     */
+    public UIComponent getFormComponent()
+    {
+        return formComponent;
+    }
+
+    /**
+     * @param formComponent formComponent.
+     */
+    public void setFormComponent(final UIComponent formComponent)
+    {
+        this.formComponent = formComponent;
+    }
+
+    /**
+     * @return Returns the full id of the form.
+     */
+    public String getFormId()
+    {
+        return RendererUtility.getFormId(getFormComponent());
+    }
+
+    /**
+     * Processes all operational messages contained in operation context.
+     *
+     * @param operationalMessages operationalMessages
+     */
+    @SuppressWarnings("unchecked")
+    private void processOperationalMessages(final Collection<OperationalMessage<?>> operationalMessages)
+    {
+        final Collection<OperationalMessage<?>> duplicateOperationalMessages = new ArrayList<OperationalMessage<?>>();
+        final Collection<OperationalMessage<?>> operationalMessagesProcessed = new ArrayList<OperationalMessage<?>>();
+        for (final OperationalMessage<?> opMsg : operationalMessages)
+        {
+            final Map opMsgParams = opMsg.getParams();
+
+            final Integer virtualChannelNumber;
+            if (opMsgParams != null)
+            {
+                virtualChannelNumber = (Integer)opMsgParams.get(VIRTUAL_CHANNEL_NUMBER_OPERATIONAL_MESSAGE_PARAMETER);
+                getEntriesData().generateLineupEntryWarning(virtualChannelNumber);
+            }
+            else
+            {
+                virtualChannelNumber = null;
+            }
+
+            // Replace source index parameter with a source id to be displayed on the screen.
+            final Object sourceIndexObj = opMsgParams.get("sourceIndex");
+            if (sourceIndexObj != null)
+            {
+                final Integer sourceIndex = (Integer) sourceIndexObj;
+                final Source source = getSourceService().getSourceByIndexShallow(sourceIndex);
+                opMsgParams.put("sourceId", source.getExternalId());
+            }
+
+            if (containsOperationalMessage(operationalMessagesProcessed, opMsg))
+            {
+                duplicateOperationalMessages.add(opMsg);
+            }
+            operationalMessagesProcessed.add(opMsg);
+        }
+
+        for (final OperationalMessage<?> duplicateOperationalMessage : duplicateOperationalMessages)
+        {
+            operationalMessages.remove(duplicateOperationalMessage);
+        }
+    }
+
+    /**
+     * Iterates through all operational messages provided for one that matches that resource key and params of the
+     * operational message target. If it finds one, then the method returns true.
+     *
+     * @param operationalMessages operational messages to search.
+     * @param operationalMessageTarget operational message to search for.
+     * @return true if an operational message with matching resource key and params is found, otherwise false.
+     */
+    private boolean containsOperationalMessage(final Collection<OperationalMessage<?>> operationalMessages,
+        final OperationalMessage<?> operationalMessageTarget)
+    {
+        for (final OperationalMessage<?> opMsg : operationalMessages)
+        {
+            if (opMsg.getType().equals(operationalMessageTarget.getType()))
+            {
+                final Integer operationalMessageTargetVirtualChannelNumber
+                    = (Integer) operationalMessageTarget.getParams().get(VIRTUAL_CHANNEL_NUMBER_OPERATIONAL_MESSAGE_PARAMETER);
+                final Integer opMsgVirtualChannelNumber
+                    = (Integer) opMsg.getParams().get(VIRTUAL_CHANNEL_NUMBER_OPERATIONAL_MESSAGE_PARAMETER);
+
+                if (opMsgVirtualChannelNumber != null && operationalMessageTargetVirtualChannelNumber != null
+                    && opMsgVirtualChannelNumber.equals(operationalMessageTargetVirtualChannelNumber))
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+}

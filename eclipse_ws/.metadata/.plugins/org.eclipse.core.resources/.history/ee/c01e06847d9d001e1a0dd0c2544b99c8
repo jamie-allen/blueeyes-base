@@ -1,0 +1,104 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.vms.dssrm.core;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.InetSocketAddress;
+import java.util.UUID;
+
+import org.hamcrest.Matcher;
+
+public interface DataStreamServerResourceManager
+{
+    /**
+     * Adds a periodic.
+     *
+     * @param periodic description of the periodic
+     * @param data data to be transmitted
+     * @throws NullPointerException if the associated stream does not exist in topology
+     */
+    void addPeriodic(PeriodicDescription periodic, PeriodicData data);
+
+    void deletePeriodic(UUID periodicId);
+
+    /**
+     * Adds a new block set.
+     *
+     * @param blockSet description of the block set to be written
+     * @param blockSetData streamed data to write
+     * @return block set Id
+     * @throws IOException if input stream creation fails
+     */
+    UUID addBlockSet(BlockSetDescription blockSet, InputStream blockSetData) throws IOException;
+
+    /**
+     * Deletes a block set.
+     *
+     * @param blockSetId unique identifier for the block set to remove
+     */
+    void deleteBlockSet(UUID blockSetId);
+
+    /**
+     * Performs query of periodics in the repository that should return only a single periodic instance.
+     * @param matcher to use in filtering queried periodic data
+     * @return an iterable collection of PeriodicDescription instances that meet the filter
+     *         requirement, which should only have a single PeriodicDescription instance in it
+     */
+    PeriodicDescription queryForPeriodic(Matcher<PeriodicDescription> matcher);
+
+    /**
+     * Performs query of periodics in the repository that can return multiple periodic instances.
+     * @param matcher to use in filtering queried periodic data
+     * @return an iterable collection of PeriodicDescription instances that meet the filter requirement
+     */
+    Iterable<PeriodicDescription> queryForPeriodics(Matcher<PeriodicDescription> matcher);
+
+    /**
+     * Performs query of block sets in the repository that a single block set instance by ID.
+     * @param matcher to use in filtering queried block set data
+     * @return a BlockSetSummary instance that meets the filter requirement
+     */
+    BlockSetDescription queryForBlockSet(Matcher<BlockSetDescription> matcher);
+
+    /**
+     * Performs query of block sets in the repository that can return multiple block set instances.
+     * @param matcher to use in filtering queried block set data
+     * @return an iterable collection of BlockSetDescription instances that meet the filter requirement
+     */
+    Iterable<BlockSetDescription> queryForBlockSets(Matcher<BlockSetDescription> matcher);
+
+    /**
+     * Establishes a dedicated UDP or TCP route that listens for and routes blocks or MPEG 2 packets to each appropriate DSS.
+     *
+     * @param route description
+     * @return address for the client to use for sending data
+     */
+    InetSocketAddress establishRoute(RouteDescription route);
+
+    /**
+     * Performs query of UDP routes in the repository that should return only a single route instance.
+     * @param matcher to use in filtering queried route data
+     * @return an iterable collection of RouteDescription instances that meet the filter
+     *         requirement, which should only have a single RouteDescription instance in it
+     */
+    RouteDescription queryForUdpRoute(Matcher<RouteDescription> matcher);
+
+    /**
+     * Performs query of UDP routes in the repository that can return multiple route instances.
+     * @param matcher to use in filtering queried route data
+     * @return an iterable collection of RouteDescription instances that meet the filter requirement
+     */
+    Iterable<RouteDescription> queryForUdpRoutes(Matcher<RouteDescription> matcher);
+
+    /**
+     * Updates pid mappings for UDP routes that already handle MPEG 2 packets.
+     *
+     * @param route description
+     */
+    void updateUdpRoute(RouteDescription route);
+
+    /**
+     * @param routeId unique identifier for the route to remove
+     */
+    void removeUdpRoute(UUID routeId);
+}

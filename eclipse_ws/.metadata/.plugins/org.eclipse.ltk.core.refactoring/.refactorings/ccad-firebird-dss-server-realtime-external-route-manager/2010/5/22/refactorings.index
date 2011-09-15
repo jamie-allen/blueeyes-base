@@ -1,0 +1,11 @@
+1274720549419	Rename type 'BlockDecoder'
+1274720570307	Rename type 'MpegPacketDecoder'
+1274720621297	Rename type 'AbstractDecoder'
+1274720913302	Rename type 'Mpeg2Codec'
+1274720932289	Rename type 'BlockCodec'
+1274720949272	Rename type 'AbstractCodec'
+1274721358170	Rename field 'MINIMUM_VALUE_OF_HEADER_LENGTH_WITHOUT_CONTROAL_FIELDS'
+1274726034849	Rename field 'pidToChainControllerMap'
+1274726072168	Rename local variable 'chain'
+1274726149854	Rename local variable 'blockChain'
+1274726186121	Delete element

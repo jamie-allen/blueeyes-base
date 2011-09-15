@@ -1,0 +1,8 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+/**
+ * Implementation of Route JMX management beans.
+ *
+ * <p>This package provides the interfaces and implementations 
+ * of various JMX management beans in support of routes.</p>
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.management;

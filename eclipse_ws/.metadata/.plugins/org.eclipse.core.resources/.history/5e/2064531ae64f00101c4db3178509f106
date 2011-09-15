@@ -1,0 +1,62 @@
+/*
+ * Copyright 2010 Combined Conditional Access Development, LLC.
+ */
+package com.ccadllc.firebird.dss.server.realtime.external.route.manager.impl;
+
+import org.apache.mina.core.service.IoHandlerAdapter;
+import org.apache.mina.core.session.IoSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Handles final stage of decoding for block based data on a route.
+ */
+public final class BlockHandler extends IoHandlerAdapter
+{
+    private static final int BITS_PER_BYTE = 8;
+    private static final int PID_SECOND_BYTE_MASK = 0xFF;
+    private static final int PID_FIRST_BYTE_MASK = 0x1F;
+    private static final int PID_CONTROL_FLAG = 0x80;
+    private final Logger logger = LoggerFactory.getLogger(BlockHandler.class);
+    private final Object lock = new Object();
+    private final Router router;
+    private final RouteManagerNotifier routeManagerNotifier;
+
+    public BlockHandler(final Router router, final RouteManagerNotifier routeManagerNotifier)
+    {
+        this.router = router;
+        this.routeManagerNotifier = routeManagerNotifier;
+    }
+
+    @Override
+    public void messageReceived(final IoSession session, final Object message) throws Exception
+    {
+        synchronized (lock)
+        {
+            final byte[] bytes = (byte[])message;
+            Integer pid = null;
+            int dataStart = 1;
+            final byte controlFlags = bytes[0];
+            if ((controlFlags & PID_CONTROL_FLAG) == PID_CONTROL_FLAG)
+            {
+                pid = ((bytes[1] & PID_FIRST_BYTE_MASK) << BITS_PER_BYTE) | ((bytes[2] & PID_SECOND_BYTE_MASK));
+                dataStart += 2;
+            }
+
+            final byte[] dataBytes = new byte[bytes.length - dataStart];
+            System.arraycopy(bytes, dataStart, dataBytes, 0, bytes.length - dataStart);
+            logger.debug("Sending pid: {}, block: {}", pid, dataBytes);
+            router.route(new Block(pid, dataBytes));
+        }
+    }
+
+    @Override
+    public void sessionClosed(final IoSession session) throws Exception
+    {
+        synchronized (lock)
+        {
+            super.sessionClosed(session);
+            routeManagerNotifier.notifyRouteManagerThatSessionClosed();
+        }
+    }
+}

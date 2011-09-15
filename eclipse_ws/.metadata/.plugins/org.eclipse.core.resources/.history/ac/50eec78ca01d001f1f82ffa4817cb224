@@ -1,0 +1,159 @@
+<?xml version="1.0"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <artifactId>ccad-firebird-vms-topology-simple-devices</artifactId>
+    <packaging>bundle</packaging>
+    <version>2.0.0-SNAPSHOT</version>
+    <name>Firebird Topology Simple Devices</name>
+    <description>Topology bundle that contains simple devices.</description>
+    <parent>
+        <groupId>com.ccadllc.firebird.vms</groupId>
+        <artifactId>ccad-firebird-vms-topology</artifactId>
+        <version>2.0.0-SNAPSHOT</version>
+    </parent>
+    <properties>
+        <bundle.symbolicName>com.ccadllc.firebird.vms.topology.simple-devices</bundle.symbolicName>
+        <bundle.namespace>com.ccadllc.firebird.vms.topology.simpledevices</bundle.namespace>
+    </properties>
+    <scm>
+        <connection>${scmConnectionBase}/topology/simpledevices</connection>
+    </scm>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.felix</groupId>
+                <artifactId>maven-bundle-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>aspectj-maven-plugin</artifactId>
+                <configuration>
+                    <aspectLibraries>
+                        <aspectLibrary>
+                            <groupId>org.springframework</groupId>
+                            <artifactId>org.springframework.aspects</artifactId>
+                        </aspectLibrary>
+                    </aspectLibraries>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>compile</goal>
+                            <goal>test-compile</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <artifactId>maven-eclipse-plugin</artifactId>
+                <configuration>
+                    <outputDirectory>target-eclipseClasses</outputDirectory>
+                </configuration>
+            </plugin>            
+         </plugins>
+     </build>
+
+     <dependencies>
+        <dependency>
+            <groupId>org.eclipse</groupId>
+            <artifactId>osgi</artifactId>
+            <scope>provided</scope>
+        </dependency>
+             
+        <!-- CCAD Commons -->
+        <dependency>
+            <groupId>com.ccadllc.commons</groupId>
+            <artifactId>ccad-common</artifactId>
+        </dependency>
+         
+        <!-- Firebird -->
+        <dependency>
+            <groupId>com.ccadllc.firebird.core</groupId>
+            <artifactId>ccad-firebird-core-base-common</artifactId>
+            <version>${ccad.firebird.core.version}</version>
+        </dependency>          
+        <dependency>
+            <groupId>com.ccadllc.firebird.core</groupId>
+            <artifactId>ccad-firebird-core-database-persistence</artifactId>
+            <version>${ccad.firebird.core.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>ccad-firebird-vms-common-units</artifactId>
+            <version>${ccad.firebird.vms-common.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.ccadllc.firebird.libs</groupId>
+            <artifactId>org.hamcrest-hamcrest-all</artifactId>
+            <version>${ccad.firebird.libs.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.ccadllc.firebird.core</groupId>
+            <artifactId>ccad-firebird-core-database-db-migrate</artifactId>
+            <version>${ccad.firebird.core.version}</version>
+        </dependency>        
+        
+        <!-- Hibernate -->        
+        <dependency>
+            <groupId>com.ccadllc.firebird.libs</groupId>
+            <artifactId>org.hibernate-hibernate-entitymanager</artifactId>
+            <version>${ccad.firebird.libs.version}</version>
+        </dependency>   
+        
+        <!-- Aspects -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>org.springframework.aspects</artifactId>
+        </dependency>
+        <dependency>
+          <groupId>org.aspectj</groupId>
+          <artifactId>com.springsource.org.aspectj.runtime</artifactId>
+        </dependency>
+        
+        <!-- Topology -->
+        <dependency>        
+            <groupId>${project.groupId}</groupId>
+            <artifactId>ccad-firebird-vms-topology-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>ccad-firebird-vms-topology-spi</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        
+        <!-- Testing dependencies -->
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>ccad-firebird-vms-topology-sdk-tests</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>org.springframework.test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.ccadllc.commons</groupId>
+            <artifactId>ccad-commons-test-support</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>p6spy</groupId>
+            <artifactId>p6spy</artifactId>
+            <scope>test</scope>
+        </dependency>       
+        <dependency>
+            <groupId>org.dom4j</groupId>
+            <artifactId>com.springsource.org.dom4j</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.ccadllc.firebird.core</groupId>
+            <artifactId>ccad-firebird-core-test-support</artifactId>
+            <version>${ccad.firebird.core.version}</version>
+            <scope>test</scope>
+        </dependency>                
+     </dependencies>
+ </project>

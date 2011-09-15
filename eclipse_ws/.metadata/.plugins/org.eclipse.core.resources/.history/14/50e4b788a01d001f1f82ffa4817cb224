@@ -1,0 +1,72 @@
+<?xml version="1.0"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <artifactId>ccad-firebird-vms-topology-device</artifactId>
+    <packaging>bundle</packaging>
+    <version>2.0.0-SNAPSHOT</version>
+    <name>Firebird Topology Device</name>
+    <description>Topology device bundle.</description>
+    <parent>
+        <groupId>com.ccadllc.firebird.vms</groupId>
+        <artifactId>ccad-firebird-vms-topology</artifactId>
+        <version>2.0.0-SNAPSHOT</version>
+    </parent>
+    <properties>
+        <bundle.symbolicName>com.ccadllc.firebird.vms.topology.device</bundle.symbolicName>
+        <bundle.namespace>com.ccadllc.firebird.vms.topology.device</bundle.namespace>
+    </properties>
+    <scm>
+        <connection>${scmConnectionBase}/topology/device</connection>
+    </scm>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.felix</groupId>
+                <artifactId>maven-bundle-plugin</artifactId>
+            </plugin>         
+            <plugin>
+                <groupId>com.sun.tools.xjc.maven2</groupId>
+                <artifactId>maven-jaxb-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <generatePackage>com.ccadllc.firebird.vms.topology.device.schema</generatePackage>
+                    <includeSchemas>
+                        <includeSchema>**/*.xsd</includeSchema>
+                    </includeSchemas>
+                </configuration>
+            </plugin>               
+         </plugins>
+     </build>
+
+     <dependencies>
+        <dependency>
+            <groupId>org.eclipse</groupId>
+            <artifactId>osgi</artifactId>
+            <scope>provided</scope>
+        </dependency>
+             
+        <!-- CCAD Commons -->
+        <dependency>
+            <groupId>com.ccadllc.commons</groupId>
+            <artifactId>ccad-common</artifactId>
+        </dependency>
+        
+        <!-- Firebird -->
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>ccad-firebird-vms-topology-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>ccad-firebird-vms-topology-spi</artifactId>
+            <version>${project.version}</version>
+        </dependency>  
+     </dependencies>
+ </project>

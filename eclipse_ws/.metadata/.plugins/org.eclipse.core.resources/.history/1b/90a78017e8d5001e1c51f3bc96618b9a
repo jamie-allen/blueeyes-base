@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:util="http://www.springframework.org/schema/util"
+    xmlns:osgi="http://www.springframework.org/schema/osgi"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+           http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd
+           http://www.springframework.org/schema/osgi http://www.springframework.org/schema/osgi/spring-osgi.xsd">
+
+    <!-- Exported OSGi services -->
+
+    <osgi:service interface="org.osgi.service.event.EventHandler" ref="timerManager">
+        <osgi:service-properties>
+            <entry key="event.topics" value-ref="eventTopics" />
+        </osgi:service-properties>
+    </osgi:service>
+
+    <util:constant id="eventTopics" static-field="com.ccadllc.firebird.dss.server.realtime.timer.manager.TimerManager.EVENT_TOPICS"/>
+
+    <!-- Imported OSGi services -->
+
+    <osgi:reference id="blockSetRepository" interface="com.ccadllc.firebird.dss.server.configuration.blockset.domain.BlockSetRepository" >
+        <osgi:listener bind-method="onBlockSetRepositoryBind" unbind-method="onBlockSetRepositoryUnbind" ref="timerManager" />
+    </osgi:reference>
+    <osgi:reference id="streamRepository" interface="com.ccadllc.firebird.dss.server.configuration.stream.domain.StreamRepository" />
+    <osgi:reference id="streamManager" interface="com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager" />
+
+    <osgi:reference id="realtimeSnapshotManager" interface="com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager"/>
+
+</beans>

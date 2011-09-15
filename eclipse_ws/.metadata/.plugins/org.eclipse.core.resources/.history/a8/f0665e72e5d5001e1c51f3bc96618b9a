@@ -1,0 +1,147 @@
+/* Copyright 2008 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.stream.manager.impl;
+
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
+
+import com.ccadllc.commons.util.ByteUtility;
+
+/**
+ * Utility class used by the <code>MultiplexerTest</code> class.
+ */
+public final class MultiplexerTestUtils
+{
+    public static final byte SYNC_BYTE = (byte) 0x47;
+    public static final byte BYTE_1 = (byte) 0x55;
+    public static final byte BYTE_2 = (byte) 0;
+    public static final byte BYTE_3 = (byte) 0x9a;
+    public static final byte BYTE_ZERO = (byte) 0;
+    public static final byte BYTE_ONE = (byte) 0x1;
+
+    private MultiplexerTestUtils()
+    {
+    }
+
+    public static byte[] getMpeg2Packet()
+    {
+        final List<Byte> mpeg2PacketList = new ArrayList<Byte>();
+
+        mpeg2PacketList.add(SYNC_BYTE);
+        mpeg2PacketList.add(BYTE_1);
+        mpeg2PacketList.add(BYTE_2);
+        mpeg2PacketList.add(BYTE_3);
+        for (int i = 4; i <= 187; i++)
+        {
+            mpeg2PacketList.add(BYTE_ZERO);
+        }
+        return listToByteArray(mpeg2PacketList);
+    }
+
+    public static byte[] getBadMpeg2Packet()
+    {
+        final List<Byte> mpeg2PacketList = new ArrayList<Byte>();
+
+        mpeg2PacketList.add(SYNC_BYTE);
+        mpeg2PacketList.add(BYTE_1);
+        mpeg2PacketList.add(BYTE_2);
+        mpeg2PacketList.add(BYTE_3);
+        for (int i = 4; i <= 230; i++)
+        {
+            mpeg2PacketList.add(BYTE_ZERO);
+        }
+        return listToByteArray(mpeg2PacketList);
+    }
+
+    public static byte[] getMpeg2PacketAllZeros()
+    {
+        final List<Byte> mpeg2PacketList = new ArrayList<Byte>();
+
+        mpeg2PacketList.add(SYNC_BYTE);
+        mpeg2PacketList.add(BYTE_ZERO);
+        mpeg2PacketList.add(BYTE_ZERO);
+        mpeg2PacketList.add(BYTE_ZERO);
+        for (int i = 4; i <= 187; i++)
+        {
+            mpeg2PacketList.add(BYTE_ZERO);
+        }
+        return listToByteArray(mpeg2PacketList);
+    }
+
+    public static byte[] getMpeg2PacketAllOnes()
+    {
+        final List<Byte> mpeg2PacketList = new ArrayList<Byte>();
+
+        mpeg2PacketList.add(SYNC_BYTE);
+        mpeg2PacketList.add(BYTE_ONE);
+        mpeg2PacketList.add(BYTE_ONE);
+        mpeg2PacketList.add(BYTE_ONE);
+        for (int i = 4; i <= 187; i++)
+        {
+            mpeg2PacketList.add(BYTE_ONE);
+        }
+        return listToByteArray(mpeg2PacketList);
+    }
+
+    public static byte[] getBlockMpeg2PacketAllZeros(final int numberOfPackets)
+    {
+        final ByteBuffer packetsToProcessBuffer = ByteBuffer.allocate(Mpeg2Packet.PACKET_SIZE_IN_BYTES * numberOfPackets);
+        for (int i = 0; i < numberOfPackets; ++i)
+        {
+            packetsToProcessBuffer.put(getMpeg2PacketAllZeros());
+        }
+
+        packetsToProcessBuffer.flip();
+        final byte[] packetsToProcess = new byte[packetsToProcessBuffer.remaining()];
+        packetsToProcessBuffer.get(packetsToProcess);
+        return packetsToProcess;
+    }
+
+    public static byte[] getBlockMpeg2PacketAllOnes(final int numberOfPackets)
+    {
+        final ByteBuffer packetsToProcessBuffer = ByteBuffer.allocate(Mpeg2Packet.PACKET_SIZE_IN_BYTES * numberOfPackets);
+        for (int i = 0; i < numberOfPackets; ++i)
+        {
+            packetsToProcessBuffer.put(getMpeg2PacketAllOnes());
+        }
+
+        packetsToProcessBuffer.flip();
+        final byte[] packetsToProcess = new byte[packetsToProcessBuffer.remaining()];
+        packetsToProcessBuffer.get(packetsToProcess);
+        return packetsToProcess;
+    }
+
+    public static int getPidFromMpeg2PacketFirst4BytesAsInt(final byte[] packet)
+    {
+        int pid = (getMpeg2PacketFirst4BytesAsInt(packet) & Multiplexer.PID_MASK);
+        pid = pid >> 8;
+        return pid;
+    }
+
+    public static int getCcFromMpeg2PacketFirst4BytesAsInt(final byte[] packet)
+    {
+        return (getMpeg2PacketFirst4BytesAsInt(packet) & Multiplexer.CC_MASK);
+    }
+
+
+
+    private static int getMpeg2PacketFirst4BytesAsInt(final byte[] packet)
+    {
+        // Convert the first 4 bytes in the packet to an integer.
+        return ByteUtility.toInteger(new byte[] {packet[Multiplexer.SYNC_BYTE_INDEX],
+                                                 packet[Multiplexer.PID_TOP_BYTE_INDEX],
+                                                 packet[Multiplexer.PID_BOTTOM_BYTE_INDEX],
+                                                 packet[Multiplexer.CC_BYTE_INDEX]});
+    }
+
+    private static byte[] listToByteArray(final List<Byte> list)
+    {
+        final byte[] byteArray = new byte[list.size()];
+        for (int i = 0; i < list.size(); i++)
+        {
+            byteArray[i] = list.get(i);
+        }
+        return byteArray;
+    }
+
+}

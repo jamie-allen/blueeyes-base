@@ -1,0 +1,138 @@
+/* Copyright 2009 Combined Conditional Access Development, LLC. */
+package com.ccadllc.firebird.dss.server.realtime.timer.manager.it;
+
+import static com.ccadllc.firebird.core.test.support.osgi.options.Options.artifact;
+import static com.ccadllc.firebird.core.test.support.osgi.options.Options.bundles;
+import static com.ccadllc.firebird.core.test.support.osgi.options.Options.group;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import com.ccadllc.firebird.core.test.support.osgi.AbstractOsgiIntegrationTest;
+import com.ccadllc.firebird.core.test.support.osgi.MockOsgiService;
+import com.ccadllc.firebird.core.test.support.osgi.options.Options;
+import com.ccadllc.firebird.core.test.support.osgi.options.OsgiConfiguration;
+import com.ccadllc.firebird.dss.server.common.PeriodicSnapshot;
+import com.ccadllc.firebird.dss.server.configuration.blockset.domain.BlockSetRepository;
+import com.ccadllc.firebird.dss.server.configuration.stream.domain.StreamRepository;
+import com.ccadllc.firebird.dss.server.realtime.snapshot.manager.RealTimeSnapshotManager;
+import com.ccadllc.firebird.dss.server.realtime.stream.manager.StreamManager;
+
+import org.easymock.EasyMock;
+import org.easymock.IAnswer;
+import org.osgi.framework.Bundle;
+import org.osgi.service.event.EventHandler;
+
+public class TimerManagerIntegrationTest extends AbstractOsgiIntegrationTest
+{
+    @OsgiConfiguration Options systemUnderTest = bundles(artifact("com.ccadllc.firebird.vms", "ccad-firebird-dss-server-realtime-timer-manager").noStart());
+
+    @OsgiConfiguration Options supportingBundles = bundles(
+        artifact("org.eclipse.equinox", "event"),
+        artifact("commons-io", "commons-io").noStart(),
+        artifact("commons-pool", "commons-pool"),
+        artifact("commons-math", "commons-math").noStart(),
+        artifact("org.apache.commons", "com.springsource.org.apache.commons.discovery"),
+        artifact("com.ccadllc.commons", "ccad-commons-messaging"),
+        group("com.ccadllc.firebird.vms",
+            artifact("ccad-firebird-dss-common-datatypes").noStart(),
+            artifact("ccad-firebird-vms-common-mpeg2-psi").noStart(),
+            artifact("ccad-firebird-vms-common-packet-filtering").noStart(),
+            artifact("ccad-firebird-dss-server-common").noStart(),
+            artifact("ccad-firebird-dss-server-realtime-snapshot-manager").noStart(),
+            artifact("ccad-firebird-dss-server-realtime-stream-manager").noStart(),
+            artifact("ccad-firebird-dss-server-realtime-transport-manager").noStart(),
+            artifact("ccad-firebird-dss-server-configuration-stream-domain").noStart(),
+            artifact("ccad-firebird-dss-server-configuration-route-domain").noStart(),
+            artifact("ccad-firebird-dss-server-configuration-blockset-domain").noStart(),
+            artifact("ccad-firebird-dss-server-configuration-manager")),
+        artifact("org.jruby", "com.springsource.org.jruby").noStart(),
+        artifact("com.ccadllc.firebird.libs", "javax.script-jruby-engine").noStart()
+    );
+
+    @OsgiConfiguration Options persistence = bundles(
+        group("com.ccadllc.firebird.core",
+            artifact("ccad-firebird-core-database-datasource").noStart(),
+            artifact("ccad-firebird-core-database-db-migrate").noStart(),
+            artifact("ccad-firebird-core-database-persistence").noStart(),
+            artifact("ccad-firebird-core-database-c3p0-driver-support")),
+        artifact("com.mchange.c3p0", "com.springsource.com.mchange.v2.c3p0"),
+        group("com.ccadllc.firebird.libs",
+            artifact("org.hibernate-hibernate-entitymanager"),
+            artifact("org.liquibase-liquibase-core")),
+        artifact("org.dom4j", "com.springsource.org.dom4j"),
+        artifact("org.hsqldb", "com.springsource.org.hsqldb"),
+        group("org.springframework",
+            artifact("org.springframework.transaction"),
+            artifact("org.springframework.orm"),
+            artifact("org.springframework.jdbc")),
+        artifact("javax.persistence", "com.springsource.javax.persistence"),
+        artifact("org.apache.geronimo.specs", "geronimo-jta_1.1_spec")
+    );
+
+    private Bundle timerManagerBundle;
+
+    @MockOsgiService
+    private StreamRepository mockStreamRepository;
+
+    @MockOsgiService
+    private BlockSetRepository mockBlockSetRepository;
+
+    @MockOsgiService
+    private StreamManager mockStreamManager;
+
+    @MockOsgiService
+    private RealTimeSnapshotManager mockRealtimeSnapshotManager;
+
+    @Override
+    protected boolean createManifestOnlyFromTestClass()
+    {
+        return false;
+    }
+
+    @Override
+    protected String[] getBundleContentPattern()
+    {
+        return new String[] {"**/it/**"};
+    }
+
+    @Override
+    protected String getConfigPath()
+    {
+        return "context.xml";
+    }
+
+    @Override
+    protected void onSetUp() throws Exception
+    {
+        resetMocks();
+        for (final Bundle bundle : bundleContext.getBundles())
+        {
+            if (bundle.getSymbolicName().equals("com.ccadllc.firebird.dss.server.realtime.timer.manager"))
+            {
+                timerManagerBundle = bundle;
+            }
+        }
+
+        super.onSetUp();
+    }
+
+    public void testTimerManager_ValidStartup() throws Exception
+    {
+        EasyMock.expect(mockRealtimeSnapshotManager.getPeriodics()).andAnswer(new IAnswer<Map<Long, PeriodicSnapshot>>() {
+
+            @Override
+            public Map<Long, PeriodicSnapshot> answer() throws Throwable
+            {
+                assertThat(bundleContext.getServiceReferences(EventHandler.class.getName(), null).length, is(1));
+                return new HashMap<Long, PeriodicSnapshot>();
+            }
+        });
+        replayMocks();
+        timerManagerBundle.start();
+        waitOnContextCreation("com.ccadllc.firebird.dss.server.realtime.timer.manager");
+        verifyMocks();
+    }
+}
